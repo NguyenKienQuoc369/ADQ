@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Target {
+  id        String   @id @default(cuid())
+  domain    String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("targets")
+}
+
+model ScanJob {
+  scanId        String          @id @map("scan_id")
+  targetDomain  String          @map("target_domain")
+  status        String
+  startedAt     DateTime?       @map("started_at")
+  endedAt       DateTime?       @map("ended_at")
+  priorityScore Int             @default(0) @map("priority_score")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  liveHosts     LiveHost[]
+  vulnerabilities Vulnerability[]
+
+  @@map("scan_jobs")
+}
+
+model LiveHost {
+  id         Int      @id @default(autoincrement())
+  scanId     String   @map("scan_id")
+  url        String?
+  statusCode Int?     @map("status_code")
+  title      String?
+  tech       String?  @db.Text
+  method     String?
+  raw        String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  scanJob ScanJob @relation(fields: [scanId], references: [scanId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([scanId])
+  @@map("live_hosts")
+}
+
+model Vulnerability {
+  id         Int      @id @default(autoincrement())
+  scanId     String   @map("scan_id")
+  source     String
+  templateId String?  @map("template_id")
+  host       String?
+  severity   String?
+  matched    String?  @db.Text
+  endpoint   String?
+  statusCode Int?     @map("status_code")
+  length     Int?
+  raw        String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  scanJob ScanJob @relation(fields: [scanId], references: [scanId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([scanId])
+  @@index([source])
+  @@index([severity])
+  @@map("vulnerabilities")
+}

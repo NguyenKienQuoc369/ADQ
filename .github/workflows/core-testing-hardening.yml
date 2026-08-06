@@ -1,0 +1,41 @@
+name: ADQ Core Automated Test Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  core-testing-hardening:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Run Phase 1 - Unit & Mock Tests
+      run: |
+        pytest tests/unit/ -v
+
+    - name: Run Phase 2 - Integration & Memory Profiling Tests
+      run: |
+        pytest tests/integration/ -v
+
+    - name: Run Phase 3 - Chaos Engineering Tests
+      run: |
+        pytest tests/chaos/ -v
+
+    - name: Run Phase 4 - Schema & Query Performance Benchmark
+      run: |
+        pytest tests/schema/ -v

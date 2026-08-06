@@ -1,0 +1,133 @@
+services:
+  # PostgreSQL
+  db:
+    image: postgres:15-alpine
+    container_name: adq_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: adq_secure_password
+      POSTGRES_DB: adq_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - adq_net
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: adq_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - adq_net
+
+  # OAST Server
+  oast-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: adq_oast
+    restart: always
+    command: python3 -c "from core.oast_server import ADQInteractionServer; s = ADQInteractionServer(host='0.0.0.0', port=8888); s.start_server(); import time; time.sleep(86400000)"
+    ports:
+      - "8888:8888" # Expose ra ngoài để mục tiêu có thể ping về
+    networks:
+      - adq_net
+
+  # FastAPI Backend Server
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: adq_api
+    restart: always
+    command: uvicorn api_server:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    networks:
+      - adq_net
+
+  # Master Grid Node 
+  master-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: adq_master
+    restart: always
+    command: python3 -c "from core.grid_master import MasterGridNode; print('ADQ Master Node Grid Active')"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
+    networks:
+      - adq_net
+
+  # Worker Node (Light Recon)
+  worker-light:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: always
+    command: python3 worker.py --help
+    environment:
+      - WORKER_CAPABILITIES=recon_infra,web_mapping
+    env_file:
+      - .env
+    depends_on:
+      - master-node
+    networks:
+      - adq_net
+
+  # Worker Node (Elite Exploit)
+  worker-elite:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: always
+    command: python3 worker.py --help
+    environment:
+      - WORKER_CAPABILITIES=dast_active,deep_logic
+    env_file:
+      - .env
+    depends_on:
+      - master-node
+    networks:
+      - adq_net
+
+  # Next.js Dashboard
+  web-dashboard:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.web
+    container_name: adq_dashboard
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:adq_secure_password@db:5432/adq_db?schema=public
+      - DIRECT_URL=postgresql://postgres:adq_secure_password@db:5432/adq_db?schema=public
+    depends_on:
+      - db
+      - api-server
+    networks:
+      - adq_net
+
+networks:
+  adq_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
