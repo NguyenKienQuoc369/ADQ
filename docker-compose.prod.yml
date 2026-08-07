@@ -1,0 +1,145 @@
+version: '3.8'
+
+services:
+  # =================================================================
+  # DATABASE & MESSAGE BROKER (Internal Docker Network Only)
+  # =================================================================
+  adq_postgres:
+    image: postgres:15-alpine
+    container_name: adq_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adq_secure_password_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-adq_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - adq_internal_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  adq_redis:
+    image: redis:7-alpine
+    container_name: adq_redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel notice
+    volumes:
+      - redis_data:/data
+    networks:
+      - adq_internal_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =================================================================
+  # OUT-OF-BAND (OAST) INTERACTION SERVER (Exposed on Port 8888)
+  # =================================================================
+  adq_oast:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: adq_oast
+    restart: always
+    command: python3 core/oast_server.py --port 8888
+    ports:
+      - "8888:8888" # Public OAST Callback Listener Port
+    environment:
+      - OAST_PORT=8888
+      - LOG_LEVEL=INFO
+    networks:
+      - adq_internal_net
+
+  # =================================================================
+  # FASTAPI BACKEND SERVER (Exposed on Port 8000 / Reverse Proxy)
+  # =================================================================
+  adq_api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: adq_api
+    restart: always
+    command: uvicorn api_server:app --host 0.0.0.0 --port 8000 --workers 4
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-adq_secure_password_2026}@adq_postgres:5432/${POSTGRES_DB:-adq_db}
+      - REDIS_URL=redis://adq_redis:6379/0
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    depends_on:
+      adq_postgres:
+        condition: service_healthy
+      adq_redis:
+        condition: service_healthy
+    networks:
+      - adq_internal_net
+
+  # =================================================================
+  # DISTRIBUTED MASTER GRID NODE
+  # =================================================================
+  adq_master:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: adq_master
+    restart: always
+    command: python3 -c "from core.grid_master import MasterGridNode; node = MasterGridNode(); node.start_broker_loop()"
+    environment:
+      - REDIS_URL=redis://adq_redis:6379/0
+    depends_on:
+      - adq_redis
+    networks:
+      - adq_internal_net
+
+  # =================================================================
+  # WORKER NODES (Light Recon & Elite Active Scanners)
+  # =================================================================
+  worker-light:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: worker-light-1
+    restart: always
+    command: python3 worker.py --capability light-fast
+    environment:
+      - WORKER_ID=worker-light-1
+      - CAPABILITY=light-fast
+      - REDIS_URL=redis://adq_redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-adq_secure_password_2026}@adq_postgres:5432/${POSTGRES_DB:-adq_db}
+    depends_on:
+      - adq_master
+    networks:
+      - adq_internal_net
+
+  worker-elite:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: worker-elite-1
+    restart: always
+    command: python3 worker.py --capability elite-clean-ip
+    environment:
+      - WORKER_ID=worker-elite-1
+      - CAPABILITY=elite-clean-ip
+      - REDIS_URL=redis://adq_redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-adq_secure_password_2026}@adq_postgres:5432/${POSTGRES_DB:-adq_db}
+      - OAST_SERVER_URL=http://adq_oast:8888
+    depends_on:
+      - adq_master
+      - adq_oast
+    networks:
+      - adq_internal_net
+
+networks:
+  adq_internal_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
