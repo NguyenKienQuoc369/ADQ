@@ -7,4 +7,4 @@ uvicorn>=0.30
 aiohttp>=3.9
 pydantic>=2.0
 python-dotenv>=1.0
-supabase>=3.0.0
+supabase>=2.31.0,<3.0.0
