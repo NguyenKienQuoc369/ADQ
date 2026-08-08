@@ -16,6 +16,19 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Language Selection (EN / VI)
+
+- Use the **Language** dropdown in the top-right navigation bar.
+- Select `Tiếng Việt` to switch core dashboard labels and C2 usage guide to Vietnamese.
+- The selected language is saved in browser local storage (`adq_lang`) and restored automatically.
+
+### Hướng dẫn nhanh (Tiếng Việt)
+
+1. Mở dashboard tại `http://localhost:3000`.
+2. Ở góc phải trên cùng, chọn **Ngôn ngữ -> Tiếng Việt**.
+3. Vào màn `C2` để xem phần **Hướng dẫn sử dụng** bằng tiếng Việt.
+4. Làm mới trang: ngôn ngữ đã chọn vẫn được giữ nguyên.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

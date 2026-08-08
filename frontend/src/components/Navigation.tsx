@@ -12,9 +12,11 @@ import {
   Radio
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useLanguage } from "@/lib/i18n";
 
 export function Navigation() {
   const pathname = usePathname();
+  const { language, setLanguage, t } = useLanguage();
   const [stats, setStats] = useState({
     activeWorkers: 4,
     runningJobs: 2,
@@ -34,10 +36,10 @@ export function Navigation() {
   }, []);
 
   const navItems = [
-    { href: "/c2", label: "C2 & Task Dispatcher", icon: Terminal },
-    { href: "/ctem", label: "Attack Surface Matrix", icon: ShieldAlert },
-    { href: "/graph", label: "Knowledge Graph", icon: Network },
-    { href: "/vulnerabilities", label: "Vulnerabilities & OAST Inbox", icon: Bug },
+    { href: "/c2", label: t("nav.c2"), icon: Terminal },
+    { href: "/ctem", label: t("nav.ctem"), icon: ShieldAlert },
+    { href: "/graph", label: t("nav.graph"), icon: Network },
+    { href: "/vulnerabilities", label: t("nav.vuln"), icon: Bug },
   ];
 
   return (
@@ -55,7 +57,7 @@ export function Navigation() {
                 ENTERPRISE DAST/ASM
               </span>
             </div>
-            <p className="text-[11px] text-zinc-400 font-mono">Master Grid C2 Console v2.0</p>
+            <p className="text-[11px] text-zinc-400 font-mono">{t("nav.console")}</p>
           </div>
         </div>
 
@@ -81,30 +83,45 @@ export function Navigation() {
           })}
         </nav>
 
-        {/* Live System Stat Badges */}
-        <div className="hidden lg:flex items-center space-x-3 font-mono text-xs">
-          <div className="flex items-center space-x-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-zinc-300">
-            <Cpu className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Workers:</span>
-            <span className="font-bold text-emerald-400">{stats.activeWorkers} Online</span>
+        <div className="flex items-center gap-3 font-mono text-xs">
+          <div className="flex items-center space-x-1.5 rounded-md bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-zinc-300">
+            <span className="text-zinc-500">{t("lang.label")}:</span>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as "en" | "vi")}
+              className="bg-zinc-900 text-zinc-200 text-xs outline-none"
+              aria-label="language-switcher"
+            >
+              <option value="en">{t("lang.en")}</option>
+              <option value="vi">{t("lang.vi")}</option>
+            </select>
           </div>
 
-          <div className="flex items-center space-x-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-zinc-300">
-            <Activity className="h-3.5 w-3.5 text-amber-400" />
-            <span>Jobs:</span>
-            <span className="font-bold text-amber-400">{stats.runningJobs} Active</span>
-          </div>
+          {/* Live System Stat Badges */}
+          <div className="hidden lg:flex items-center space-x-3">
+            <div className="flex items-center space-x-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-zinc-300">
+              <Cpu className="h-3.5 w-3.5 text-emerald-400" />
+              <span>{t("nav.workers")}:</span>
+              <span className="font-bold text-emerald-400">{stats.activeWorkers} {t("nav.online")}</span>
+            </div>
 
-          <div className="flex items-center space-x-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-zinc-300">
-            <Radio className="h-3.5 w-3.5 text-blue-400" />
-            <span>OAST:</span>
-            <span className="font-bold text-blue-400">{stats.oastCallbacks} Pings</span>
-          </div>
+            <div className="flex items-center space-x-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-zinc-300">
+              <Activity className="h-3.5 w-3.5 text-amber-400" />
+              <span>{t("nav.jobs")}:</span>
+              <span className="font-bold text-amber-400">{stats.runningJobs} {t("nav.active")}</span>
+            </div>
 
-          <div className="flex items-center space-x-1.5 rounded-full bg-red-950/60 border border-red-800/80 px-2.5 py-1 text-red-300">
-            <Bug className="h-3.5 w-3.5 text-red-400" />
-            <span>Critical:</span>
-            <span className="font-bold text-red-400">{stats.criticalVulns} Vulns</span>
+            <div className="flex items-center space-x-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-zinc-300">
+              <Radio className="h-3.5 w-3.5 text-blue-400" />
+              <span>{t("nav.oast")}:</span>
+              <span className="font-bold text-blue-400">{stats.oastCallbacks} {t("nav.pings")}</span>
+            </div>
+
+            <div className="flex items-center space-x-1.5 rounded-full bg-red-950/60 border border-red-800/80 px-2.5 py-1 text-red-300">
+              <Bug className="h-3.5 w-3.5 text-red-400" />
+              <span>{t("nav.critical")}:</span>
+              <span className="font-bold text-red-400">{stats.criticalVulns} {t("nav.vulns")}</span>
+            </div>
           </div>
         </div>
       </div>

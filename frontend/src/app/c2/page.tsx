@@ -15,6 +15,7 @@ import {
   Zap,
   Play
 } from "lucide-react";
+import { useLanguage } from "@/lib/i18n";
 
 interface WorkerNode {
   workerId: string;
@@ -28,6 +29,7 @@ interface WorkerNode {
 }
 
 export default function C2CommandCenter() {
+  const { t } = useLanguage();
   // Form State
   const [bulkTargets, setBulkTargets] = useState("target-enterprise.com\nstaging.target-enterprise.com");
   const [profiles, setProfiles] = useState({
@@ -154,10 +156,10 @@ export default function C2CommandCenter() {
         <div>
           <h1 className="text-2xl font-bold font-mono tracking-tight text-white flex items-center gap-2">
             <Terminal className="h-6 w-6 text-red-500" />
-            C2 Command & Task Dispatcher
+            {t("c2.title")}
           </h1>
           <p className="text-sm text-zinc-400 font-mono mt-1">
-            Dispatch targets to Master Grid Node and monitor real-time worker capabilities.
+            {t("c2.subtitle")}
           </p>
         </div>
 
@@ -167,9 +169,19 @@ export default function C2CommandCenter() {
             className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 font-mono text-xs px-3 py-2 rounded-md transition"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isLoadingWorkers ? "animate-spin text-red-400" : ""}`} />
-            Refresh Grid
+            {t("c2.refresh")}
           </button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-blue-800/60 bg-blue-950/20 p-4">
+        <h2 className="text-sm font-mono font-semibold text-blue-300 mb-2">{t("guide.title")}</h2>
+        <ul className="text-xs text-zinc-300 space-y-1 list-disc pl-4">
+          <li>{t("guide.step1")}</li>
+          <li>{t("guide.step2")}</li>
+          <li>{t("guide.step3")}</li>
+          <li>{t("guide.step4")}</li>
+        </ul>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
