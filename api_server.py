@@ -9,7 +9,7 @@ import uuid
 from typing import Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -18,7 +18,10 @@ app = FastAPI(title="Quoc Omni API", version="1.0.0")
 JOBS: Dict[str, Dict] = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
-app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+FRONTEND_EXISTS = os.path.isdir(FRONTEND_DIR)
+
+if FRONTEND_EXISTS:
+    app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 
 
 class ScanRequest(BaseModel):
@@ -208,4 +211,14 @@ async def sse_oast_stream():
 
 @app.get("/")
 def index_page():
-    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if FRONTEND_EXISTS and os.path.isfile(index_path):
+        return FileResponse(index_path)
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "service": "adq_api",
+            "message": "Backend is running. Frontend static assets are not bundled in this container.",
+        }
+    )
