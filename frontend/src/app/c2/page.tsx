@@ -31,7 +31,7 @@ interface WorkerNode {
 export default function C2CommandCenter() {
   const { t } = useLanguage();
   // Form State
-  const [bulkTargets, setBulkTargets] = useState("target-enterprise.com\nstaging.target-enterprise.com");
+  const [bulkTargets, setBulkTargets] = useState("");
   const [profiles, setProfiles] = useState({
     recon_infra: true,
     web_mapping: true,

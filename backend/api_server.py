@@ -103,6 +103,30 @@ def _run_scan(job_id: str, req: ScanRequest):
     JOBS[job_id]["stdout_tail"] = out[-4000:] if out else ""
     JOBS[job_id]["stderr_tail"] = err[-4000:] if err else ""
 
+    # Parse and save scan findings to Database
+    try:
+        from core.db import save_live_hosts, save_vulnerabilities, update_scan_status
+        target_clean = req.target.replace("http://", "").replace("https://", "").strip("/")
+        folder = "".join([c if c.isalnum() or c in (".", "_", "-") else "_" for c in target_clean])
+        result_json_path = os.path.join(BASE_DIR, folder, "result.json")
+
+        if os.path.exists(result_json_path):
+            with open(result_json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            sub_live = data.get("subdomains", {}).get("http_live", [])
+            hosts = [{"url": url, "status_code": 200, "title": "Live Host"} for url in sub_live]
+            if hosts:
+                save_live_hosts(job_id, hosts)
+
+            nuclei_vulns = data.get("vulnerabilities", {}).get("nuclei", [])
+            if nuclei_vulns:
+                save_vulnerabilities(job_id, nuclei_vulns)
+
+        update_scan_status(job_id, "COMPLETED" if proc.returncode == 0 else "FAILED")
+    except Exception as exc:
+        print(f"[API_SERVER] Error saving scan results to database: {exc}")
+
 
 @app.post("/api/scan")
 def start_scan(req: ScanRequest, bg: BackgroundTasks):
