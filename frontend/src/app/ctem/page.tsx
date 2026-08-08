@@ -16,6 +16,7 @@ import {
   Unlock,
   CornerDownRight
 } from "lucide-react";
+import { useLanguage } from "@/lib/i18n";
 
 interface Endpoint {
   id: string;
@@ -51,6 +52,7 @@ interface RootDomainNode {
 }
 
 export default function CTEMAttackSurfaceMatrix() {
+  const { t } = useLanguage();
   const [matrix, setMatrix] = useState<RootDomainNode[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -122,10 +124,10 @@ export default function CTEMAttackSurfaceMatrix() {
         <div>
           <h1 className="text-2xl font-bold font-mono tracking-tight text-white flex items-center gap-2">
             <ShieldAlert className="h-6 w-6 text-amber-500" />
-            CTEM Attack Surface Matrix & Delta Diffing
+            {t("ctem.title")}
           </h1>
           <p className="text-sm text-zinc-400 font-mono mt-1">
-            Hierarchical asset matrix tracking real-time surface drift, WAF drops, and unadvertised endpoints.
+            {t("ctem.subtitle")}
           </p>
         </div>
 
@@ -140,7 +142,7 @@ export default function CTEMAttackSurfaceMatrix() {
             }`}
           >
             <Filter className="h-3.5 w-3.5" />
-            [Show Only New Endpoints]
+            [{t("ctem.filterNewOnly")}]
           </button>
 
           <button
@@ -152,7 +154,7 @@ export default function CTEMAttackSurfaceMatrix() {
             }`}
           >
             <Unlock className="h-3.5 w-3.5 text-red-400" />
-            [Show Only Dropped WAF]
+            [{t("ctem.filterDroppedWaf")}]
           </button>
         </div>
       </div>

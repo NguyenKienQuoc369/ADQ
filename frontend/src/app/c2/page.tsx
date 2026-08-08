@@ -190,10 +190,10 @@ export default function C2CommandCenter() {
           <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
             <h2 className="text-base font-bold font-mono text-zinc-100 flex items-center gap-2">
               <Zap className="h-4 w-4 text-amber-400" />
-              Target Ingestion & Dispatcher
+              {t("c2.targetIngestion")}
             </h2>
             <span className="text-[11px] font-mono bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">
-              BULK READY
+              {t("c2.bulkReady")}
             </span>
           </div>
 
@@ -202,11 +202,11 @@ export default function C2CommandCenter() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs font-mono font-medium text-zinc-300">
-                  Target Scope (Domains / IPs - 1 per line):
+                  {t("c2.scopeLabel")}
                 </label>
                 <label className="cursor-pointer text-[11px] font-mono text-blue-400 hover:text-blue-300 flex items-center gap-1">
                   <Upload className="h-3 w-3" />
-                  Upload .txt
+                  {t("c2.uploadTxt")}
                   <input
                     type="file"
                     accept=".txt"
@@ -228,29 +228,29 @@ export default function C2CommandCenter() {
             {/* Scan Profile Selection (Checkboxes) */}
             <div>
               <label className="text-xs font-mono font-medium text-zinc-300 mb-2.5 block">
-                Select Scan Profiles:
+                {t("c2.selectProfiles")}
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   {
                     key: "recon_infra",
-                    title: "Recon Infra",
-                    desc: "Subdomains, DNS, Ports [Low Noise]",
+                    title: t("c2.profile.recon"),
+                    desc: t("c2.profile.reconDesc"),
                   },
                   {
                     key: "web_mapping",
-                    title: "Web Mapping",
-                    desc: "HTTP, Deep JS, Tech Stack [Light]",
+                    title: t("c2.profile.web"),
+                    desc: t("c2.profile.webDesc"),
                   },
                   {
                     key: "dast_active",
-                    title: "Active DAST",
-                    desc: "Nuclei CVEs, FFuf Fuzzing [Active]",
+                    title: t("c2.profile.dast"),
+                    desc: t("c2.profile.dastDesc"),
                   },
                   {
                     key: "deep_logic",
-                    title: "Deep Logic & OAST",
-                    desc: "Race, IDOR, OAST Testing [Complex]",
+                    title: t("c2.profile.logic"),
+                    desc: t("c2.profile.logicDesc"),
                   },
                 ].map((item) => {
                   const isChecked = profiles[item.key as keyof typeof profiles];
@@ -284,18 +284,35 @@ export default function C2CommandCenter() {
             {/* Worker Capability Dropdown */}
             <div>
               <label className="text-xs font-mono font-medium text-zinc-300 mb-2 block">
-                Worker Capability Allocation:
+                {t("c2.nodeCapability")}
               </label>
               <select
                 value={capability}
                 onChange={(e) => setCapability(e.target.value)}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 font-mono text-xs text-zinc-200 focus:outline-none focus:border-red-500"
               >
-                <option value="all-nodes">All Available Nodes (Balanced Dispatch)</option>
-                <option value="elite-clean-ip">Elite IP Cluster Only (Proxy / Clean IPs)</option>
-                <option value="light-fast">Light Nodes Only (Recon / Subdomains)</option>
-                <option value="residential-proxy">Stealth Residential Proxy Pool</option>
+                <option value="all-nodes">{t("c2.cap.all")}</option>
+                <option value="light-fast">{t("c2.cap.light")}</option>
+                <option value="elite-clean-ip">{t("c2.cap.elite")}</option>
               </select>
+            </div>
+
+            {/* Priority Slider */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-mono font-medium text-zinc-300">
+                  {t("c2.priority")}
+                </label>
+                <span className="text-xs font-mono text-amber-400 font-bold">{priority}</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={priority}
+                onChange={(e) => setPriority(parseInt(e.target.value))}
+                className="w-full accent-red-500"
+              />
             </div>
 
             {/* Submit Action Button */}
@@ -307,12 +324,12 @@ export default function C2CommandCenter() {
               {isSubmitting ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  Dispatching to Master Grid...
+                  {t("c2.dispatching")}
                 </>
               ) : (
                 <>
                   <Play className="h-4 w-4 fill-white" />
-                  Launch Enterprise Scan
+                  {t("c2.launchBtn")}
                 </>
               )}
             </button>

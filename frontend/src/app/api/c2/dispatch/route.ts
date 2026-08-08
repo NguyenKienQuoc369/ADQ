@@ -44,6 +44,22 @@ export async function POST(req: Request) {
         capability: capability || "all-nodes",
         status: "QUEUED",
       });
+
+      // Trigger Python Backend Engine if BACKEND_API_URL or local API server is active
+      const backendUrl = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      try {
+        await fetch(`${backendUrl}/api/scan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            target: cleanDomain,
+            no_telegram: true,
+            logic_scan: profiles?.includes("deep_logic") || false,
+          }),
+        });
+      } catch (err) {
+        console.warn(`[Dispatch] Backend API connection warning for ${cleanDomain}:`, err);
+      }
     }
 
     return NextResponse.json({

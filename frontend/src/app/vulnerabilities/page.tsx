@@ -16,6 +16,7 @@ import {
   Copy,
   Check
 } from "lucide-react";
+import { useLanguage } from "@/lib/i18n";
 
 interface Vulnerability {
   id: number;
@@ -43,6 +44,7 @@ interface OastCallback {
 }
 
 export default function VulnerabilityTriageAndOAST() {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<"triage" | "oast">("triage");
 
   // Vulnerability Triage State
@@ -158,10 +160,10 @@ export default function VulnerabilityTriageAndOAST() {
         <div>
           <h1 className="text-2xl font-bold font-mono tracking-tight text-white flex items-center gap-2">
             <Bug className="h-6 w-6 text-red-500" />
-            Vulnerability Triage & OAST Inbox
+            {t("vuln.title")}
           </h1>
           <p className="text-sm text-zinc-400 font-mono mt-1">
-            Master-Detail vulnerability review with raw HTTP evidence and live Out-of-Band pingbacks.
+            {t("vuln.subtitle")}
           </p>
         </div>
 
@@ -176,7 +178,7 @@ export default function VulnerabilityTriageAndOAST() {
             }`}
           >
             <ShieldAlert className="h-4 w-4 text-red-400" />
-            Vulnerability Triage ({vulnerabilities.length})
+            {t("vuln.tabTriage")} ({vulnerabilities.length})
           </button>
 
           <button
@@ -188,7 +190,7 @@ export default function VulnerabilityTriageAndOAST() {
             }`}
           >
             <Radio className="h-4 w-4 text-blue-400 animate-pulse" />
-            OAST Stream Inbox ({oastCallbacks.length})
+            {t("vuln.tabOast")} ({oastCallbacks.length})
           </button>
         </div>
       </div>

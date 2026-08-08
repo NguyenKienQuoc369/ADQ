@@ -15,6 +15,7 @@ import {
   Layers,
   Info
 } from "lucide-react";
+import { useLanguage } from "@/lib/i18n";
 
 interface NodeData {
   id: string;
@@ -30,6 +31,7 @@ interface EdgeData {
 }
 
 export default function KnowledgeGraphExplorer() {
+  const { t } = useLanguage();
   const [nodes, setNodes] = useState<NodeData[]>([]);
   const [edges, setEdges] = useState<EdgeData[]>([]);
   const [topologyRisk, setTopologyRisk] = useState(91);
@@ -82,10 +84,10 @@ export default function KnowledgeGraphExplorer() {
         <div>
           <h1 className="text-2xl font-bold font-mono tracking-tight text-white flex items-center gap-2">
             <Network className="h-6 w-6 text-blue-500" />
-            Security Knowledge Graph Explorer & Blast Radius
+            {t("graph.title")}
           </h1>
           <p className="text-sm text-zinc-400 font-mono mt-1">
-            Traverse threat topology, secret leaks, and critical attack impact paths across graph nodes.
+            {t("graph.subtitle")}
           </p>
         </div>
 
@@ -94,7 +96,7 @@ export default function KnowledgeGraphExplorer() {
           <div className="bg-red-950/80 border border-red-800 px-4 py-2 rounded-xl flex items-center gap-3 shadow-lg">
             <ShieldAlert className="h-5 w-5 text-red-500 animate-pulse" />
             <div>
-              <div className="text-[10px] text-red-400 uppercase tracking-wider">Topology Risk Score</div>
+              <div className="text-[10px] text-red-400 uppercase tracking-wider">{t("graph.riskScore")}</div>
               <div className="text-lg font-bold text-red-200">{topologyRisk} / 100 (CRITICAL)</div>
             </div>
           </div>
@@ -104,7 +106,7 @@ export default function KnowledgeGraphExplorer() {
       {/* Impact Path Query Bar */}
       <form onSubmit={handleQueryPath} className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-4 flex flex-col md:flex-row items-center gap-4 shadow-xl">
         <div className="flex-1 flex items-center gap-2 w-full font-mono text-xs">
-          <label className="text-zinc-400 text-nowrap">From Leaked Asset:</label>
+          <label className="text-zinc-400 text-nowrap">{t("graph.fromLeak")}</label>
           <input
             type="text"
             value={fromNode}
@@ -116,7 +118,7 @@ export default function KnowledgeGraphExplorer() {
         <ArrowRight className="hidden md:block h-5 w-5 text-zinc-600" />
 
         <div className="flex-1 flex items-center gap-2 w-full font-mono text-xs">
-          <label className="text-zinc-400 text-nowrap">To Root Target:</label>
+          <label className="text-zinc-400 text-nowrap">{t("graph.toTarget")}</label>
           <input
             type="text"
             value={toNode}
