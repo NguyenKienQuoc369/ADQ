@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile.backend
     container_name: adq_oast
     restart: always
-    command: python3 core/oast_server.py --port 8888
+    command: python3 runtime_services.py --role oast --host 0.0.0.0 --port 8888
     ports:
       - "8888:8888" # Public OAST Callback Listener Port
     environment:
@@ -67,7 +67,7 @@ services:
       dockerfile: Dockerfile.backend
     container_name: adq_master
     restart: always
-    command: python3 -c "from core.grid_master import MasterGridNode; node = MasterGridNode(); node.start_broker_loop()"
+    command: python3 runtime_services.py --role master
     environment:
       - REDIS_URL=redis://adq_redis:6379/0
     depends_on:
@@ -84,7 +84,7 @@ services:
       dockerfile: Dockerfile.backend
     container_name: worker-light-1
     restart: always
-    command: python3 worker.py --capability light-fast
+    command: python3 runtime_services.py --role worker --worker-id worker-light-1 --capability light-fast
     environment:
       - WORKER_ID=worker-light-1
       - CAPABILITY=light-fast
@@ -101,7 +101,7 @@ services:
       dockerfile: Dockerfile.backend
     container_name: worker-elite-1
     restart: always
-    command: python3 worker.py --capability elite-clean-ip
+    command: python3 runtime_services.py --role worker --worker-id worker-elite-1 --capability elite-clean-ip
     environment:
       - WORKER_ID=worker-elite-1
       - CAPABILITY=elite-clean-ip
