@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrismaClient } from "@/lib/prisma";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -7,6 +7,7 @@ export async function GET(req: Request) {
   const showDroppedWAF = url.searchParams.get("showDroppedWAF") === "true";
 
   try {
+    const prisma = getPrismaClient();
     const targets = await prisma.target.findMany({
       include: {
         scanJobs: {

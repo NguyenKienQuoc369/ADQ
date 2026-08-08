@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { prisma } from "@/lib/prisma";
+import { getPrismaClient } from "@/lib/prisma";
 
 function formatDate(value: Date | null | undefined): string {
   if (!value) {
@@ -18,6 +18,7 @@ type PageProps = {
 
 export default async function ScanDetailPage({ params }: PageProps) {
   const { id } = await params;
+  const prisma = getPrismaClient();
 
   const scan = await prisma.scanJob.findUnique({
     where: { scanId: id },

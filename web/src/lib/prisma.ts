@@ -4,12 +4,16 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
-export const prisma =
-  global.prisma ??
-  new PrismaClient({
-    log: ["error"],
-  });
+export function getPrismaClient(): PrismaClient {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is not configured for Prisma runtime.");
+  }
 
-if (process.env.NODE_ENV !== "production") {
-  global.prisma = prisma;
+  if (!global.prisma) {
+    global.prisma = new PrismaClient({
+      log: ["error"],
+    });
+  }
+
+  return global.prisma;
 }

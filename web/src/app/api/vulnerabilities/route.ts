@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrismaClient } from "@/lib/prisma";
 
 export async function GET() {
   try {
+    const prisma = getPrismaClient();
     const dbVulns = await prisma.vulnerability.findMany({
       orderBy: { createdAt: "desc" },
     });
