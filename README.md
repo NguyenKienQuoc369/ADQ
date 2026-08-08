@@ -43,24 +43,24 @@ ADQ utilizes a microservice-based **Distributed Master-Worker Grid** with real-t
 
 ## ⚡ Core Enterprise Capabilities
 
-* **Deep JavaScript & Sourcemap Analysis (`core/js_analyzer.py`):**
+* **Deep JavaScript & Sourcemap Analysis (`backend/core/js_analyzer.py`):**
   * Automatically extracts hidden API routes, Next.js chunk paths, query/body parameters, and hardcoded secrets (JWT, Google API Keys, Bearer Tokens) from minified JS & `.map` files.
-* **Context-Aware Parameter Discovery & Diffing (`core/param_fuzzer.py`):**
+* **Context-Aware Parameter Discovery & Diffing (`backend/core/param_fuzzer.py`):**
   * Discovers unadvertised parameters using HTTP Response Diffing (Content-Length delta, Status Code shift, reflection analysis).
-* **Automated Logic Chaining Engine (`core/logic_chain.py`):**
+* **Automated Logic Chaining Engine (`backend/core/logic_chain.py`):**
   * Chains Recon -> JS Analysis -> Param Fuzzing -> Session Mapping -> Concurrency Race Condition & Cross-tenant IDOR/BOLA attacks.
-* **Adaptive WAF Evasion & Dynamic Rate-Limiting (`core/waf_evasion.py`):**
+* **Adaptive WAF Evasion & Dynamic Rate-Limiting (`backend/core/waf_evasion.py`):**
   * Detects WAF blocks (Cloudflare, AWS WAF, Akamai, Imperva), applies randomized Jitter (`0.1s - 0.8s`), Exponential Backoff, and User-Agent/IP Header spoofing.
-* **4 Specialized Scan Profiles (`core/grid_master.py`):**
+* **4 Specialized Scan Profiles (`backend/core/grid_master.py`):**
   * `recon_infra`: Low-noise Subdomain & DNS discovery.
   * `web_mapping`: HTTP probing, Tech stack tagging, Deep JS analysis.
   * `dast_active`: Active Nuclei CVE scans & FFuf directory fuzzing.
   * `deep_logic`: Multi-tenant session attacks, Param Fuzzing, Race Condition & OAST testing.
-* **Security Knowledge Graph Engine (`core/knowledge_graph.py`):**
+* **Security Knowledge Graph Engine (`backend/core/knowledge_graph.py`):**
   * Models assets into Nodes & Edges, calculates topology-based Contextual Risk Scores, and traverses impact paths from leaked secrets.
-* **Multi-Protocol Structure Analyzer (`core/protocol_analyzer.py`):**
+* **Multi-Protocol Structure Analyzer (`backend/core/protocol_analyzer.py`):**
   * Parses GraphQL Introspection Schemas and performs WebSocket Handshake probes.
-* **Out-of-Band Interaction Server (`core/oast_server.py`):**
+* **Out-of-Band Interaction Server (`backend/core/oast_server.py`):**
   * Generates unique correlation URLs to verify Blind SSRF and OAST vulnerabilities with 0% False Positive rate.
 
 ---
@@ -108,6 +108,7 @@ docker compose up -d --scale worker-light=5 --scale worker-elite=3
 
 Run offline dry-run test suites to verify system engines locally:
 ```bash
+cd backend
 python3 core_engine_dry_run.py        # Test JS Analyzer, Param Fuzzer, Logic Chain
 python3 waf_session_dry_run.py        # Test WAF Evasion & Session Manager
 python3 enterprise_dry_run.py         # Test OAST, CTEM Diffing, Master Grid, Mutation
@@ -154,17 +155,17 @@ $ export TELEGRAM_CHAT_ID="your_chat_id"
 3. **Chạy Script**
 ```bash
 # Mode CTF đầy đủ
-$ python quoc_omni.py target.com \
+$ python backend/quoc_omni.py target.com \
   --ctf-mode \
   --nuclei-auto-tags \
   --nuclei-ctf-pack \
   --nuclei-two-pass
 
 # Tắt Telegram
-$ python quoc_omni.py target.com --no-telegram --ctf-mode
+$ python backend/quoc_omni.py target.com --no-telegram --ctf-mode
 
 # Với custom wordlist
-$ python quoc_omni.py target.com --wordlist /path/to/wordlist.txt
+$ python backend/quoc_omni.py target.com --wordlist /path/to/wordlist.txt
 ```
 
 ---
@@ -172,12 +173,12 @@ $ python quoc_omni.py target.com --wordlist /path/to/wordlist.txt
 ## 📁 Cấu trúc Tệp
 
 ```
-quoc_omni/
-├── quoc_omni.py              # Script chính
-├── .env.example              # Template cấu hình (copy thành .env)
-├── .gitignore                # Ignore .env và outputs
-├── SECURITY.md               # Hướng dẫn bảo mật chi tiết
-└── README.md                 # File này
+ADQ/
+├── backend/                  # FastAPI, worker, core engines, tests
+├── frontend/                 # Next.js dashboard (Vercel root)
+├── docker-compose.yml        # Local full-stack compose
+├── docker-compose.prod.yml   # VPS backend compose
+└── README.md
 ```
 
 ---
@@ -187,7 +188,7 @@ quoc_omni/
 ### Arguments
 ```bash
 # Target
-python quoc_omni.py <target>
+python backend/quoc_omni.py <target>
 
 # Tùy chọn quan trọng
 --ctf-mode                     # Tối ưu cho CTF

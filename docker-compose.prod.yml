@@ -22,7 +22,7 @@ services:
   # =================================================================
   adq_oast:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.backend
     container_name: adq_oast
     restart: always
@@ -40,7 +40,7 @@ services:
   # =================================================================
   adq_api:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.backend
     container_name: adq_api
     restart: always
@@ -63,7 +63,7 @@ services:
   # =================================================================
   adq_master:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.backend
     container_name: adq_master
     restart: always
@@ -80,7 +80,7 @@ services:
   # =================================================================
   worker-light:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.backend
     container_name: worker-light-1
     restart: always
@@ -97,7 +97,7 @@ services:
 
   worker-elite:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.backend
     container_name: worker-elite-1
     restart: always

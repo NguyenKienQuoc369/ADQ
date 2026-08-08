@@ -34,8 +34,8 @@ jobs:
       - name: Build and Push Backend Image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: Dockerfile.backend
+          context: ./backend
+          file: ./backend/Dockerfile.backend
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository }}/backend:latest
@@ -64,8 +64,8 @@ jobs:
       - name: Build and Push Web Image
         uses: docker/build-push-action@v5
         with:
-          context: ./web
-          file: ./web/Dockerfile.web
+          context: ./frontend
+          file: ./frontend/Dockerfile.web
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository }}/web:latest

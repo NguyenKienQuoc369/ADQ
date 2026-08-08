@@ -1,6 +1,6 @@
 # Vercel Deployment Guide for ADQ Frontend 🚀
 
-This guide provides step-by-step instructions for deploying the **ADQ Web Dashboard** (`web/` directory) to **Vercel**.
+This guide provides step-by-step instructions for deploying the **ADQ Web Dashboard** (`frontend/` directory) to **Vercel**.
 
 ---
 
@@ -13,7 +13,7 @@ This guide provides step-by-step instructions for deploying the **ADQ Web Dashbo
 
 ### 2. Configure Framework & Root Directory
 * **Framework Preset:** `Next.js`
-* **Root Directory:** Edit and set to `web` *(Crucial: Do not leave as default root)*.
+* **Root Directory:** Edit and set to `frontend` *(Crucial: Do not leave as default root)*.
 
 ### 3. Configure Environment Variables
 In the Vercel **Environment Variables** panel, add the following variables:

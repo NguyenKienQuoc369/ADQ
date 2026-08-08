@@ -41,8 +41,8 @@ dist/
 # =================================================================
 node_modules/
 .next/
-web/.next/
-web/node_modules/
+frontend/.next/
+frontend/node_modules/
 
 # =================================================================
 # IDE & OS

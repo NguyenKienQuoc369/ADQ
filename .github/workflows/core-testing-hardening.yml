@@ -19,23 +19,28 @@ jobs:
         python-version: "3.11"
 
     - name: Install Dependencies
+      working-directory: backend
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install -r requirements-dev.txt
 
     - name: Run Phase 1 - Unit & Mock Tests
+      working-directory: backend
       run: |
         pytest tests/unit/ -v
 
     - name: Run Phase 2 - Integration & Memory Profiling Tests
+      working-directory: backend
       run: |
         pytest tests/integration/ -v
 
     - name: Run Phase 3 - Chaos Engineering Tests
+      working-directory: backend
       run: |
         pytest tests/chaos/ -v
 
     - name: Run Phase 4 - Schema & Query Performance Benchmark
+      working-directory: backend
       run: |
         pytest tests/schema/ -v

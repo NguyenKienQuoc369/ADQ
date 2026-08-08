@@ -8,11 +8,11 @@ Thank you for your interest in contributing to **ADQ**! We welcome bug hunters, 
 
 To maintain clean architecture in our Monorepo, responsibility is divided between Backend and Frontend domains:
 
-* **Backend Domain (`core/`, `tests/`, `api_server.py`, `worker.py`, `docker-compose.yml`):**
+* **Backend Domain (`backend/`):**
   * Business logic, Master-Worker orchestration, scan profiles, WAF evasion, OAST, and Knowledge Graph algorithms.
-* **Frontend Domain (`web/`):**
+* **Frontend Domain (`frontend/`):**
   * Next.js App Router, Tailwind CSS, React components, state management, and real-time SSE stream consumption.
-* **Shared Schema Contract (`prisma/schema.prisma` & `web/prisma/schema.prisma`):**
+* **Shared Schema Contract (`backend/prisma/schema.prisma` & `frontend/prisma/schema.prisma`):**
   * The database schema is the single source of truth. Any schema modifications **require mutual consensus** between Backend and Frontend leads before submitting a PR.
 
 ---
@@ -37,7 +37,7 @@ Frontend engineers do not need to configure Python or Go binaries locally. Run t
 
 2. **Run Web Dashboard in Development Mode:**
    ```bash
-   cd web
+   cd frontend
    npm install
    npx prisma generate
    npm run dev
@@ -50,7 +50,7 @@ Frontend engineers do not need to configure Python or Go binaries locally. Run t
 
 1. **`main` Branch is Sacred:**
    * Direct pushes to `main` are restricted. All changes must go through Pull Requests.
-   * `main` must always remain buildable with 100% test pass rate (`pytest tests/ -v`).
+   * `main` must always remain buildable with 100% test pass rate (`pytest backend/tests/ -v`).
 
 2. **Branch Naming Conventions:**
    * Features: `feat/feature-name` (e.g., `feat/ctem-dashboard`, `feat/graphql-parser`)
