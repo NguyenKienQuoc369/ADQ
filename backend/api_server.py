@@ -12,6 +12,7 @@ from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+import redis
 
 
 app = FastAPI(title="Quoc Omni API", version="1.0.0")
@@ -20,14 +21,21 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 FRONTEND_EXISTS = os.path.isdir(FRONTEND_DIR)
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://adq_redis:6379/0")
+try:
+    redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+except Exception as exc:
+    redis_client = None
+    print(f"[API_SERVER] Redis client init warning: {exc}")
+
 if FRONTEND_EXISTS:
     app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 
 
 class ScanRequest(BaseModel):
     target: str
-    no_telegram: bool = True
-    disable_telegram: Optional[bool] = None
+    no_telegram: bool = False
+    disable_telegram: Optional[bool] = False
     telegram_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     extra_args: List[str] = Field(default_factory=list)
@@ -131,6 +139,12 @@ def _run_scan(job_id: str, req: ScanRequest):
 @app.post("/api/scan")
 def start_scan(req: ScanRequest, bg: BackgroundTasks):
     job_id = str(uuid.uuid4())
+    job_payload = {
+        "job_id": job_id,
+        "target": req.target,
+        "request": req.model_dump(),
+        "created_at": time.time(),
+    }
     JOBS[job_id] = {
         "status": "running",
         "request": req.model_dump(),
@@ -139,6 +153,16 @@ def start_scan(req: ScanRequest, bg: BackgroundTasks):
         "stdout_tail": "",
         "stderr_tail": "",
     }
+
+    # Dispatch to Redis queue for Master and Worker Grid nodes
+    if redis_client:
+        try:
+            redis_client.lpush("scan_queue", json.dumps(job_payload))
+            redis_client.lpush("master_jobs", json.dumps(job_payload))
+            redis_client.publish("scan_events", json.dumps(job_payload))
+        except Exception as exc:
+            print(f"[API_SERVER] Redis LPUSH dispatch warning: {exc}")
+
     bg.add_task(_run_scan, job_id, req)
     return {"ok": True, "job_id": job_id, "status": "running"}
 
