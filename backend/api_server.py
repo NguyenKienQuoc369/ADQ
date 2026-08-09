@@ -145,7 +145,7 @@ def start_scan(req: ScanRequest, bg: BackgroundTasks):
         "request": req.model_dump(),
         "created_at": time.time(),
     }
-    JOBS[job_id] = {
+    initial_job_data = {
         "status": "running",
         "request": req.model_dump(),
         "pid": None,
@@ -153,22 +153,39 @@ def start_scan(req: ScanRequest, bg: BackgroundTasks):
         "stdout_tail": "",
         "stderr_tail": "",
     }
+    JOBS[job_id] = initial_job_data
 
     # Dispatch to Redis queue for Master and Worker Grid nodes
+    pushed_to_redis = False
     if redis_client:
         try:
+            redis_client.set(f"job_result:{job_id}", json.dumps(initial_job_data))
             redis_client.lpush("scan_queue", json.dumps(job_payload))
             redis_client.lpush("master_jobs", json.dumps(job_payload))
             redis_client.publish("scan_events", json.dumps(job_payload))
+            pushed_to_redis = True
         except Exception as exc:
             print(f"[API_SERVER] Redis LPUSH dispatch warning: {exc}")
 
-    bg.add_task(_run_scan, job_id, req)
+    # Fallback to local background task if Redis queue push failed
+    if not pushed_to_redis:
+        bg.add_task(_run_scan, job_id, req)
+
     return {"ok": True, "job_id": job_id, "status": "running"}
 
 
 @app.get("/api/scan/{job_id}")
 def get_scan_status(job_id: str):
+    # Query Redis first for distributed worker status
+    if redis_client:
+        try:
+            res_raw = redis_client.get(f"job_result:{job_id}")
+            if res_raw:
+                job_data = json.loads(res_raw)
+                return {"ok": True, "job": job_data}
+        except Exception as exc:
+            print(f"[API_SERVER] Redis status lookup error: {exc}")
+
     job = JOBS.get(job_id)
     if not job:
         return {"ok": False, "error": "job_not_found"}
