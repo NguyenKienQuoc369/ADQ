@@ -41,11 +41,20 @@ DEFAULT_NUCLEI_RL_MIN = 50
 DEFAULT_NUCLEI_C_MIN = 10
 DEFAULT_NUCLEI_RL_STEP = 25
 DEFAULT_NUCLEI_C_STEP = 10
-EXTRA_TOOLS = ["naabu", "katana", "waybackurls", "dnsx", "httpx-toolkit"]
+EXTRA_TOOLS = ["naabu", "katana", "waybackurls", "dnsx", "httpx-toolkit", "arjun"]
 INTERESTING_KEYWORDS = [
     "admin", "login", "swagger", "graphql", "api", "debug", "backup", "test", "staging", "dev",
     ".env", ".git", ".zip", ".tar", ".gz", ".bak", ".sql", ".old"
 ]
+
+SECRET_PATTERNS = {
+    "Prisma / Postgres Connection String": r"postgres(?:ql)?://[a-zA-Z0-9_]+:[^@\s]+@[a-zA-Z0-9.-]+:\d+/[a-zA-Z0-9_]+",
+    "JWT Bearer Token": r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+",
+    "AWS Access Key ID": r"AKIA[0-9A-Z]{16}",
+    "Generic Private Key / Secret": r"(?i)(?:api_key|secret|token|password|private_key)[\s]*[=:]\s*['\"]([a-zA-Z0-9_\-]{16,})['\"]",
+    "Supabase Secret / Key": r"sb_[a-zA-Z0-9_-]{20,}",
+    "Stripe Secret Key": r"sk_live_[0-9a-zA-Z]{24}",
+}
 TECH_TAG_MAP = {
     "wordpress": "wordpress",
     "drupal": "drupal",
@@ -267,15 +276,69 @@ def send_telegram(message):
     except Exception as e:
         log(f"[!] Ngoại lệ khi gửi Telegram: {str(e)}", Colors.Y)
 
-def send_telegram_alert(target, report_text):
-    """Gửi cảnh báo Telegram với cơ chế giới hạn 4000 ký tự"""
-    message = (
-        f"🚨 <b>Báo Cáo Quét Bảo Mật ADQ</b> 🚨\n"
-        f"🎯 <b>Mục tiêu:</b> {target}\n"
-        f"📝 <b>Chi tiết:</b>\n"
-        f"{report_text}"
-    )
-    send_telegram(message)
+def analyze_js_secrets_deep(js_links_file, folder):
+    """Phân tích tĩnh các file JavaScript để tìm secret/credentials hardcoded"""
+    if not os.path.exists(js_links_file):
+        return []
+
+    log("\n⚙️ [*] Đang phân tích JS Secrets & Hardcoded Credentials...", Colors.C)
+    js_urls = _read_txt_lines(js_links_file)[:30]
+    found_secrets = []
+
+    def fetch_and_scan(url):
+        try:
+            res = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            if res.status_code == 200 and res.text:
+                for name, pattern in SECRET_PATTERNS.items():
+                    matches = re.findall(pattern, res.text)
+                    for match in matches:
+                        secret_val = match if isinstance(match, str) else match[0]
+                        found_secrets.append({
+                            "type": name,
+                            "url": url,
+                            "secret_snippet": secret_val[:120]
+                        })
+        except Exception:
+            pass
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        executor.map(fetch_and_scan, js_urls)
+
+    out_file = os.path.join(folder, "js_secrets.json")
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(found_secrets, f, indent=2, ensure_ascii=False)
+
+    if found_secrets:
+        log(f"[+] Tìm thấy {len(found_secrets)} Secret(s) nhạy cảm trong các file JS!", Colors.G)
+    return found_secrets
+
+def run_arjun_idor_scan(combined_urls_file, folder, timeout=300):
+    """Săn tham số ẩn và nguy cơ IDOR bằng Arjun"""
+    if not tool_available("arjun") or not os.path.exists(combined_urls_file):
+        return {}
+
+    urls = _read_txt_lines(combined_urls_file)
+    api_urls = [u for u in urls if "/api/" in u or "id=" in u or "user=" in u][:10]
+    if not api_urls:
+        return {}
+
+    log("\n⚙️ [*] Đang chạy Arjun Parameter & IDOR Discovery...", Colors.C)
+    targets_file = os.path.join(folder, "arjun_targets.txt")
+    out_file = os.path.join(folder, "arjun_params.json")
+    with open(targets_file, "w") as f:
+        f.write("\n".join(api_urls) + "\n")
+
+    run_command("Arjun", ["arjun", "-oJ", out_file, "-i", targets_file, "-t", "5", "--stable"], timeout=timeout)
+
+    results = {}
+    if os.path.exists(out_file):
+        try:
+            with open(out_file, "r", encoding="utf-8") as f:
+                results = json.load(f)
+        except Exception:
+            pass
+    return results
 
 def send_telegram_file(file_path, caption=""):
     if not TELEGRAM_ENABLED or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -1252,6 +1315,10 @@ def main():
     if tool_available("subjs"):
         run_command("SubJS", ["subjs"], js_file, input_file=combined_urls, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
     ensure_file(js_file)
+
+    # BƯỚC 4.5: Phân tích Tĩnh JS Secrets & Arjun IDOR Discovery
+    analyze_js_secrets_deep(js_file, folder)
+    arjun_results = run_arjun_idor_scan(combined_urls, folder, timeout=args.timeout)
 
     # BƯỚC 5: Nuclei
     send_telegram("⏳ <b>[TIẾN TRÌNH]</b> Quét lỗ hổng bằng Nuclei...")
