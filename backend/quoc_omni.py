@@ -230,19 +230,52 @@ def log(msg, color=Colors.W):
     print(f"{color}{msg}{Colors.W}")
 
 def send_telegram(message):
-    if not TELEGRAM_ENABLED or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    token = TELEGRAM_TOKEN or os.environ.get("TELEGRAM_TOKEN", "")
+    chat_id = TELEGRAM_CHAT_ID or os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not TELEGRAM_ENABLED or not token or not chat_id:
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    for i in range(0, len(message), 4000):
-        try:
-            requests.post(
-                url,
-                json={"chat_id": TELEGRAM_CHAT_ID, "text": message[i:i+4000], "parse_mode": "HTML"},
-                timeout=10,
-            )
-        except requests.RequestException as e:
-            log(f"[!] Telegram timeout/lỗi mạng (bỏ qua): {e}", Colors.Y)
-            break
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    MAX_LEN = 4000
+
+    if len(message) > MAX_LEN:
+        text_to_send = message[:MAX_LEN] + "\n\n... (Báo cáo đã bị cắt ngắn do giới hạn của Telegram) ..."
+    else:
+        text_to_send = message
+
+    payload = {
+        "chat_id": chat_id,
+        "text": text_to_send,
+        "parse_mode": "HTML"
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code == 200:
+            log("[v] Đã gửi báo cáo Telegram thành công!", Colors.G)
+        else:
+            # Fallback plain text nếu HTML tag bị lỗi parse
+            fallback_payload = {
+                "chat_id": chat_id,
+                "text": text_to_send,
+            }
+            res_fb = requests.post(url, json=fallback_payload, timeout=10)
+            if res_fb.status_code != 200:
+                log(f"[!] Lỗi gửi Telegram: {res_fb.status_code} - {res_fb.text}", Colors.Y)
+            else:
+                log("[v] Đã gửi báo cáo Telegram thành công (Plain Text)!", Colors.G)
+    except Exception as e:
+        log(f"[!] Ngoại lệ khi gửi Telegram: {str(e)}", Colors.Y)
+
+def send_telegram_alert(target, report_text):
+    """Gửi cảnh báo Telegram với cơ chế giới hạn 4000 ký tự"""
+    message = (
+        f"🚨 <b>Báo Cáo Quét Bảo Mật ADQ</b> 🚨\n"
+        f"🎯 <b>Mục tiêu:</b> {target}\n"
+        f"📝 <b>Chi tiết:</b>\n"
+        f"{report_text}"
+    )
+    send_telegram(message)
 
 def send_telegram_file(file_path, caption=""):
     if not TELEGRAM_ENABLED or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
