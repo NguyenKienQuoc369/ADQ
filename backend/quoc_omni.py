@@ -15,7 +15,9 @@ from queue import Queue
 from io import StringIO
 from functools import lru_cache
 
-os.environ["PATH"] += os.pathsep + os.path.expanduser("~/go/bin")
+for extra_path in ["/root/go/bin", "/usr/local/bin", "/usr/local/go/bin", os.path.expanduser("~/go/bin")]:
+    if extra_path not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = f"{extra_path}{os.pathsep}{os.environ.get('PATH', '')}"
 
 # =================================================================
 # CẤU HÌNH HỆ THỐNG & HIỆU SUẤT

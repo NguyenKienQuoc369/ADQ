@@ -21,7 +21,8 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
     go install -v github.com/ffuf/ffuf/v2@latest && \
     go install -v github.com/tomnomnom/waybackurls@latest && \
-    go install -v github.com/lc/subjs@latest
+    go install -v github.com/lc/subjs@latest && \
+    cp $GOPATH/bin/* /usr/local/bin/
 
 # Thiết lập thư mục làm việc cho Python
 WORKDIR /app
