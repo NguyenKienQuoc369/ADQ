@@ -622,6 +622,8 @@ def parse_args():
     parser.add_argument("--use-dag", action="store_true", help="Kích hoạt Động cơ Thực thi Dạng Đồ thị (Event-Driven DAG Engine)")
     parser.add_argument("--fuzz-ws", action="store_true", help="Kích hoạt Fuzzing WebSockets Real-time Data Frames")
     parser.add_argument("--probe-grpc", action="store_true", help="Dò quét & Fuzzing bộ đệm nhị phân gRPC Microservices")
+    parser.add_argument("--raw-syn-scan", action="store_true", help="Kích hoạt Kernel Bypass Raw Socket SYN Port Prober")
+    parser.add_argument("--hive-mind", action="store_true", help="Kích hoạt Distributed Shared Memory (Redis Hive-Mind Swarm Intelligence)")
     return parser.parse_args()
 
 # =================================================================
