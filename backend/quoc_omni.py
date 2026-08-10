@@ -599,6 +599,10 @@ def parse_args():
     parser.add_argument("--nuclei-group-by-tech", action="store_true", help="Ưu tiên target theo tech stack (chạy Nuclei theo nhóm tech)")
     parser.add_argument("--telegram-files", action="store_true", help="Gửi file đính kèm qua Telegram")
     parser.add_argument("--cleanup", action="store_true", help="Dọn dẹp file tạm sau khi hoàn tất quét")
+    parser.add_argument("--oast-server", default="", help="Địa chỉ OAST Interaction Server, ví dụ: http://adq_oast:8888")
+    parser.add_argument("--auth-token", default="", help="Bearer Token hoặc Cookie dùng để quét sau đăng nhập (Behind-the-login)")
+    parser.add_argument("--auth-type", default="Bearer", help="Loại Auth: Bearer hoặc Cookie")
+    parser.add_argument("--waf-bypass", action="store_true", help="Bật Mutation Engine & WAF Evasion headers (HTTP Desync/Smuggling)")
     parser.add_argument("--logic-scan", action="store_true", help="Bật quét lỗ hổng logic (Race/IDOR/Workflow)")
     parser.add_argument("--logic-base-url", default="", help="Base URL cho các module logic, ví dụ: http://127.0.0.1:8001")
     parser.add_argument("--race-endpoint", default="", help="Endpoint test race condition, ví dụ: /api/v1/coupon/apply")
@@ -1229,7 +1233,22 @@ def main():
     if not os.path.exists(folder): os.makedirs(folder)
 
     start_time = time.time()
-    
+
+    # Đột phá 1 & 2: Thiết lập OAST Server, Authenticated Session Manager & Mutation Engine
+    from core.session_manager import AuthenticatedSessionManager
+    from core.payload_mutation import ContextAwarePayloadMutator
+    from core.oast_server import ADQInteractionServer
+
+    session_mgr = None
+    if args.auth_token:
+        session_mgr = AuthenticatedSessionManager(token_a=args.auth_token, auth_type=args.auth_type)
+        log(f"[🛡️ SessionManager] Đã nạp Auth Token ({args.auth_type}) cho quét sâu Behind-the-login", Colors.G)
+
+    oast_url = args.oast_server or os.getenv("OAST_SERVER_URL", "http://adq_oast:8888")
+    mutator = ContextAwarePayloadMutator() if args.waf_bypass else None
+    if args.waf_bypass:
+        log("[🔥 MutationEngine] Đã kích hoạt Dynamic WAF Bypass & Request Mutation Engine", Colors.G)
+
     send_telegram(f"▶️ <b>[KHỞI ĐỘNG] Mục tiêu:</b> <code>{target}</code>")
 
     tool_list = list(dict.fromkeys(["subfinder", "httpx-toolkit", "gau", "subjs", "nuclei", "ffuf"] + EXTRA_TOOLS))
