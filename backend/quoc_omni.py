@@ -15,6 +15,14 @@ from queue import Queue
 from io import StringIO
 from functools import lru_cache
 
+# HIGH-PERFORMANCE I/O EVENT LOOP (UVLOOP)
+try:
+    import uvloop
+    uvloop.install()
+    UVLOOP_ACTIVE = True
+except ImportError:
+    UVLOOP_ACTIVE = False
+
 for extra_path in ["/root/go/bin", "/usr/local/bin", "/usr/local/go/bin", os.path.expanduser("~/go/bin")]:
     if extra_path not in os.environ.get("PATH", ""):
         os.environ["PATH"] = f"{extra_path}{os.pathsep}{os.environ.get('PATH', '')}"
@@ -611,6 +619,9 @@ def parse_args():
     parser.add_argument("--token-a", default="", help="Token người dùng A")
     parser.add_argument("--token-b", default="", help="Token người dùng B")
     parser.add_argument("--workflow-endpoint", default="", help="Endpoint cuối quy trình, ví dụ: /api/v1/transfer/execute")
+    parser.add_argument("--use-dag", action="store_true", help="Kích hoạt Động cơ Thực thi Dạng Đồ thị (Event-Driven DAG Engine)")
+    parser.add_argument("--fuzz-ws", action="store_true", help="Kích hoạt Fuzzing WebSockets Real-time Data Frames")
+    parser.add_argument("--probe-grpc", action="store_true", help="Dò quét & Fuzzing bộ đệm nhị phân gRPC Microservices")
     return parser.parse_args()
 
 # =================================================================
