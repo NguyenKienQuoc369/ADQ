@@ -17,7 +17,8 @@ def test_normalize_target():
     """Kiểm tra hàm normalize_target với các dạng URL đầu vào khác nhau."""
     assert quoc_omni.normalize_target("http://example.com") == "example.com"
     assert quoc_omni.normalize_target("https://sub.target.org/") == "sub.target.org"
-    assert quoc_omni.normalize_target("127.0.0.1") == "127.0.0.1"
+    assert quoc_omni.normalize_target("localhost:3000") == "localhost:3000"
+    assert quoc_omni.normalize_target("127.0.0.1:8080") == "127.0.0.1:8080"
 
     with pytest.raises(ValueError):
         quoc_omni.normalize_target("http://example.com/test_path")
@@ -25,7 +26,7 @@ def test_normalize_target():
 
 def test_sanitize_folder_name():
     """Kiểm tra làm sạch tên thư mục."""
-    assert quoc_omni.sanitize_folder_name("127.0.0.1") == "recon_127_0_0_1"
+    assert quoc_omni.sanitize_folder_name("127.0.0.1:3000") == "recon_127_0_0_1_3000"
     assert quoc_omni.sanitize_folder_name("target-enterprise.com") == "recon_target-enterprise_com"
 
 

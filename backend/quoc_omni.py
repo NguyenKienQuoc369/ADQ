@@ -345,7 +345,7 @@ def normalize_target(raw_target):
     cleaned = raw_target.strip()
     cleaned = re.sub(r"^https?://", "", cleaned)
     cleaned = cleaned.strip("/")
-    if not re.fullmatch(r"[A-Za-z0-9.-]+", cleaned):
+    if not re.fullmatch(r"[A-Za-z0-9.:-]+", cleaned):
         raise ValueError("Target không hợp lệ. Vui lòng nhập domain hoặc IP (không kèm path).")
     return cleaned
 
@@ -360,8 +360,8 @@ def sanitize_folder_name(target):
     Returns:
         str: Tên folder an toàn để sử dụng
     """
-    # Thay dấu chấm bằng underscore
-    safe_name = target.replace(".", "_")
+    # Thay dấu chấm và hai chấm bằng underscore
+    safe_name = target.replace(".", "_").replace(":", "_")
     # Loại bỏ các ký tự không phải alphanumeric và underscore
     safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", safe_name)
     # Giới hạn độ dài để tránh lỗi filesystem (filesystem limit thường là 255)
@@ -408,7 +408,7 @@ def cleanup_temp_files(folder):
     temp_files = [
         "subdomains.txt", "dnsx_live.txt", "httpx_tech.txt", "history_urls.txt",
         "wayback_urls.txt", "crawl_urls.txt", "js_links.txt", "combined_urls.txt",
-        "open_ports.txt", "ffuf_main.txt"
+        "open_ports.txt", "ffuf_main.txt", "live_sites.txt", "nuclei_results.txt"
     ]
     for filename in temp_files:
         filepath = os.path.join(folder, filename)
