@@ -3,20 +3,25 @@ FROM python:3.11-slim
 
 # Cài đặt các gói hệ thống cơ bản và Golang
 RUN apt-get update && apt-get install -y \
-    wget curl git gcc make libpcap-dev \
-    golang-go netcat-openbsd \
+    wget curl git gcc make libpcap-dev golang-go netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
-# Thiết lập đường dẫn cho Go binaries
+# Cấu hình môi trường Go để cài đặt tool
 ENV GOPATH=/root/go
-ENV PATH=$PATH:/root/go/bin
+ENV PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
 
-# Cài đặt các công cụ bảo mật lõi và đổi tên httpx thành httpx-toolkit tránh xung đột
+# Cài đặt toàn bộ bộ công cụ từ ProjectDiscovery và các tool cần thiết
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
+    mv $GOPATH/bin/httpx $GOPATH/bin/httpx-toolkit && \
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
+    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
+    go install -v github.com/projectdiscovery/gau/v2/cmd/gau@latest && \
+    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
     go install -v github.com/ffuf/ffuf/v2@latest && \
-    mv /root/go/bin/httpx /root/go/bin/httpx-toolkit
+    go install -v github.com/tomnomnom/waybackurls@latest && \
+    go install -v github.com/tomnomnom/subjs@latest
 
 # Thiết lập thư mục làm việc cho Python
 WORKDIR /app
