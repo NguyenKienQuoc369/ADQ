@@ -17,11 +17,11 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
     go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
     go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
-    go install -v github.com/projectdiscovery/gau/v2/cmd/gau@latest && \
+    go install -v github.com/lc/gau/v2/cmd/gau@latest && \
     go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
     go install -v github.com/ffuf/ffuf/v2@latest && \
     go install -v github.com/tomnomnom/waybackurls@latest && \
-    go install -v github.com/tomnomnom/subjs@latest
+    go install -v github.com/lc/subjs@latest
 
 # Thiết lập thư mục làm việc cho Python
 WORKDIR /app
