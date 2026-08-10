@@ -39,7 +39,7 @@ DEFAULT_NUCLEI_RL_MIN = 50
 DEFAULT_NUCLEI_C_MIN = 10
 DEFAULT_NUCLEI_RL_STEP = 25
 DEFAULT_NUCLEI_C_STEP = 10
-EXTRA_TOOLS = ["naabu", "katana", "waybackurls", "dnsx", "httpx"]
+EXTRA_TOOLS = ["naabu", "katana", "waybackurls", "dnsx", "httpx-toolkit"]
 INTERESTING_KEYWORDS = [
     "admin", "login", "swagger", "graphql", "api", "debug", "backup", "test", "staging", "dev",
     ".env", ".git", ".zip", ".tar", ".gz", ".bak", ".sql", ".old"
@@ -403,6 +403,29 @@ def count_lines(file_path):
     with open(file_path, "r") as f:
         return len(f.readlines())
 
+def cleanup_temp_files(folder):
+    """Xóa các file tạm sinh ra trong quá trình quét, giải phóng dung lượng ổ cứng cho Worker."""
+    temp_files = [
+        "subdomains.txt", "dnsx_live.txt", "httpx_tech.txt", "history_urls.txt",
+        "wayback_urls.txt", "crawl_urls.txt", "js_links.txt", "combined_urls.txt",
+        "open_ports.txt", "ffuf_main.txt"
+    ]
+    for filename in temp_files:
+        filepath = os.path.join(folder, filename)
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
+
+    if os.path.isdir(folder):
+        for f in os.listdir(folder):
+            if (f.startswith("tech_") or f.startswith("nuclei_pass") or f.startswith("nuclei_tech_")) and f.endswith(".txt"):
+                try:
+                    os.remove(os.path.join(folder, f))
+                except Exception:
+                    pass
+
 def ensure_file(file_path):
     if not os.path.exists(file_path):
         with open(file_path, "w"):
@@ -477,6 +500,7 @@ def parse_args():
     parser.add_argument("--nuclei-two-pass", action="store_true", help="Chạy 2 lượt Nuclei (tech tags + CTF pack)")
     parser.add_argument("--nuclei-group-by-tech", action="store_true", help="Ưu tiên target theo tech stack (chạy Nuclei theo nhóm tech)")
     parser.add_argument("--telegram-files", action="store_true", help="Gửi file đính kèm qua Telegram")
+    parser.add_argument("--cleanup", action="store_true", help="Dọn dẹp file tạm sau khi hoàn tất quét")
     parser.add_argument("--logic-scan", action="store_true", help="Bật quét lỗ hổng logic (Race/IDOR/Workflow)")
     parser.add_argument("--logic-base-url", default="", help="Base URL cho các module logic, ví dụ: http://127.0.0.1:8001")
     parser.add_argument("--race-endpoint", default="", help="Endpoint test race condition, ví dụ: /api/v1/coupon/apply")
@@ -725,7 +749,7 @@ def build_checklist(highlights):
         "Tìm file backup hoặc cấu hình rò rỉ (.env/.git/.zip/.sql)",
         "Đọc nhanh nuclei_results.txt để ưu tiên lỗi nặng",
         "Kiểm tra tham số URL có token/secret",
-        "Mở screenshot để tìm trang quan trọng",
+        "Rà soát các endpoint có khả năng lộ cấu hình hệ thống",
     ]
     if highlights.get("critical_alerts"):
         steps.insert(0, "Ưu tiên xử lý các dòng HIGH/CRITICAL trước")
@@ -1110,16 +1134,18 @@ def main():
     
     send_telegram(f"▶️ <b>[KHỞI ĐỘNG] Mục tiêu:</b> <code>{target}</code>")
 
-    tool_list = ["subfinder", "httpx-toolkit", "gowitness", "gau", "subjs", "nuclei", "ffuf"] + EXTRA_TOOLS
+    tool_list = list(dict.fromkeys(["subfinder", "httpx-toolkit", "gau", "subjs", "nuclei", "ffuf"] + EXTRA_TOOLS))
     missing_tools = [tool for tool in tool_list if not tool_available(tool)]
     if missing_tools:
-        log(f"[!] Thiếu công cụ: {', '.join(missing_tools)}", Colors.Y)
+        log(f"[!] Cảnh báo: Thiếu các công cụ sau ({', '.join(missing_tools)}). Hệ thống sẽ bỏ qua và tiếp tục.", Colors.Y)
 
     # BƯỚC 1: Subdomain
     send_telegram("⏳ <b>[TIẾN TRÌNH]</b> Quét Subfinder...")
     sub_file = f"{folder}/subdomains.txt"
     if tool_available("subfinder"):
         run_command("Subfinder", ["subfinder", "-d", target, "-silent"], sub_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    else:
+        log("[!] Cảnh báo: subfinder không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(sub_file)
     with open(sub_file, "a") as f:
         f.write(f"{target}\n")
@@ -1138,6 +1164,8 @@ def main():
     ports_file = f"{folder}/open_ports.txt"
     if tool_available("naabu"):
         run_command("Naabu", ["naabu", "-l", sub_file, "-silent"], ports_file, timeout=args.timeout)
+    else:
+        log("[!] Cảnh báo: naabu không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(ports_file)
 
     # BƯỚC 2: Live Host
@@ -1145,30 +1173,27 @@ def main():
     live_file = f"{folder}/live_sites.txt"
     if tool_available("httpx-toolkit"):
         run_command("HTTPX", ["httpx-toolkit", "-l", sub_file_for_httpx, "-silent", "-mc", "200,301,302,403"], live_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    else:
+        log("[!] Cảnh báo: httpx-toolkit không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(live_file)
 
     live_count = count_lines(live_file)
 
     tech_file = f"{folder}/httpx_tech.txt"
-    if tool_available("httpx"):
-        run_command("HTTPX-Tech", ["httpx", "-l", live_file, "-title", "-tech-detect", "-status-code", "-silent"], tech_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    if tool_available("httpx-toolkit"):
+        run_command("HTTPX-Tech", ["httpx-toolkit", "-l", live_file, "-title", "-tech-detect", "-status-code", "-silent"], tech_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    else:
+        log("[!] Cảnh báo: httpx-toolkit không khả dụng cho tech-detect, bỏ qua.", Colors.Y)
     ensure_file(tech_file)
 
-    # BƯỚC 3 & 4: Screenshot & URL History
-    send_telegram(f"✅ <b>[THÔNG TIN]</b> Có {live_count} host đang hoạt động. Khởi chạy Gowitness & GAU...")
-    screenshot_dir = f"{folder}/screenshots"
-    if tool_available("gowitness"):
-        run_command(
-            "Gowitness",
-            ["gowitness", "-q", "scan", "file", "-f", live_file, "-s", screenshot_dir, "--write-none"],
-            timeout=args.timeout,
-            retries=args.retries,
-            backoff=args.retry_backoff,
-        )
+    # BƯỚC 3 & 4: URL Crawling & History
+    send_telegram(f"✅ <b>[THÔNG TIN]</b> Có {live_count} host đang hoạt động. Khởi chạy Crawl & GAU...")
 
     katana_file = f"{folder}/crawl_urls.txt"
     if tool_available("katana"):
         run_command("Katana", ["katana", "-list", live_file, "-silent"], katana_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    else:
+        log("[!] Cảnh báo: katana không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(katana_file)
 
     gau_file = f"{folder}/history_urls.txt"
@@ -1392,6 +1417,10 @@ def main():
         send_telegram_file(tech_file, "🧬 [TỆP] Tech stack (HTTPX)")
         send_telegram_file(ffuf_out, "📁 [TỆP] Kết quả dò thư mục (FFuf)")
     
+    if args.cleanup:
+        log("\n🧹 [*] Đang dọn dẹp các file tạm thời...", Colors.C)
+        cleanup_temp_files(folder)
+
     log(f"{Colors.G}🏁 [HOÀN TẤT] Đóng hệ thống.{Colors.W}")
 
 if __name__ == "__main__":

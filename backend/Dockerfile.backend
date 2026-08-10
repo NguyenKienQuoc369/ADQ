@@ -11,11 +11,12 @@ RUN apt-get update && apt-get install -y \
 ENV GOPATH=/root/go
 ENV PATH=$PATH:/root/go/bin
 
-# Cài đặt các công cụ bảo mật lõi
+# Cài đặt các công cụ bảo mật lõi và đổi tên httpx thành httpx-toolkit tránh xung đột
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/ffuf/ffuf/v2@latest
+    go install -v github.com/ffuf/ffuf/v2@latest && \
+    mv /root/go/bin/httpx /root/go/bin/httpx-toolkit
 
 # Thiết lập thư mục làm việc cho Python
 WORKDIR /app
