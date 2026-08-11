@@ -50,6 +50,22 @@ class ScanRequest(BaseModel):
     headers: Dict[str, str] = Field(default_factory=dict)
 
 
+class CopilotChatRequest(BaseModel):
+    prompt: str
+    target: Optional[str] = None
+    job_id: Optional[str] = None
+
+
+class CopilotAnalyzeRequest(BaseModel):
+    job_id: str
+
+
+class CopilotPatchRequest(BaseModel):
+    vulnerability_type: str
+    endpoint: str
+    framework: str = "Next.js"
+
+
 def _build_command(req: ScanRequest) -> List[str]:
     cmd = [sys.executable, "quoc_omni.py", req.target]
 
@@ -287,3 +303,77 @@ def index_page():
             "message": "Backend is running. Frontend static assets are not bundled in this container.",
         }
     )
+
+
+# =========================================================================
+# ADQ SECURITY COPILOT API ENDPOINTS
+# =========================================================================
+
+@app.post("/api/copilot/chat")
+async def copilot_chat(req: CopilotChatRequest):
+    """ADQ Security Copilot - Interactive Chat Endpoint."""
+    try:
+        from core.copilot_engine import ADQSecurityCopilot
+        copilot = ADQSecurityCopilot()
+        system_instruction = (
+            "Bạn là ADQ Security Copilot - Trí tuệ Nhân tạo Tự chủ (Agentic AI) chuyên sâu về Pentesting & DevSecOps. "
+            "Trả lời chính xác, thực tế bằng tiếng Việt chuẩn bảo mật."
+        )
+        res = copilot._call_gemini_api(req.prompt, system_instruction=system_instruction)
+        return JSONResponse({"ok": True, "copilot_response": res})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/copilot/analyze")
+async def copilot_analyze_job(req: CopilotAnalyzeRequest):
+    """ADQ Security Copilot - Execute 4-Phase Agentic Analysis on Scan Job."""
+    try:
+        from core.copilot_engine import ADQSecurityCopilot
+        copilot = ADQSecurityCopilot()
+
+        job_info = JOBS.get(req.job_id)
+        scan_data = {}
+        if job_info:
+            target = job_info.get("target", "unknown")
+            target_clean = target.replace("http://", "").replace("https://", "").strip("/")
+            folder = "".join([c if c.isalnum() or c in (".", "_", "-") else "_" for c in target_clean])
+            res_path = os.path.join(BASE_DIR, folder, "result.json")
+            if os.path.exists(res_path):
+                with open(res_path, "r", encoding="utf-8") as f:
+                    scan_data = json.load(f)
+
+        if not scan_data:
+            scan_data = {"target": req.job_id, "vulnerabilities": [], "live_hosts": []}
+
+        analysis = copilot.analyze_scan_job(scan_data)
+        return JSONResponse({"ok": True, "job_id": req.job_id, "analysis": analysis})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/copilot/patch")
+async def copilot_generate_patch(req: CopilotPatchRequest):
+    """ADQ Security Copilot - One-Click Fix Code Patch Generator."""
+    try:
+        from core.copilot_engine import ADQSecurityCopilot
+        copilot = ADQSecurityCopilot()
+        patch_res = copilot.generate_one_click_fix(
+            vulnerability_type=req.vulnerability_type,
+            endpoint=req.endpoint,
+            framework=req.framework,
+        )
+        return JSONResponse({"ok": True, "patch_result": patch_res})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/copilot/credits")
+async def copilot_credits_usage():
+    """ADQ Security Copilot - AI Credits & Token Usage Tracking."""
+    return JSONResponse({
+        "ok": True,
+        "credit_balance": 10000,
+        "tier": "FinTech Ultimate Auto-Pilot",
+        "pricing": "1,000 tokens = 10 credits",
+    })
