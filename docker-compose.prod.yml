@@ -52,6 +52,8 @@ services:
       - REDIS_URL=redis://adq_redis:6379/0
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.6-flash}
     depends_on:
       adq_redis:
         condition: service_healthy

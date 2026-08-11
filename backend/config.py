@@ -27,6 +27,9 @@ class Config:
     EXTRA_TOOLS: tuple = tuple(os.environ.get("EXTRA_TOOLS", "naabu,katana,waybackurls,dnsx,httpx").split(","))
     SUPABASE_URL: str = os.environ.get("SUPABASE_URL", "")
     SUPABASE_KEY: str = os.environ.get("SUPABASE_KEY", "")
+    GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+    GEMINI_MODEL_FALLBACKS: str = os.environ.get("GEMINI_MODEL_FALLBACKS", "gemini-3.6-flash,gemini-3.5-flash,gemini-flash-latest")
     AI_ENABLED: bool = os.environ.get("AI_ENABLED", "false").lower() in ["1", "true", "yes"]
     AI_API_URL: str = os.environ.get("AI_API_URL", "")
     AI_API_KEY: str = os.environ.get("AI_API_KEY", "")

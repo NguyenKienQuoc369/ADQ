@@ -5,6 +5,11 @@ import os
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 import requests
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except ImportError:
+    pass
 
 try:
     from core.copilot_masker import SensitiveDataMasker  # type: ignore
@@ -20,7 +25,13 @@ except ImportError:
 logger = logging.getLogger("ADQ.Copilot")
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+GEMINI_MODEL_FALLBACKS = [
+    m.strip() for m in os.environ.get(
+        "GEMINI_MODEL_FALLBACKS",
+        "gemini-3.6-flash,gemini-3.5-flash,gemini-flash-latest",
+    ).split(",") if m.strip()
+]
 DEFAULT_CREDITS_PER_1K_TOKENS = 10  # 1,000 tokens = 10 credits
 
 
@@ -134,6 +145,16 @@ class ADQSecurityCopilot:
     # GOOGLE GEMINI API CALL & FUNCTION CALLING
     # =========================================================================
 
+    def _models_to_try(self) -> List[str]:
+        ordered = [self.model] + GEMINI_MODEL_FALLBACKS
+        seen = set()
+        result = []
+        for item in ordered:
+            if item and item not in seen:
+                seen.add(item)
+                result.append(item)
+        return result
+
     def _call_gemini_api(self, prompt: str, system_instruction: Optional[str] = None) -> Dict[str, Any]:
         """Dispatches request to Google Gemini API."""
         if not self.api_key:
@@ -147,7 +168,6 @@ class ADQSecurityCopilot:
         if cached_res:
             return cached_res
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
         headers = {"Content-Type": "application/json"}
 
         payload: Dict[str, Any] = {
@@ -168,48 +188,65 @@ class ADQSecurityCopilot:
                 "parts": [{"text": system_instruction}]
             }
 
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=30)
-            if resp.status_code != 200:
-                return {
-                    "error": f"Gemini API returned status {resp.status_code}: {resp.text}",
-                    "status": "API_ERROR",
+        errors: List[Dict[str, Any]] = []
+
+        for model_name in self._models_to_try():
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
+            try:
+                resp = requests.post(url, json=payload, headers=headers, timeout=30)
+                if resp.status_code != 200:
+                    errors.append({
+                        "model": model_name,
+                        "status_code": resp.status_code,
+                        "detail": resp.text[:300],
+                    })
+                    continue
+
+                res_json = resp.json()
+                candidates = res_json.get("candidates", [])
+                if not candidates:
+                    errors.append({
+                        "model": model_name,
+                        "status_code": 200,
+                        "detail": "No candidates returned",
+                    })
+                    continue
+
+                text_content = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                usage_metadata = res_json.get("usageMetadata", {})
+
+                input_tokens = usage_metadata.get("promptTokenCount", len(prompt) // 4)
+                output_tokens = usage_metadata.get("candidatesTokenCount", len(text_content) // 4)
+                total_tokens = usage_metadata.get("totalTokenCount", input_tokens + output_tokens)
+
+                credits_deducted = max(1, (total_tokens * DEFAULT_CREDITS_PER_1K_TOKENS) // 1000)
+
+                result = {
+                    "status": "SUCCESS",
+                    "text": text_content,
+                    "model": model_name,
+                    "token_usage": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens,
+                    },
+                    "credits_deducted": credits_deducted,
+                    "cached": False,
                 }
 
-            res_json = resp.json()
-            candidates = res_json.get("candidates", [])
-            if not candidates:
-                return {"error": "No candidates returned from Gemini API", "status": "EMPTY_RESPONSE"}
+                self._set_cache(prompt, result)
+                return result
+            except Exception as e:
+                errors.append({
+                    "model": model_name,
+                    "exception": str(e),
+                })
 
-            text_content = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-            usage_metadata = res_json.get("usageMetadata", {})
-
-            input_tokens = usage_metadata.get("promptTokenCount", len(prompt) // 4)
-            output_tokens = usage_metadata.get("candidatesTokenCount", len(text_content) // 4)
-            total_tokens = usage_metadata.get("totalTokenCount", input_tokens + output_tokens)
-
-            # FinOps: Credit Deduction Calculation
-            credits_deducted = max(1, (total_tokens * DEFAULT_CREDITS_PER_1K_TOKENS) // 1000)
-
-            result = {
-                "status": "SUCCESS",
-                "text": text_content,
-                "model": self.model,
-                "token_usage": {
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "total_tokens": total_tokens,
-                },
-                "credits_deducted": credits_deducted,
-                "cached": False,
-            }
-
-            # Cache successful response
-            self._set_cache(prompt, result)
-            return result
-
-        except Exception as e:
-            return {"error": str(e), "status": "EXCEPTION"}
+        return {
+            "status": "API_ERROR",
+            "error": "All Gemini model attempts failed",
+            "attempts": errors,
+        }
 
     # =========================================================================
     # AGENTIC WORKFLOW 4-PHASE ANALYSIS
