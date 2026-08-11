@@ -94,3 +94,44 @@ def test_copilot_analyze_scan_job():
     analysis = copilot.analyze_scan_job(mock_job)
 
     assert "compressed_findings" in analysis
+
+
+def test_copilot_log_correlation_escalation():
+    copilot = ADQSecurityCopilot()
+
+    mock_scan_results = {
+        "target": "db.fintech.bank.internal",
+        "ports": [{"port": 5432, "is_open": True}],
+        "vulnerabilities": [
+            {
+                "template_id": "postgres-connection-leak",
+                "raw_secret": "postgresql://admin:SecretPass@127.0.0.1:5432/db",
+            }
+        ]
+    }
+
+    compressed = copilot._compress_scan_findings(mock_scan_results)
+
+    assert compressed["correlated_attack_chains_count"] == 1
+    first_anomaly = compressed["anomalies_summary"][0]
+    assert first_anomaly["severity"] == "critical"
+    assert "postgresql" in first_anomaly["template_id"]
+
+
+def test_copilot_function_call_dispatch():
+    copilot = ADQSecurityCopilot()
+
+    func_call_sample = {
+        "name": "trigger_deep_scan",
+        "args": {
+            "target_path": "/api/v1/admin/debug",
+            "bypass_waf": True,
+            "reason": "Found 403 Forbidden with Express headers"
+        }
+    }
+
+    dispatch_res = copilot.dispatch_agent_function_call(func_call_sample)
+
+    assert dispatch_res["function"] == "trigger_deep_scan"
+    assert dispatch_res["args"]["target_path"] == "/api/v1/admin/debug"
+    assert dispatch_res["dispatched"] is True

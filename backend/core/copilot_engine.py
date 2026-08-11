@@ -34,6 +34,61 @@ GEMINI_MODEL_FALLBACKS = [
 ]
 DEFAULT_CREDITS_PER_1K_TOKENS = 10  # 1,000 tokens = 10 credits
 
+DEFAULT_COPILOT_SYSTEM_INSTRUCTION = (
+    "Ngươi là ADQ Security Copilot - Chuyên gia Kiến trúc DevSecOps & Pentesting cấp cao.\n"
+    "QUY TẮC TƯ DUY & HÀNH ĐỘNG CỐT LÕI:\n"
+    "1. NHÂN CÁCH: Tuyệt đối không chào hỏi rườm rà. Lạnh lùng, ngắn gọn, chính xác tuyệt đối, chuẩn DevSecOps.\n"
+    "2. CHỐNG ẢO GIÁC (Zero-Hallucination): Chỉ phân tích dựa trên chuỗi JSON log được cung cấp. Tuyệt đối không tự bịa đặt lỗ hổng nếu không có bằng chứng thực tế trong log.\n"
+    "3. CHUẨN ĐẦU RA (Markdown Output): Bắt buộc trả về định dạng Markdown tiêu chuẩn chứa đủ 4 mục:\n"
+    "   - **Đánh giá Mức độ Nghiêm trọng (Severity)**: CRITICAL / HIGH / MEDIUM / LOW / INFO\n"
+    "   - **Phân tích Tương quan & Chuỗi Tấn công (Attack Chain Correlation)**\n"
+    "   - **Nguyên nhân Gốc rễ (Root Cause Analysis)**\n"
+    "   - **Mã Code Vá Lỗi & Cấu hình An toàn (Remediation Patch & Firewall Rule)**"
+)
+
+COPILOT_TOOLS_DECLARATION = [
+    {
+        "functionDeclarations": [
+            {
+                "name": "trigger_deep_scan",
+                "description": "Ra lệnh cho Worker-Elite kích hoạt rà quét sâu bằng WAF Evasion và Wordlists nâng cao trên endpoint nghi ngờ.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "target_path": {"type": "STRING", "description": "Đường dẫn endpoint cần quét sâu, ví dụ: /api/admin"},
+                        "bypass_waf": {"type": "BOOLEAN", "description": "Bật cờ lách WAF Mutation Engine"},
+                        "reason": {"type": "STRING", "description": "Lý do AI ra lệnh quét lại"}
+                    },
+                    "required": ["target_path"]
+                }
+            },
+            {
+                "name": "run_arjun_idor_scan",
+                "description": "Dò tìm tham số ẩn và kiểm tra lỗ hổng IDOR/BOLA trên endpoint.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "endpoint": {"type": "STRING", "description": "Endpoint URL cần kiểm tra IDOR"},
+                        "user_id_param": {"type": "STRING", "description": "Tên tham số định danh người dùng nếu có"}
+                    },
+                    "required": ["endpoint"]
+                }
+            },
+            {
+                "name": "fuzz_websocket",
+                "description": "Thực hiện Fuzzing Real-time WebSocket Data Frames trên kênh WebSocket nghi ngờ.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "ws_url": {"type": "STRING", "description": "WebSocket URL (ws:// hoặc wss://)"}
+                    },
+                    "required": ["ws_url"]
+                }
+            }
+        ]
+    }
+]
+
 
 class ADQSecurityCopilot:
     """
@@ -73,14 +128,91 @@ class ADQSecurityCopilot:
     # FINOPS: LOG COMPRESSION & REDIS CACHING
     # =========================================================================
 
+    def _correlate_attack_chains(self, scan_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Log Correlation Engine: Cross-vector Attack Chain Analysis
+        Correlates Open Service/DB Ports + Exposed Credentials/Configs -> Attack Chain Escalation
+        """
+        correlated_chains = []
+        target = scan_results.get("target", "unknown")
+        
+        # 1. Identify Open Ports
+        open_ports = set()
+        ports_list = scan_results.get("ports", []) or scan_results.get("highlights", {}).get("ports", [])
+        for p in ports_list:
+            if isinstance(p, dict):
+                port_num = p.get("port") or p.get("port_number")
+                if p.get("is_open") or p.get("state") == "open":
+                    open_ports.add(int(port_num)) if port_num else None
+            elif isinstance(p, (int, str)) and str(p).isdigit():
+                open_ports.add(int(p))
+
+        # 2. Identify Leaked Secrets / Credentials
+        vulns = scan_results.get("vulnerabilities", []) or scan_results.get("highlights", {}).get("nuclei", [])
+        js_secrets = scan_results.get("js_analysis", {}).get("secrets", [])
+        
+        has_db_secret = False
+        secret_sample = ""
+        
+        for v in vulns:
+            v_str = str(v).lower()
+            if any(k in v_str for k in ["postgres", "mysql", "database", "connection_string", "db_pass", "secret"]):
+                has_db_secret = True
+                secret_sample = str(v.get("raw_secret") or v.get("template_id") or "Exposed DB Credential")
+                break
+        
+        if not has_db_secret and js_secrets:
+            has_db_secret = True
+            secret_sample = str(js_secrets[0]) if js_secrets else "Client-side JS Secret"
+
+        # 3. Cross-Vector Escalation Rules
+        sensitive_db_ports = {
+            5432: ("PostgreSQL", "iptables -A INPUT -p tcp --dport 5432 -j DROP"),
+            3306: ("MySQL", "iptables -A INPUT -p tcp --dport 3306 -j DROP"),
+            27017: ("MongoDB", "iptables -A INPUT -p tcp --dport 27017 -j DROP"),
+            6379: ("Redis", "iptables -A INPUT -p tcp --dport 6379 -j DROP"),
+            1433: ("MSSQL", "iptables -A INPUT -p tcp --dport 1433 -j DROP"),
+            22: ("SSH", "ufw deny 22/tcp"),
+        }
+
+        for port, (service_name, firewall_cmd) in sensitive_db_ports.items():
+            if port in open_ports and has_db_secret:
+                correlated_chains.append({
+                    "template_id": f"correlated-attack-chain-{service_name.lower()}-compromise",
+                    "severity": "critical",
+                    "title": f"CẢNH BÁO CRITICAL: Chuỗi Tấn công Dịch vụ {service_name} Public + Lộ Credential",
+                    "attack_chain_correlation": (
+                        f"Phát hiện dịch vụ {service_name} mở công khai trên Cổng {port} "
+                        f"kết hợp dữ liệu Credential lộ từ client-side ({secret_sample}). "
+                        f"Kẻ tấn công có thể dùng thông tin này brute-force/login trực tiếp vào dịch vụ nội bộ."
+                    ),
+                    "recommended_remediation": f"Tắt public port {port} lập tức. Lệnh khắc phục: `{firewall_cmd}`",
+                })
+
+        return correlated_chains
+
     def _compress_scan_findings(self, scan_results: Dict[str, Any]) -> Dict[str, Any]:
-        """FinOps: Compress raw scan logs by grouping noise and retaining anomalies."""
+        """FinOps: Compress raw scan logs by grouping noise, correlating vectors, and retaining anomalies."""
         target = scan_results.get("target", "unknown")
         raw_vulns = scan_results.get("vulnerabilities", []) or scan_results.get("highlights", {}).get("nuclei", [])
         live_hosts = scan_results.get("live_hosts", [])
 
-        # Group vulnerabilities by template_id / type to reduce token payload
+        # Step 1: Run Multi-Vector Attack Chain Correlation
+        correlated_chains = self._correlate_attack_chains(scan_results)
+
+        # Step 2: Group vulnerabilities by template_id / type to reduce token payload
         grouped_vulns: Dict[str, Dict[str, Any]] = {}
+        
+        # Prioritize Correlated Attack Chains first
+        for chain in correlated_chains:
+            grouped_vulns[chain["template_id"]] = {
+                "template_id": chain["template_id"],
+                "severity": chain["severity"],
+                "count": 1,
+                "correlation": chain["attack_chain_correlation"],
+                "remediation": chain["recommended_remediation"],
+            }
+
         for v in raw_vulns:
             v_type = v.get("template_id") or v.get("title") or "generic_finding"
             severity = (v.get("severity") or "info").lower()
@@ -105,6 +237,7 @@ class ADQSecurityCopilot:
         compressed = {
             "target": target,
             "total_live_hosts": len(live_hosts),
+            "correlated_attack_chains_count": len(correlated_chains),
             "live_hosts_sample": [h.get("url") if isinstance(h, dict) else str(h) for h in live_hosts[:5]],
             "anomalies_summary": list(grouped_vulns.values())[:30],
         }
@@ -155,8 +288,52 @@ class ADQSecurityCopilot:
                 result.append(item)
         return result
 
-    def _call_gemini_api(self, prompt: str, system_instruction: Optional[str] = None) -> Dict[str, Any]:
-        """Dispatches request to Google Gemini API."""
+    def dispatch_agent_function_call(self, function_call: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Executes 'Bắn lệnh ngược' Function Calling from Copilot down to Redis Queue / Worker Execution Engine.
+        Supported tools: trigger_deep_scan, run_arjun_idor_scan, fuzz_websocket
+        """
+        func_name = function_call.get("name")
+        args = function_call.get("args", {})
+
+        logger.info(f"Copilot Function Call Triggered: {func_name} with args {args}")
+
+        dispatch_status = {
+            "function": func_name,
+            "args": args,
+            "dispatched": False,
+            "queue": "scan_queue",
+            "message": "",
+        }
+
+        try:
+            if self.redis_client:
+                job_payload = {
+                    "job_id": f"job_copilot_{int(time.time())}",
+                    "triggered_by": "ADQ_SECURITY_COPILOT",
+                    "function": func_name,
+                    "args": args,
+                    "status": "queued",
+                }
+                self.redis_client.lpush("scan_queue", json.dumps(job_payload))
+                dispatch_status["dispatched"] = True
+                dispatch_status["job_id"] = job_payload["job_id"]
+                dispatch_status["message"] = f"Job {job_payload['job_id']} pushed to Redis scan_queue for Worker-Elite"
+            else:
+                dispatch_status["dispatched"] = True
+                dispatch_status["message"] = f"Simulated dispatch of {func_name} (Redis in-memory mode)"
+        except Exception as e:
+            dispatch_status["message"] = f"Dispatch failed: {e}"
+
+        return dispatch_status
+
+    def _call_gemini_api(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        enable_tools: bool = False,
+    ) -> Dict[str, Any]:
+        """Dispatches request to Google Gemini API with System Instructions and Function Calling."""
         if not self.api_key:
             return {
                 "error": "GEMINI_API_KEY is missing. Set GEMINI_API_KEY environment variable.",
@@ -183,10 +360,13 @@ class ADQSecurityCopilot:
             }
         }
 
-        if system_instruction:
-            payload["systemInstruction"] = {
-                "parts": [{"text": system_instruction}]
-            }
+        sys_inst = system_instruction or DEFAULT_COPILOT_SYSTEM_INSTRUCTION
+        payload["systemInstruction"] = {
+            "parts": [{"text": sys_inst}]
+        }
+
+        if enable_tools:
+            payload["tools"] = COPILOT_TOOLS_DECLARATION
 
         errors: List[Dict[str, Any]] = []
 
@@ -212,16 +392,24 @@ class ADQSecurityCopilot:
                     })
                     continue
 
-                text_content = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                usage_metadata = res_json.get("usageMetadata", {})
+                parts = candidates[0].get("content", {}).get("parts", [])
+                text_content = ""
+                function_call = None
 
+                for p in parts:
+                    if "text" in p:
+                        text_content += p["text"]
+                    if "functionCall" in p:
+                        function_call = p["functionCall"]
+
+                usage_metadata = res_json.get("usageMetadata", {})
                 input_tokens = usage_metadata.get("promptTokenCount", len(prompt) // 4)
                 output_tokens = usage_metadata.get("candidatesTokenCount", len(text_content) // 4)
                 total_tokens = usage_metadata.get("totalTokenCount", input_tokens + output_tokens)
 
                 credits_deducted = max(1, (total_tokens * DEFAULT_CREDITS_PER_1K_TOKENS) // 1000)
 
-                result = {
+                result: Dict[str, Any] = {
                     "status": "SUCCESS",
                     "text": text_content,
                     "model": model_name,
@@ -233,6 +421,10 @@ class ADQSecurityCopilot:
                     "credits_deducted": credits_deducted,
                     "cached": False,
                 }
+
+                if function_call:
+                    result["function_call"] = function_call
+                    result["function_dispatch_result"] = self.dispatch_agent_function_call(function_call)
 
                 self._set_cache(prompt, result)
                 return result
@@ -260,28 +452,28 @@ class ADQSecurityCopilot:
         3. Function Calling Detection
         4. Synthesis & Actionable Remediation
         """
-        # Phase 1: Ingestion & Data Masking
+        # Phase 1: Ingestion, Masking & Cross-Vector Correlation
         compressed = self._compress_scan_findings(scan_results)
 
-        system_instruction = (
-            "Bạn là ADQ Security Copilot - Trí tuệ Nhân tạo Tự chủ (Agentic AI) chuyên sâu về Pentesting & DevSecOps. "
-            "Nhiệm vụ: Đánh giá tương quan chuỗi tấn công (Chain-of-Thought), đề xuất lệnh điều phối DAG Workers (Function Calling), "
-            "và sinh báo cáo khắc phục lỗ hổng chính xác cho lập trình viên. "
-            "Phản hồi ngắn gọn, chính xác bằng tiếng Việt chuẩn DevSecOps."
-        )
-
         prompt = f"""
-Dưới đây là dữ liệu rà quét an ninh đã được làm sạch và nén gọn:
+Dưới đây là dữ liệu rà quét an ninh đã được làm sạch, nén gọn và đánh giá tương quan:
 {json.dumps(compressed, ensure_ascii=False, indent=2)}
 
-Hãy thực hiện phân tích 4 Pha Agentic AI:
-1. [Chain-of-Thought]: Xâu chuỗi các điểm dị thường để chỉ ra kịch bản tấn công nguy hiểm nhất (ví dụ: Lộ credential + Port mở -> DB Compromise).
-2. [Function Calling Recommendations]: Đề xuất 1-3 hành động điều phối worker tiếp theo (ví dụ: `run_arjun_idor_scan`, `fuzz_websocket`, `run_deep_js_analysis`).
-3. [Executive Summary]: Tóm tắt 3 câu về mức độ rủi ro tổng quan cho C-Level.
-4. [One-Click Remediation Code]: Cung cấp mã vá mẫu trực tiếp cho framework tương ứng.
+Hãy thực hiện phân tích 4 Pha Agentic AI theo đúng cấu trúc Markdown yêu cầu:
+1. **Đánh giá Mức độ Nghiêm trọng (Severity)**: Chọn mức cao nhất trong [CRITICAL, HIGH, MEDIUM, LOW, INFO] kèm lý do.
+2. **Phân tích Tương quan & Chuỗi Tấn công (Attack Chain Correlation)**:
+   - Xâu chuỗi các điểm dị thường (ví dụ: Port 5432 mở + Credential lộ từ JS) để chỉ ra kịch bản tấn công nguy hiểm nhất.
+3. **Nguyên nhân Gốc rễ (Root Cause Analysis)**: Tóm tắt nguyên nhân kỹ thuật cốt lõi trong 2 câu.
+4. **Mã Code Vá Lỗi & Cấu hình An toàn (Remediation Patch & Firewall Rule)**:
+   - Cung cấp đoạn mã vá lỗi mẫu hoặc lệnh firewall (iptables/ufw) chính xác.
+   - Đề xuất Function Calling nếu cần quét sâu hơn (ví dụ: trigger_deep_scan, run_arjun_idor_scan).
 """
 
-        api_res = self._call_gemini_api(prompt, system_instruction=system_instruction)
+        api_res = self._call_gemini_api(
+            prompt,
+            system_instruction=DEFAULT_COPILOT_SYSTEM_INSTRUCTION,
+            enable_tools=True,
+        )
         api_res["compressed_findings"] = compressed
         return api_res
 
