@@ -263,7 +263,12 @@ export default function () {{
         def get_worker_session():
             if not getattr(thread_local, "session", None):
                 if has_curl_cffi:
-                    thread_local.session = curl_cffi_requests.Session(impersonate="chrome120")
+                    # Using fast gevent/async curl_cffi session without TLS renegotiation overhead per request
+                    thread_local.session = curl_cffi_requests.Session(
+                        impersonate="chrome120",
+                        timeout=5,
+                        max_clients=100
+                    )
                 else:
                     thread_local.session = None
             return thread_local.session

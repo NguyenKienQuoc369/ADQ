@@ -922,6 +922,29 @@ def run_stress_module():
         # Background stress test execution task
         def execute_bg():
             nonlocal stress_result
+            if exec_mode == 2:
+                # Distributed Swarm execution across local worker threads and async swarm dispatch
+                async def run_swarm_dispatch():
+                    try:
+                        from backend.core.hive_mind import HiveMindNode
+                    except ImportError:
+                        from core.hive_mind import HiveMindNode
+
+                    hive = HiveMindNode(node_id="Master-CLI-Dispatcher")
+                    await hive.connect()
+                    for partition in partitions:
+                        await hive.broadcast_event(
+                            event_type="EXECUTE_STRESS_SUBJOB",
+                            payload=partition
+                        )
+
+                import asyncio
+                try:
+                    asyncio.run(run_swarm_dispatch())
+                except Exception as swarm_err:
+                    pass
+
+            # Execute high-throughput engine on primary node
             stress_result = orchestrator.execute_stress_test(
                 target_url=target,
                 bearer_token=bearer_token,
