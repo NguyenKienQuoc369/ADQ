@@ -346,7 +346,7 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
         "counts": {
             "subdomains": len(subdomains),
             "live_hosts": len(live_hosts),
-            "crawled_urls": len(exposed_paths) + len(subdomains) + 5,
+            "crawled_urls": 1 + len(endpoints_to_probe) + len(subdomains),
             "open_ports": len(open_ports),
             "vulns": len(vulns),
         },

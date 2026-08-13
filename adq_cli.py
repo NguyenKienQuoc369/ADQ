@@ -70,7 +70,7 @@ def render_telegram_style_scan_report(
     action_advice: str = "",
     artifacts: Optional[List[str]] = None
 ):
-    counts = counts if counts is not None else {"subdomains": 0, "live_hosts": 1, "crawled_urls": 5, "open_ports": 1, "vulns": 0}
+    counts = counts if counts is not None else {"subdomains": 0, "live_hosts": 0, "crawled_urls": 0, "open_ports": 0, "vulns": 0}
     vulns = vulns if vulns is not None else []
     secrets = secrets if secrets is not None else []
     paths = paths if paths is not None else []
@@ -99,7 +99,7 @@ def render_telegram_style_scan_report(
     summary_table.add_column("Trạng thái", style="bold green")
 
     summary_table.add_row("Subdomains Tìm thấy", str(counts.get("subdomains", 0)), "✅ Đã xác minh DNS")
-    summary_table.add_row("Live Hosts Hoạt động", str(counts.get("live_hosts", 1)), "🌐 HTTP/HTTPS Alive")
+    summary_table.add_row("Live Hosts Hoạt động", str(counts.get("live_hosts", 0)), "🌐 HTTP/HTTPS Alive")
     summary_table.add_row("URL Thu thập (GAU/Katana)", str(counts.get("crawled_urls", 0)), "🔗 Crawled & Indexed")
     summary_table.add_row("Cổng mở (Naabu)", str(counts.get("open_ports", 0)), "🧭 Scanned Ports")
     summary_table.add_row("Tổng Lỗ hổng Phát hiện", str(counts.get("vulns", 0)), "🚨 Active Threats")
@@ -512,7 +512,7 @@ def run_scan_module():
         await asyncio.sleep(0.4)
         return {
             "crawled_urls": real_scan.get("exposed_paths", [target]),
-            "parameters": ["id", "token", "query", "user"]
+            "parameters": []
         }
 
     async def step_vuln_nuclei(results):
@@ -544,16 +544,31 @@ def run_scan_module():
         }
 
     async def step_stress_k6(results):
-        await asyncio.sleep(0.5)
-        return {
-            "stress_metrics": {
-                "total_requests": 100,
-                "status_200": 98,
-                "status_429_rate_limited": 2,
-                "status_500_crashed": 0,
-                "rps": 20.0
+        try:
+            from backend.core.stress_orchestrator import StressOrchestrator
+            orch = StressOrchestrator()
+            res = orch.execute_stress_test(target_url=target, target_rps=100, duration_sec=2)
+            m = res.get("metrics", {})
+            return {
+                "stress_metrics": {
+                    "total_requests": m.get("total_requests", 0),
+                    "status_200": m.get("status_200", 0),
+                    "status_429_rate_limited": m.get("status_429", 0),
+                    "status_500_crashed": m.get("status_500", 0),
+                    "rps": m.get("actual_rps", 0.0)
+                }
             }
-        }
+        except Exception as e:
+            return {
+                "stress_metrics": {
+                    "total_requests": 0,
+                    "status_200": 0,
+                    "status_429_rate_limited": 0,
+                    "status_500_crashed": 0,
+                    "rps": 0.0,
+                    "error": str(e)
+                }
+            }
 
     # Register Nodes into DAG Graph based on Tier Capabilities
     dag.add_node("node_recon", step_recon, label="Surface & Subdomain Discovery (Worker-Light)", parent_id="ROOT")
@@ -987,7 +1002,7 @@ def interactive_copilot_session(target: str = "https://target-bank.com", scan_da
         f"[bold magenta]           [ ADQ SECURITY COPILOT - AGENTIC AI SESSION ]           [/bold magenta]\n"
         f"[bold white]🎯 Mục tiêu đang thảo luận:[/bold white] [bold cyan]{target}[/bold cyan]\n"
         f"[dim]Gõ 'exit' hoặc 'quit' để quay lại menu chính.[/dim]\n"
-        f"[dim]Gõ 'patch' để sinh mã vá lỗi One-Click Fix | Gõ 'report' để xem lại báo cáo scan.[/dim]",
+        f"[dim]⚡ Phím tắt nhanh: 'stress' (Load Test k6) | 'deep' (Quét sâu Endpoint) | 'idor' (Dò IDOR) | 'patch' (Tạo bản vá)[/dim]",
         border_style="magenta"
     ))
 
@@ -1007,8 +1022,8 @@ def interactive_copilot_session(target: str = "https://target-bank.com", scan_da
                 f"DỮ LIỆU RÀ QUÉT MỤC TIÊU VỪA HOÀN THÀNH:\n"
                 f"{scan_data_str}\n\n"
                 f"HƯỚNG DẪN TRẢ LỜI:\n"
-                f"- Khi người dùng đặt câu hỏi, hãy trả lời TRỰC TIẾP, ĐÚNG TRỌNG TÂM câu hỏi đó dựa trên dữ liệu rà quét ở trên.\n"
-                f"- Không tự ý lặp lại cấu trúc báo cáo 4 pha trừ khi người dùng yêu cầu 'phân tích tổng thể' hoặc 'báo cáo tổng quan'."
+                f"- Khi người dùng đặt câu hỏi hoặc yêu cầu thực thi, hãy trả lời TRỰC TIẾP, ĐÚNG TRỌNG TÂM dựa trên dữ liệu rà quét.\n"
+                f"- Khi cần thực thi hành động (Stress test, Quét sâu, IDOR, Patch), HÃY KÍCH HOẠT TOOL/FUNCTION CALLING tương ứng."
             )
 
             # Auto-run 4-Phase Agentic Analysis
@@ -1023,7 +1038,7 @@ def interactive_copilot_session(target: str = "https://target-bank.com", scan_da
         else:
             context_instruction = DEFAULT_COPILOT_SYSTEM_INSTRUCTION
 
-        console.print(f"\n[bold magenta]ADQ Copilot>[/bold magenta] Đã kết nối Agentic AI Core thành công. Hãy đặt câu hỏi về mục tiêu [bold cyan]{target}[/bold cyan]:")
+        console.print(f"\n[bold magenta]ADQ Copilot>[/bold magenta] Đã kết nối Agentic AI Core thành công. Hãy đặt câu hỏi hoặc ra lệnh cho Copilot thực thi trên [bold cyan]{target}[/bold cyan]:")
 
         while True:
             user_input = Prompt.ask("\n[bold green]You>[/bold green]")
@@ -1037,6 +1052,55 @@ def interactive_copilot_session(target: str = "https://target-bank.com", scan_da
 
             if cmd == 'report':
                 render_telegram_style_scan_report(target=target, job_id="job_copilot_1001")
+                continue
+
+            if cmd == 'stress':
+                target_rps = int(Prompt.ask("Số Request/giây (RPS)", default="500"))
+                duration_sec = int(Prompt.ask("Thời gian chạy (giây)", default="5"))
+                
+                with console.status(f"[bold red]🔥 Đang kích hoạt k6 Stress Test ({target_rps} RPS / {duration_sec}s)...[/bold red]", spinner="dots"):
+                    exec_res = copilot.execute_local_tool("run_stress_test", {"target_url": target, "target_rps": target_rps, "duration_sec": duration_sec}, default_target=target)
+                
+                m = exec_res.get("metrics", {})
+                tbl = Table(title=f"🔥 [K6 REAL-TIME STRESS TEST RESULT] {target}", show_header=True, header_style="bold red")
+                tbl.add_column("Chỉ số Metrics", style="bold white")
+                tbl.add_column("Giá trị Thực tế", style="bold yellow")
+                tbl.add_row("Tổng số Request", str(m.get("total_requests", 0)))
+                tbl.add_row("Thực tế RPS Đạt được", f"{m.get('actual_rps', 0):.2f} req/s")
+                tbl.add_row("HTTP 200 Success", str(m.get("status_200", 0)))
+                tbl.add_row("HTTP 429 Rate Limited", str(m.get("status_429", 0)))
+                tbl.add_row("HTTP 500 Crashed", str(m.get("status_500", 0)))
+                tbl.add_row("Độ trễ trung bình (p95)", f"{m.get('http_req_duration_p95_ms', 0):.2f} ms")
+                console.print(tbl)
+                continue
+
+            if cmd == 'deep':
+                path_input = Prompt.ask("Endpoint path cần quét sâu (ví dụ: /api/admin)", default="/admin")
+                with console.status(f"[bold cyan]🔍 Đang rà quét sâu WAF Evasion trên {target}{path_input}...[/bold cyan]", spinner="dots"):
+                    exec_res = copilot.execute_local_tool("trigger_deep_scan", {"target_path": path_input}, default_target=target)
+                
+                console.print(Panel(
+                    f"[bold green]✅ [QUÉT SÂU HOÀN TẤT][/bold green]\n"
+                    f"Mục tiêu: {exec_res.get('target')}\n"
+                    f"HTTP Status: {exec_res.get('status_code')}\n"
+                    f"Lỗ hổng phát hiện: {len(exec_res.get('vulnerabilities', []))}\n"
+                    f"Cổng dịch vụ: {', '.join(exec_res.get('ports', []))}",
+                    border_style="green"
+                ))
+                continue
+
+            if cmd == 'idor':
+                ep_input = Prompt.ask("Endpoint cần kiểm tra IDOR/BOLA", default="/api/v1/user")
+                with console.status(f"[bold yellow]🕵️ Đang dò tham số & kiểm tra IDOR trên {ep_input}...[/bold yellow]", spinner="dots"):
+                    exec_res = copilot.execute_local_tool("run_arjun_idor_scan", {"endpoint": ep_input}, default_target=target)
+                
+                console.print(Panel(
+                    f"[bold yellow]🔍 [KẾT QUẢ DÒ IDOR][/bold yellow]\n"
+                    f"Endpoint: {exec_res.get('target')}\n"
+                    f"HTTP Status: {exec_res.get('status_code')}\n"
+                    f"Lỗ hổng/Bất thường: {len(exec_res.get('vulnerabilities', []))}",
+                    border_style="yellow"
+                ))
                 continue
 
             if cmd == 'patch':
@@ -1054,20 +1118,48 @@ def interactive_copilot_session(target: str = "https://target-bank.com", scan_da
                     console.print(f"\n[bold red]ADQ Copilot Error:[/bold red] {patch_res.get('error', 'Patch generation failed')}")
                 continue
 
-            with console.status("[bold magenta]ADQ Copilot đang suy luận & trả lời...", spinner="dots"):
+            with console.status("[bold magenta]ADQ Copilot đang suy luận & thực thi...", spinner="dots"):
                 res = copilot._call_gemini_api(
                     user_input,
                     system_instruction=context_instruction,
-                    enable_tools=True
+                    enable_tools=True,
+                    target_url=target
                 )
 
             if res.get("status") == "SUCCESS":
                 console.print("\n[bold magenta]ADQ Copilot>[/bold magenta]")
-                console.print(Markdown(res.get("text", "")))
+                if res.get("text"):
+                    console.print(Markdown(res.get("text", "")))
                 
                 if "function_dispatch_result" in res:
                     fres = res["function_dispatch_result"]
-                    console.print(f"\n[bold yellow]⚡ [AGENTIC FUNCTION DISPATCH][/bold yellow] [green]{fres.get('message')}[/green]")
+                    f_name = fres.get("function")
+                    f_exec = fres.get("execution_result", {})
+                    
+                    console.print(f"\n[bold yellow]⚡ [AGENTIC ACTION EXECUTED][/bold yellow] [green]{fres.get('message')}[/green]")
+                    
+                    if f_name == "run_stress_test":
+                        m = f_exec.get("metrics", {})
+                        tbl = Table(title=f"🔥 [K6 REAL-TIME STRESS TEST RESULT] {target}", show_header=True, header_style="bold red")
+                        tbl.add_column("Chỉ số Metrics", style="bold white")
+                        tbl.add_column("Giá trị Thực tế", style="bold yellow")
+                        tbl.add_row("Tổng số Request", str(m.get("total_requests", 0)))
+                        tbl.add_row("Thực tế RPS Đạt được", f"{m.get('actual_rps', 0):.2f} req/s")
+                        tbl.add_row("HTTP 200 Success", str(m.get("status_200", 0)))
+                        tbl.add_row("HTTP 429 Rate Limited", str(m.get("status_429", 0)))
+                        tbl.add_row("HTTP 500 Crashed", str(m.get("status_500", 0)))
+                        tbl.add_row("Độ trễ trung bình (p95)", f"{m.get('http_req_duration_p95_ms', 0):.2f} ms")
+                        console.print(tbl)
+                    elif f_name in ("trigger_deep_scan", "run_arjun_idor_scan"):
+                        console.print(Panel(
+                            f"[bold green]✅ [KẾT QUẢ THỰC THI TOOL {f_name.upper()}][/bold green]\n"
+                            f"Target: {f_exec.get('target')}\n"
+                            f"HTTP Status: {f_exec.get('status_code')}\n"
+                            f"Lỗ hổng phát hiện: {len(f_exec.get('vulnerabilities', []))}",
+                            border_style="green"
+                        ))
+                    elif f_name == "generate_patch":
+                        console.print(Markdown(f_exec.get("patch_code", "")))
             else:
                 console.print(f"\n[bold red]ADQ Copilot Error:[/bold red] {res.get('error', 'API call failed')}")
                 if "attempts" in res:
