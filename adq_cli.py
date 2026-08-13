@@ -683,7 +683,65 @@ def run_apk_module():
 def run_stress_module():
     draw_header()
     console.print("[bold red]--- STRESS TEST & RATE LIMIT MODULE (High-Throughput Async/Thread Engine) ---[/bold red]")
-    target = Prompt.ask("[bold]🔥 Nhập URL kiểm thử chịu tải[/bold]", default="https://target-bank.com/api/v1/transfer")
+    target_input = Prompt.ask("[bold]🔥 Nhập URL hoặc Domain kiểm thử chịu tải[/bold]", default="https://quoc-bank-v8-0.vercel.app")
+    
+    # Format base target URL
+    raw_target = target_input.strip()
+    if not raw_target.startswith(("http://", "https://")):
+        base_target = f"https://{raw_target}"
+    else:
+        base_target = raw_target
+
+    # Probe & discovery candidate endpoints for this specific target
+    console.print("\n[bold cyan]🔍 [ENDPOINT DISCOVERY] Đang rà quét nhanh các Endpoint khả thi trên mục tiêu...[/bold cyan]")
+    try:
+        from backend.core.scanner import perform_real_dynamic_scan
+    except ImportError:
+        from core.scanner import perform_real_dynamic_scan
+
+    with console.status("[bold green]Đang rà quét bề mặt Endpoint...", spinner="dots"):
+        scan_res = perform_real_dynamic_scan(base_target, tier_choice=1)
+
+    # Collect discovered candidate endpoints
+    discovered_endpoints = [base_target]
+    if scan_res.get("exposed_paths"):
+        for path_item in scan_res["exposed_paths"]:
+            clean_p = path_item.split(" ")[0]
+            if clean_p not in discovered_endpoints:
+                discovered_endpoints.append(clean_p)
+
+    domain_clean = base_target.replace("https://", "").replace("http://", "").split("/")[0]
+    default_candidates = [
+        f"https://{domain_clean}/",
+        f"https://{domain_clean}/api/v1/health",
+        f"https://{domain_clean}/api/login",
+        f"https://{domain_clean}/search?q=test"
+    ]
+    for cand in default_candidates:
+        if cand not in discovered_endpoints:
+            discovered_endpoints.append(cand)
+
+    # Display Endpoint selection table
+    ep_table = Table(title=f"🎯 CHỌN ENDPOINT MỤC TIÊU CỤ THỂ CHO {domain_clean}", show_header=True, header_style="bold cyan")
+    ep_table.add_column("STT", style="bold yellow", width=6)
+    ep_table.add_column("URL Endpoint Bắn Request", style="bold white")
+    ep_table.add_column("Phân Loại Endpoint", style="bold green")
+
+    active_candidates = discovered_endpoints[:6]
+    for idx, ep in enumerate(active_candidates, start=1):
+        ep_type = "Trang chủ / Root HTML" if ep.endswith("/") or ep == base_target else ("API / Backend" if "/api" in ep else "Tài nguyên / Endpoint")
+        ep_table.add_row(str(idx), ep, ep_type)
+    ep_table.add_row("0", "Tự nhập URL/Endpoint tùy chỉnh khác", "Custom Path")
+
+    console.print(ep_table)
+
+    ep_choice = IntPrompt.ask(f"Chọn Endpoint muốn bắn [0-{len(active_candidates)}]", choices=[str(i) for i in range(len(active_candidates) + 1)], default=1)
+    if ep_choice == 0:
+        target = Prompt.ask("[bold]👉 Nhập URL Endpoint tùy chỉnh đầy đủ[/bold]", default=base_target)
+    else:
+        target = active_candidates[ep_choice - 1]
+
+    console.print(f"\n[bold green][+] Đã chọn mục tiêu bắn chịu tải:[/bold green] [bold cyan]{target}[/bold cyan]")
     bearer_token = Prompt.ask("[bold]🔑 Nhập Bearer Token / Bypass Header (VD: x-vercel-protection-bypass: secret)[/bold]", default="")
     
     # Prompt user for total target requests and duration instead of raw VUs
@@ -787,11 +845,14 @@ def run_stress_module():
 
             live_metrics["p95_latency"] = f"{latency}ms"
 
+            import urllib.parse
+            target_path_str = urllib.parse.urlparse(target).path or "/"
+
             stream_logs.append({
                 "time": now_str,
                 "ip": ip,
                 "method": "GET",
-                "path": "/api/v1/auth",
+                "path": target_path_str,
                 "status": status_code,
                 "latency": latency
             })
