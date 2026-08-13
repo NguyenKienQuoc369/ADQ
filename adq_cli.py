@@ -890,6 +890,7 @@ def run_stress_module():
                 bearer_token=bearer_token,
                 vus=vus,
                 duration=duration,
+                target_requests=target_requests,
                 stats_callback=on_http_request_complete
             )
 
@@ -911,10 +912,10 @@ def run_stress_module():
             console=console,
             refresh_per_second=8
         ) as live:
-            while bg_thread.is_alive() or (time.time() - start_time) < duration_sec:
-                elapsed = time.time() - start_time
+            while bg_thread.is_alive() and (time.time() - start_time) <= (duration_sec + 0.5):
+                elapsed = min(time.time() - start_time, float(duration_sec))
                 if live_metrics["total_requests"] > 0:
-                    live_metrics["rps"] = round(live_metrics["total_requests"] / max(0.5, elapsed), 1)
+                    live_metrics["rps"] = round(live_metrics["total_requests"] / max(0.1, elapsed), 1)
 
                 live.update(render_live_attack_matrix(
                     target_url=target,

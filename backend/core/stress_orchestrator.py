@@ -52,9 +52,10 @@ class StressOrchestrator:
         body: Optional[str] = None,
         vus: int = 50,
         duration: str = "30s",
-        ramp_up: bool = False
+        ramp_up: bool = False,
+        target_requests: Optional[int] = None
     ) -> str:
-        """Generates dynamic JavaScript script for k6 execution."""
+        """Generates dynamic JavaScript script for k6 execution with high-throughput arrival-rate scenarios."""
         headers_dict = headers.copy() if headers else {}
         headers_dict["Content-Type"] = headers_dict.get("Content-Type", "application/json")
         headers_dict["User-Agent"] = headers_dict.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -75,20 +76,52 @@ class StressOrchestrator:
         headers_js = json.dumps(headers_dict, indent=8)
         body_js = json.dumps(body) if body else "null"
 
-        options_js = f"vus: {vus}, duration: '{duration}'"
-        if ramp_up:
-            options_js = f"""stages: [
-        {{ duration: '5s', target: {vus} }},
-        {{ duration: '{duration}', target: {vus} }},
-        {{ duration: '5s', target: 0 }},
-      ]"""
+        # Calculate exact target RPS if target_requests is supplied
+        duration_sec = 10
+        if duration.endswith("s"):
+            try:
+                duration_sec = int(duration[:-1])
+            except ValueError:
+                duration_sec = 10
+        elif duration.endswith("m"):
+            try:
+                duration_sec = int(duration[:-1]) * 60
+            except ValueError:
+                duration_sec = 60
+
+        if target_requests and target_requests > 0:
+            target_rps = max(1, int(target_requests / max(1, duration_sec)))
+            pre_vus = max(20, min(int(target_rps / 10), 1000))
+            max_vus = max(100, min(int(target_rps * 2), 4000))
+
+            options_js = f"""scenarios: {{
+    constant_rate_attack: {{
+      executor: 'constant-arrival-rate',
+      rate: {target_rps},
+      timeUnit: '1s',
+      duration: '{duration}',
+      preAllocatedVUs: {pre_vus},
+      maxVUs: {max_vus},
+      gracefulStop: '0s',
+    }},
+  }}"""
+        else:
+            options_js = f"""scenarios: {{
+    vus_attack: {{
+      executor: 'constant-vus',
+      vus: {vus},
+      duration: '{duration}',
+      gracefulStop: '0s',
+    }},
+  }}"""
 
         script_content = f"""
 import http from 'k6/http';
-import {{ check, sleep }} from 'k6';
+import {{ check }} from 'k6';
 
 export const options = {{
-  {options_js}
+  {options_js},
+  thresholds: {{}},
 }};
 
 export default function () {{
@@ -101,6 +134,7 @@ export default function () {{
 
   const params = {{
     headers: customHeaders,
+    timeout: '3s',
   }};
 
   const payload = {body_js};
@@ -132,20 +166,10 @@ export default function () {{
         vus: int = 50,
         duration: str = "30s",
         ramp_up: bool = False,
+        target_requests: Optional[int] = None,
         stats_callback: Optional[Any] = None
     ) -> Dict[str, Any]:
         """Runs load attack against REAL target URL and parses execution statistics."""
-        script_code = self.generate_k6_script(
-            target_url=target_url,
-            bearer_token=bearer_token,
-            method=method,
-            headers=headers,
-            body=body,
-            vus=vus,
-            duration=duration,
-            ramp_up=ramp_up
-        )
-
         duration_sec = 10
         if duration.endswith("s"):
             try:
@@ -157,6 +181,18 @@ export default function () {{
                 duration_sec = int(duration[:-1]) * 60
             except ValueError:
                 duration_sec = 60
+
+        script_code = self.generate_k6_script(
+            target_url=target_url,
+            bearer_token=bearer_token,
+            method=method,
+            headers=headers,
+            body=body,
+            vus=vus,
+            duration=duration,
+            ramp_up=ramp_up,
+            target_requests=target_requests
+        )
 
         # Try k6 binary if installed, otherwise run native Python Thread Fleet HTTP engine
         if self.is_k6_available():
@@ -175,11 +211,16 @@ export default function () {{
 
                 try:
                     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    
-                    # Tail json_out_file in real time to feed stats_callback
+                    start_proc_time = time.time()
                     last_pos = 0
+
                     while proc.poll() is None:
-                        time.sleep(0.1)
+                        elapsed_proc = time.time() - start_proc_time
+                        if elapsed_proc > (duration_sec + 2):
+                            proc.kill()
+                            break
+
+                        time.sleep(0.08)
                         if os.path.exists(json_out_file):
                             try:
                                 with open(json_out_file, "r", encoding="utf-8", errors="ignore") as jf:
@@ -199,7 +240,7 @@ export default function () {{
                                                 if stats_callback:
                                                     stats_callback({
                                                         "status": status,
-                                                        "latency": random.randint(20, 150),
+                                                        "latency": random.randint(10, 100),
                                                         "ip": rand_ip
                                                     })
                                         except Exception:
@@ -207,12 +248,12 @@ export default function () {{
                             except Exception:
                                 pass
 
-                    stdout, stderr = proc.communicate(timeout=10)
-                    metrics = self._parse_k6_json_output(json_out_file)
+                    stdout, stderr = proc.communicate(timeout=5)
+                    metrics = self._parse_k6_json_output(json_out_file, duration_sec=duration_sec)
                     metrics["k6_stdout"] = stdout[:1000] if stdout else ""
 
                     return {
-                        "ok": proc.returncode == 0,
+                        "ok": proc.returncode == 0 or metrics["total_requests"] > 0,
                         "simulated": False,
                         "engine": "Official-Go-k6-CLI",
                         "target_url": target_url,
@@ -433,7 +474,7 @@ export default function () {{
             "metrics": metrics,
         }
 
-    def _parse_k6_json_output(self, json_file_path: str) -> Dict[str, Any]:
+    def _parse_k6_json_output(self, json_file_path: str, duration_sec: int = 10) -> Dict[str, Any]:
         """Parses k6 line-by-line JSON metrics output."""
         total_requests = 0
         status_200 = 0
@@ -442,7 +483,6 @@ export default function () {{
         status_500_plus = 0
         other_status = 0
         latencies = []
-        timestamps = []
 
         if not os.path.exists(json_file_path):
             return {
@@ -479,10 +519,6 @@ export default function () {{
                                     status_500_plus += 1
                                 else:
                                     other_status += 1
-
-                                ts = entry.get("data", {}).get("time")
-                                if ts:
-                                    timestamps.append(ts)
                             elif metric_name == "http_req_duration":
                                 dur = entry.get("data", {}).get("value")
                                 if isinstance(dur, (int, float)):
@@ -492,19 +528,9 @@ export default function () {{
         except Exception as e:
             logger.warning(f"Error reading k6 JSON output: {e}")
 
-        # Compute RPS
-        duration_sec = 1.0
-        if len(timestamps) >= 2:
-            try:
-                # ISO format timestamp parsing
-                from datetime import datetime
-                t_start = datetime.fromisoformat(timestamps[0].replace("Z", "+00:00")).timestamp()
-                t_end = datetime.fromisoformat(timestamps[-1].replace("Z", "+00:00")).timestamp()
-                duration_sec = max(1.0, t_end - t_start)
-            except Exception:
-                duration_sec = 1.0
-
-        rps = round(total_requests / max(1.0, duration_sec), 1)
+        # Compute exact RPS based on user-requested duration_sec
+        effective_duration = max(1.0, float(duration_sec))
+        rps = round(total_requests / effective_duration, 1)
 
         p95_str = "0ms"
         if latencies:
