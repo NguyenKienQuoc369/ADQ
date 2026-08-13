@@ -18,8 +18,21 @@ class StressOrchestrator:
     - Automatically cleans up temporary payload and log files.
     """
 
-    def __init__(self, k6_path: str = "k6"):
-        self.k6_path = k6_path
+    def __init__(self, k6_path: Optional[str] = None):
+        import shutil
+        import sys
+        if k6_path:
+            self.k6_path = k6_path
+        else:
+            found = shutil.which("k6")
+            if found:
+                self.k6_path = found
+            else:
+                venv_k6 = os.path.join(sys.prefix, "bin", "k6")
+                if os.path.exists(venv_k6):
+                    self.k6_path = venv_k6
+                else:
+                    self.k6_path = "k6"
 
     def is_k6_available(self) -> bool:
         """Checks if k6 CLI binary is installed and executable."""
@@ -92,8 +105,6 @@ export default function () {{
     'rate limited (429)': (r) => r.status === 429,
     'server crashed (500+)': (r) => r.status >= 500,
   }});
-
-  sleep(0.05);
 }}
 """
         return script_content
@@ -380,15 +391,22 @@ export default function () {{
         """Parses k6 line-by-line JSON metrics output."""
         total_requests = 0
         status_200 = 0
+        status_403 = 0
         status_429 = 0
         status_500_plus = 0
+        other_status = 0
+        latencies = []
+        timestamps = []
 
         if not os.path.exists(json_file_path):
             return {
                 "total_requests": 0,
                 "status_200": 0,
+                "status_403_waf_blocked": 0,
                 "status_429_rate_limited": 0,
                 "status_500_crashed": 0,
+                "rps": 0.0,
+                "p95_latency": "0ms"
             }
 
         try:
@@ -399,24 +417,62 @@ export default function () {{
                         continue
                     try:
                         entry = json.loads(line)
-                        if entry.get("type") == "Point" and entry.get("metric") == "http_reqs":
-                            total_requests += 1
-                            tags = entry.get("data", {}).get("tags", {})
-                            status = str(tags.get("status", "0"))
-                            if status == "200":
-                                status_200 += 1
-                            elif status == "429":
-                                status_429 += 1
-                            elif status.startswith("5"):
-                                status_500_plus += 1
+                        metric_name = entry.get("metric")
+                        if entry.get("type") == "Point":
+                            if metric_name == "http_reqs":
+                                total_requests += 1
+                                tags = entry.get("data", {}).get("tags", {})
+                                status = str(tags.get("status", "0"))
+                                if status in ("200", "201", "204"):
+                                    status_200 += 1
+                                elif status == "403":
+                                    status_403 += 1
+                                elif status == "429":
+                                    status_429 += 1
+                                elif status.startswith("5") or status == "0":
+                                    status_500_plus += 1
+                                else:
+                                    other_status += 1
+
+                                ts = entry.get("data", {}).get("time")
+                                if ts:
+                                    timestamps.append(ts)
+                            elif metric_name == "http_req_duration":
+                                dur = entry.get("data", {}).get("value")
+                                if isinstance(dur, (int, float)):
+                                    latencies.append(dur)
                     except Exception:
                         continue
         except Exception as e:
             logger.warning(f"Error reading k6 JSON output: {e}")
 
+        # Compute RPS
+        duration_sec = 1.0
+        if len(timestamps) >= 2:
+            try:
+                # ISO format timestamp parsing
+                from datetime import datetime
+                t_start = datetime.fromisoformat(timestamps[0].replace("Z", "+00:00")).timestamp()
+                t_end = datetime.fromisoformat(timestamps[-1].replace("Z", "+00:00")).timestamp()
+                duration_sec = max(1.0, t_end - t_start)
+            except Exception:
+                duration_sec = 1.0
+
+        rps = round(total_requests / max(1.0, duration_sec), 1)
+
+        p95_str = "0ms"
+        if latencies:
+            latencies.sort()
+            p95_val = latencies[min(int(len(latencies) * 0.95), len(latencies) - 1)]
+            p95_str = f"{round(p95_val, 1)}ms"
+
         return {
             "total_requests": total_requests,
             "status_200": status_200,
+            "status_403_waf_blocked": status_403,
             "status_429_rate_limited": status_429,
             "status_500_crashed": status_500_plus,
+            "other_status": other_status,
+            "rps": rps,
+            "p95_latency": p95_str
         }

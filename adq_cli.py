@@ -821,7 +821,7 @@ def run_stress_module():
         return
 
     # Map request volume dynamically to optimal worker concurrency (VUs)
-    vus = max(10, min(int(target_rps / 5), 500))
+    vus = max(20, min(int(target_rps / 2), 2000))
 
     if exec_mode == 2:
         try:
