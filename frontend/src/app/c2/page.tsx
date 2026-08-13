@@ -151,18 +151,35 @@ export default function C2CommandCenter() {
 
         const scanData = await scanRes.json();
         if (scanData.ok) {
-          setCliLogs((prev) => [
-            ...prev,
-            `✅ Scan Dispatched Successfully! Job ID: ${scanData.jobs?.[0]?.scanId || "job_core_1001"}`,
-            `🎯 Target Domain: ${targetUrl}`,
-            `🌐 Surface Recon: 14 subdomains found, 6 live hosts (HTTP/HTTPS alive).`,
-            `🧭 Open Ports: 80 (HTTP), 443 (HTTPS), 5432 (PostgreSQL 15), 6379 (Redis 7), 8888 (OAST)`,
-            `🚨 CRITICAL VULN: JWT Hardcoded Secret Key (/api/v1/auth/token - CWE-321)`,
-            `🚨 HIGH VULN: IDOR Unauthorized Parameter Mutation (/api/user?id=1002 - CWE-639)`,
-            `💎 SECRETS EXPOSED: JWT Token (eyJhbG...), AWS Access Key (AKIAIOSF...), Firebase DB URL`,
-            `🛡️ ATTACK CHAIN: JS JWT Secret Leak -> Token Forgery -> DB Port 5432 Direct Access`,
-            `📊 [BÁO CÁO TELEGRAM] Target Priority Risk Score: 88/100 (CRITICAL RISK)`
-          ]);
+          const liveResult = scanData.jobs?.[0]?.scanResult;
+          if (liveResult) {
+            const openPortsStr = liveResult.ports?.length > 0 ? liveResult.ports.join(", ") : "Chỉ mở cổng chuẩn Web";
+            const vulnsLogs = liveResult.vulnerabilities?.length > 0
+              ? liveResult.vulnerabilities.map((v: any) => `🚨 [${v.severity}] ${v.title} (${v.endpoint} - ${v.cve || "CWE-200"})`)
+              : ["✅ [SECURE] Không phát hiện lỗ hổng nghiêm trọng trên mục tiêu thực tế."];
+            const secretsLogs = liveResult.secrets?.length > 0
+              ? liveResult.secrets.map((s: any) => `💎 [SECRET EXPOSED] ${s.type}: ${s.value}`)
+              : ["✅ [CLEAN] Không phát hiện API Keys/Tokens bị lộ trong mã nguồn JavaScript."];
+
+            setCliLogs((prev) => [
+              ...prev,
+              `✅ Live Target Scan Completed! Job ID: ${scanData.jobs?.[0]?.scanId || "job_core_1001"}`,
+              `🎯 Target Domain: ${targetUrl} (Resolved IP: ${liveResult.ip_address || "N/A"})`,
+              `🌐 Surface Recon: ${liveResult.counts?.subdomains || 0} subdomains found, ${liveResult.counts?.live_hosts || 1} live hosts (Server: ${liveResult.server_banner || "Web Server"}).`,
+              `🧭 Open Ports: ${openPortsStr}`,
+              ...vulnsLogs,
+              ...secretsLogs,
+              `🛡️ STATUS: ${liveResult.vulnerabilities?.length > 0 ? "Phát hiện điểm yếu cấu hình/bảo mật" : "Mục tiêu an toàn tốt"}`,
+              `📊 [BÁO CÁO TELEGRAM] Target Priority Risk Score: ${liveResult.priority_score || 15}/100`
+            ]);
+          } else {
+            setCliLogs((prev) => [
+              ...prev,
+              `✅ Scan Dispatched Successfully! Job ID: ${scanData.jobs?.[0]?.scanId || "job_core_1001"}`,
+              `🎯 Target Domain: ${targetUrl}`,
+              `🌐 Surface Recon: Đã gửi yêu cầu rà quét thực tế tới Master Grid Node...`
+            ]);
+          }
         } else {
           setCliLogs((prev) => [...prev, `❌ Scan Dispatch Error: ${scanData.error}`]);
         }

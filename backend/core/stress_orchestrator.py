@@ -1,0 +1,417 @@
+import os
+import json
+import logging
+import random
+import tempfile
+import threading
+import subprocess
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+class StressOrchestrator:
+    """
+    Application-Layer Stress Test & Rate Limit Engine for ADQ Platform
+    - Generates dynamic JS k6 stress test scripts.
+    - Executes high-concurrency Go-based k6 load engine.
+    - Parses stress test metrics (total requests, HTTP 200, 429 rate limit, 500+ crashes, duration, rps).
+    - Automatically cleans up temporary payload and log files.
+    """
+
+    def __init__(self, k6_path: str = "k6"):
+        self.k6_path = k6_path
+
+    def is_k6_available(self) -> bool:
+        """Checks if k6 CLI binary is installed and executable."""
+        try:
+            res = subprocess.run([self.k6_path, "version"], capture_output=True, text=True, timeout=5)
+            return res.returncode == 0
+        except Exception:
+            return False
+
+    def generate_k6_script(
+        self,
+        target_url: str,
+        bearer_token: str = "",
+        method: str = "GET",
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[str] = None,
+        vus: int = 50,
+        duration: str = "30s",
+        ramp_up: bool = False
+    ) -> str:
+        """Generates dynamic JavaScript script for k6 execution."""
+        headers_dict = headers.copy() if headers else {}
+        headers_dict["Content-Type"] = headers_dict.get("Content-Type", "application/json")
+        if bearer_token:
+            headers_dict["Authorization"] = f"Bearer {bearer_token}"
+
+        headers_js = json.dumps(headers_dict, indent=8)
+        body_js = json.dumps(body) if body else "null"
+
+        options_js = f"vus: {vus}, duration: '{duration}'"
+        if ramp_up:
+            options_js = f"""stages: [
+        {{ duration: '5s', target: {vus} }},
+        {{ duration: '{duration}', target: {vus} }},
+        {{ duration: '5s', target: 0 }},
+      ]"""
+
+        script_content = f"""
+import http from 'k6/http';
+import {{ check, sleep }} from 'k6';
+
+export const options = {{
+  {options_js}
+}};
+
+export default function () {{
+  const url = '{target_url}';
+  const customHeaders = {headers_js};
+  
+  // Rotate random IP via X-Forwarded-For header to test rate limit bypass
+  const randomOctet = Math.floor(Math.random() * 255);
+  customHeaders['X-Forwarded-For'] = `192.168.1.${{randomOctet}}`;
+
+  const params = {{
+    headers: customHeaders,
+  }};
+
+  const payload = {body_js};
+  let res;
+  if ('{method.upper()}' === 'POST') {{
+    res = http.post(url, payload, params);
+  }} else if ('{method.upper()}' === 'PUT') {{
+    res = http.put(url, payload, params);
+  }} else {{
+    res = http.get(url, params);
+  }}
+
+  check(res, {{
+    'status is 200': (r) => r.status === 200,
+    'rate limited (429)': (r) => r.status === 429,
+    'server crashed (500+)': (r) => r.status >= 500,
+  }});
+
+  sleep(0.05);
+}}
+"""
+        return script_content
+
+    def execute_stress_test(
+        self,
+        target_url: str,
+        bearer_token: str = "",
+        method: str = "GET",
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[str] = None,
+        vus: int = 50,
+        duration: str = "30s",
+        ramp_up: bool = False,
+        stats_callback: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Runs load attack against REAL target URL and parses execution statistics."""
+        script_code = self.generate_k6_script(
+            target_url=target_url,
+            bearer_token=bearer_token,
+            method=method,
+            headers=headers,
+            body=body,
+            vus=vus,
+            duration=duration,
+            ramp_up=ramp_up
+        )
+
+        duration_sec = 10
+        if duration.endswith("s"):
+            try:
+                duration_sec = int(duration[:-1])
+            except ValueError:
+                duration_sec = 10
+        elif duration.endswith("m"):
+            try:
+                duration_sec = int(duration[:-1]) * 60
+            except ValueError:
+                duration_sec = 60
+
+        # Try k6 binary if installed, otherwise run native Python Thread Fleet HTTP engine
+        if self.is_k6_available():
+            with tempfile.TemporaryDirectory(prefix="adq_stress_") as tmp_dir:
+                script_file = os.path.join(tmp_dir, "payload.js")
+                json_out_file = os.path.join(tmp_dir, "results.json")
+
+                with open(script_file, "w", encoding="utf-8") as f:
+                    f.write(script_code)
+
+                cmd = [
+                    self.k6_path, "run",
+                    "--out", f"json={json_out_file}",
+                    script_file
+                ]
+
+                try:
+                    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                    metrics = self._parse_k6_json_output(json_out_file)
+                    metrics["k6_stdout"] = proc.stdout[:1000]
+
+                    return {
+                        "ok": proc.returncode == 0,
+                        "simulated": False,
+                        "engine": "Go-k6-CLI",
+                        "target_url": target_url,
+                        "vus": vus,
+                        "duration": duration,
+                        "metrics": metrics,
+                    }
+                except Exception as exc:
+                    logger.error(f"Error running k6 stress test: {exc}")
+
+        # Native High-Throughput HTTP Thread Engine (Runs REAL requests against target_url)
+        return self.execute_python_http_stress_test(
+            target_url=target_url,
+            bearer_token=bearer_token,
+            method=method,
+            headers=headers,
+            body=body,
+            vus=vus,
+            duration_sec=duration_sec,
+            stats_callback=stats_callback
+        )
+
+    def execute_python_http_stress_test(
+        self,
+        target_url: str,
+        bearer_token: str = "",
+        method: str = "GET",
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[str] = None,
+        vus: int = 50,
+        duration_sec: int = 10,
+        stats_callback: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Native High-Concurrency Async/Threaded Python HTTP Load Engine.
+        Executes REAL HTTP requests against the real target_url using user-configured VUs,
+        Bearer Tokens, Custom Headers, and HTTP Methods.
+        Includes Vercel/Cloudflare Edge WAF bypass mechanisms (realistic browser UA & Cache-Busting).
+        """
+        import time
+        import urllib.request
+        import urllib.error
+        import urllib.parse
+        import concurrent.futures
+
+        headers_dict = headers.copy() if headers else {}
+        # Clean default Chrome Browser headers
+        if "User-Agent" not in headers_dict:
+            headers_dict["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        
+        headers_dict["Accept"] = headers_dict.get("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+        headers_dict["Accept-Language"] = headers_dict.get("Accept-Language", "en-US,en;q=0.9")
+        headers_dict["Sec-Ch-Ua"] = '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
+        headers_dict["Sec-Ch-Ua-Mobile"] = "?0"
+        headers_dict["Sec-Ch-Ua-Platform"] = '"Windows"'
+        headers_dict["Sec-Fetch-Dest"] = "document"
+        headers_dict["Sec-Fetch-Mode"] = "navigate"
+        headers_dict["Sec-Fetch-Site"] = "none"
+        headers_dict["Sec-Fetch-User"] = "?1"
+        headers_dict["Upgrade-Insecure-Requests"] = "1"
+
+        if bearer_token:
+            clean_token = bearer_token.strip()
+            if ":" in clean_token:
+                k, v = clean_token.split(":", 1)
+                headers_dict[k.strip()] = v.strip()
+            elif "=" in clean_token and not clean_token.startswith("eyJ"):
+                k, v = clean_token.split("=", 1)
+                headers_dict[k.strip()] = v.strip()
+            elif clean_token.startswith("eyJ") or clean_token.startswith("secret_"):
+                headers_dict["Authorization"] = f"Bearer {clean_token}"
+            else:
+                # Default to Vercel/Cloudflare WAF Protection Bypass Header
+                headers_dict["x-vercel-protection-bypass"] = clean_token
+                headers_dict["x-vercel-set-bypass-cookie"] = "true"
+
+        body_bytes = body.encode("utf-8") if body else None
+        
+        metrics = {
+            "total_requests": 0,
+            "status_200": 0,
+            "status_403_waf_blocked": 0,
+            "status_429_rate_limited": 0,
+            "status_500_crashed": 0,
+            "other_status": 0,
+            "vercel_mitigated_count": 0,
+            "rps": 0.0,
+            "p95_latency": "0ms",
+        }
+        
+        latencies = []
+        start_time = time.time()
+        end_time = start_time + max(1, duration_sec)
+
+        # Check if curl_cffi is available for TLS JA3/JA4 Browser Impersonation (bypasses WAF 403)
+        try:
+            from curl_cffi import requests as curl_cffi_requests
+            has_curl_cffi = True
+        except ImportError:
+            has_curl_cffi = False
+
+        # Thread local storage for worker persistent HTTP Keep-Alive sessions
+        thread_local = threading.local()
+
+        def get_worker_session():
+            if not getattr(thread_local, "session", None):
+                if has_curl_cffi:
+                    thread_local.session = curl_cffi_requests.Session(impersonate="chrome120")
+                else:
+                    thread_local.session = None
+            return thread_local.session
+
+        def single_request_worker(worker_id: int) -> Dict[str, Any]:
+            req_headers = headers_dict.copy()
+            random_ip = f"{random.randint(1,220)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+            
+            # Only attach X-Forwarded-For if explicitly requested or for rate-limit tests
+            if "X-Forwarded-For" in headers_dict:
+                req_headers["X-Forwarded-For"] = headers_dict["X-Forwarded-For"]
+
+            final_url = target_url
+
+            req_start = time.time()
+            status_code = 0
+            is_mitigated = False
+
+            session = get_worker_session()
+            if session is not None:
+                try:
+                    resp = session.request(
+                        method=method.upper(),
+                        url=final_url,
+                        headers=req_headers,
+                        data=body if body else None,
+                        timeout=5
+                    )
+                    status_code = resp.status_code
+                    if resp.headers.get("x-vercel-mitigated") or "x-vercel-challenge-token" in resp.headers:
+                        is_mitigated = True
+                except Exception:
+                    status_code = 500
+            else:
+                req = urllib.request.Request(
+                    final_url,
+                    data=body_bytes,
+                    headers=req_headers,
+                    method=method.upper()
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        status_code = response.getcode()
+                except urllib.error.HTTPError as http_err:
+                    status_code = http_err.code
+                    if "x-vercel-mitigated" in http_err.headers or "x-vercel-challenge-token" in http_err.headers:
+                        is_mitigated = True
+                except Exception:
+                    status_code = 500
+
+            req_latency = int((time.time() - req_start) * 1000)
+            return {
+                "status": status_code,
+                "latency": req_latency,
+                "ip": random_ip,
+                "is_mitigated": is_mitigated,
+                "worker_id": worker_id
+            }
+
+        # Concurrency Thread Pool matching VUs - high-speed parallel worker fleet
+        workers_count = max(10, min(vus, 1000))
+        
+        def continuous_worker_loop(worker_id: int):
+            while time.time() < end_time:
+                res = single_request_worker(worker_id)
+                code = res["status"]
+                latencies.append(res["latency"])
+                metrics["total_requests"] += 1
+
+                if res.get("is_mitigated"):
+                    metrics["vercel_mitigated_count"] += 1
+                
+                if code in (200, 201, 204):
+                    metrics["status_200"] += 1
+                elif code == 403:
+                    metrics["status_403_waf_blocked"] += 1
+                elif code == 429:
+                    metrics["status_429_rate_limited"] += 1
+                elif code >= 500 or code == 0:
+                    metrics["status_500_crashed"] += 1
+                else:
+                    metrics["other_status"] += 1
+
+                if stats_callback:
+                    stats_callback(res)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers_count) as executor:
+            futures = [executor.submit(continuous_worker_loop, i) for i in range(workers_count)]
+            concurrent.futures.wait(futures)
+
+        elapsed = time.time() - start_time
+        metrics["rps"] = round(metrics["total_requests"] / max(0.1, elapsed), 1)
+        if latencies:
+            latencies.sort()
+            p95_idx = int(len(latencies) * 0.95)
+            metrics["p95_latency"] = f"{latencies[min(p95_idx, len(latencies)-1)]}ms"
+
+        return {
+            "ok": True,
+            "simulated": False,
+            "engine": "ADQ-Native-Python-HTTP-Thread-Fleet",
+            "target_url": target_url,
+            "vus": vus,
+            "duration": f"{duration_sec}s",
+            "metrics": metrics,
+        }
+
+    def _parse_k6_json_output(self, json_file_path: str) -> Dict[str, Any]:
+        """Parses k6 line-by-line JSON metrics output."""
+        total_requests = 0
+        status_200 = 0
+        status_429 = 0
+        status_500_plus = 0
+
+        if not os.path.exists(json_file_path):
+            return {
+                "total_requests": 0,
+                "status_200": 0,
+                "status_429_rate_limited": 0,
+                "status_500_crashed": 0,
+            }
+
+        try:
+            with open(json_file_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("type") == "Point" and entry.get("metric") == "http_reqs":
+                            total_requests += 1
+                            tags = entry.get("data", {}).get("tags", {})
+                            status = str(tags.get("status", "0"))
+                            if status == "200":
+                                status_200 += 1
+                            elif status == "429":
+                                status_429 += 1
+                            elif status.startswith("5"):
+                                status_500_plus += 1
+                    except Exception:
+                        continue
+        except Exception as e:
+            logger.warning(f"Error reading k6 JSON output: {e}")
+
+        return {
+            "total_requests": total_requests,
+            "status_200": status_200,
+            "status_429_rate_limited": status_429,
+            "status_500_crashed": status_500_plus,
+        }

@@ -106,6 +106,22 @@ services:
     networks:
       - adq_net
 
+  # Worker Node (Mobile Audit)
+  worker-mobile:
+    build:
+      context: .
+      dockerfile: Dockerfile.mobile-worker
+    restart: always
+    command: python3 backend/worker.py --help
+    environment:
+      - WORKER_CAPABILITIES=mobile_audit,apk_decompile
+    env_file:
+      - .env
+    depends_on:
+      - master-node
+    networks:
+      - adq_net
+
   # Next.js Dashboard
   web-dashboard:
     build:

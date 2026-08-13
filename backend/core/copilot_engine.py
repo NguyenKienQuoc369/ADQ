@@ -12,9 +12,12 @@ except ImportError:
     pass
 
 try:
-    from core.copilot_masker import SensitiveDataMasker  # type: ignore
+    from backend.core.copilot_masker import SensitiveDataMasker  # type: ignore
 except ImportError:
-    from copilot_masker import SensitiveDataMasker  # type: ignore
+    try:
+        from core.copilot_masker import SensitiveDataMasker  # type: ignore
+    except ImportError:
+        from copilot_masker import SensitiveDataMasker  # type: ignore
 
 try:
     import redis  # type: ignore
@@ -25,25 +28,22 @@ except ImportError:
 logger = logging.getLogger("ADQ.Copilot")
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_MODEL_FALLBACKS = [
     m.strip() for m in os.environ.get(
         "GEMINI_MODEL_FALLBACKS",
-        "gemini-3.6-flash,gemini-3.5-flash,gemini-flash-latest",
+        "gemini-3.5-flash-lite,gemini-flash-lite-latest,gemini-3.1-flash-lite,gemini-3.5-flash",
     ).split(",") if m.strip()
 ]
 DEFAULT_CREDITS_PER_1K_TOKENS = 10  # 1,000 tokens = 10 credits
 
 DEFAULT_COPILOT_SYSTEM_INSTRUCTION = (
-    "Ngươi là ADQ Security Copilot - Chuyên gia Kiến trúc DevSecOps & Pentesting cấp cao.\n"
+    "Ngươi là ADQ Security Copilot - Trí tuệ Nhân tạo Tự chủ chuyên sâu về Pentesting, DevSecOps & Security Engineering của Nền tảng ADQ Platform.\n"
     "QUY TẮC TƯ DUY & HÀNH ĐỘNG CỐT LÕI:\n"
-    "1. NHÂN CÁCH: Tuyệt đối không chào hỏi rườm rà. Lạnh lùng, ngắn gọn, chính xác tuyệt đối, chuẩn DevSecOps.\n"
-    "2. CHỐNG ẢO GIÁC (Zero-Hallucination): Chỉ phân tích dựa trên chuỗi JSON log được cung cấp. Tuyệt đối không tự bịa đặt lỗ hổng nếu không có bằng chứng thực tế trong log.\n"
-    "3. CHUẨN ĐẦU RA (Markdown Output): Bắt buộc trả về định dạng Markdown tiêu chuẩn chứa đủ 4 mục:\n"
-    "   - **Đánh giá Mức độ Nghiêm trọng (Severity)**: CRITICAL / HIGH / MEDIUM / LOW / INFO\n"
-    "   - **Phân tích Tương quan & Chuỗi Tấn công (Attack Chain Correlation)**\n"
-    "   - **Nguyên nhân Gốc rễ (Root Cause Analysis)**\n"
-    "   - **Mã Code Vá Lỗi & Cấu hình An toàn (Remediation Patch & Firewall Rule)**"
+    "1. DANH TÍNH THƯƠNG HIỆU: Ngươi là 'ADQ Security Copilot' (được phát triển độc quyền bởi ADQ Platform). Tuyệt đối KHÔNG ĐƯỢC nhắc tới Google, Gemini, OpenAI, GPT hay bất kỳ mô hình/nhà phát triển bên thứ ba nào dưới bất kỳ hình thức nào. Nếu được hỏi về danh tính hay mô hình, trả lời duy nhất: 'Tôi là ADQ Security Copilot - Hệ thống Agentic AI Tự chủ do ADQ Security Platform phát triển.'\n"
+    "2. TRẢ LỜI ĐÚNG TRỌNG TÂM: Trả lời trực tiếp, chính xác, ngắn gọn và đi thẳng vào câu hỏi hoặc yêu cầu cụ thể của người dùng. Tuyệt đối không tự ý áp dụng cấu trúc phân tích 4 pha rườm rà trừ khi người dùng yêu cầu phân tích tổng thể toàn bộ chiến dịch rà quét.\n"
+    "3. SỬ DỤNG DỮ LIỆU RÀ QUÉT MỤC TIÊU: Khi có dữ liệu rà quét (lỗ hổng, secrets, endpoints, ports), hãy sử dụng chính xác dữ liệu đó để giải đáp thắc mắc, phân tích nguy cơ và đề xuất giải pháp cho mục tiêu.\n"
+    "4. CHỐNG ẢO GIÁC (Zero-Hallucination): Chỉ phân tích dựa trên sự thật và dữ liệu được cung cấp. Tuyệt đối không tự bịa đặt lỗ hổng hay thông tin không có bằng chứng thực tế."
 )
 
 COPILOT_TOOLS_DECLARATION = [
@@ -336,7 +336,7 @@ class ADQSecurityCopilot:
         """Dispatches request to Google Gemini API with System Instructions and Function Calling."""
         if not self.api_key:
             return {
-                "error": "GEMINI_API_KEY is missing. Set GEMINI_API_KEY environment variable.",
+                "error": "ADQ Copilot API Key is missing. Set GEMINI_API_KEY environment variable.",
                 "status": "CONFIG_ERROR",
             }
 
@@ -436,7 +436,7 @@ class ADQSecurityCopilot:
 
         return {
             "status": "API_ERROR",
-            "error": "All Gemini model attempts failed",
+            "error": "All ADQ Copilot model attempts failed",
             "attempts": errors,
         }
 

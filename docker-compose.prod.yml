@@ -53,7 +53,7 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.6-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
     depends_on:
       adq_redis:
         condition: service_healthy
@@ -113,6 +113,23 @@ services:
     depends_on:
       - adq_master
       - adq_oast
+    networks:
+      - adq_internal_net
+
+  worker-mobile:
+    build:
+      context: .
+      dockerfile: Dockerfile.mobile-worker
+    container_name: worker-mobile-1
+    restart: always
+    command: python3 backend/runtime_services.py --role worker --worker-id worker-mobile-1 --capability mobile-audit
+    environment:
+      - WORKER_ID=worker-mobile-1
+      - CAPABILITY=mobile-audit
+      - REDIS_URL=redis://adq_redis:6379/0
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      - adq_master
     networks:
       - adq_internal_net
 

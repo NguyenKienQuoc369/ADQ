@@ -66,6 +66,18 @@ class CopilotPatchRequest(BaseModel):
     framework: str = "Next.js"
 
 
+class StressRequest(BaseModel):
+    target_url: str
+    bearer_token: Optional[str] = ""
+    vus: int = 50
+    duration: str = "10s"
+    method: str = "GET"
+
+
+class ApkRequest(BaseModel):
+    apk_path: str
+
+
 def _build_command(req: ScanRequest) -> List[str]:
     cmd = [sys.executable, "quoc_omni.py", req.target]
 
@@ -188,6 +200,20 @@ def start_scan(req: ScanRequest, bg: BackgroundTasks):
         bg.add_task(_run_scan, job_id, req)
 
     return {"ok": True, "job_id": job_id, "status": "running"}
+
+
+@app.post("/api/scan/real")
+def run_real_scan(req: ScanRequest):
+    try:
+        try:
+            from core.scanner import perform_real_dynamic_scan
+        except ImportError:
+            from backend.core.scanner import perform_real_dynamic_scan
+
+        res = perform_real_dynamic_scan(req.target, tier_choice=2 if req.logic_scan else 1)
+        return {"ok": True, "scan": res}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 @app.get("/api/scan/{job_id}")
@@ -377,3 +403,33 @@ async def copilot_credits_usage():
         "tier": "FinTech Ultimate Auto-Pilot",
         "pricing": "1,000 tokens = 10 credits",
     })
+
+
+@app.post("/api/stress")
+async def run_stress_test_api(req: StressRequest):
+    """Real Layer 7 Stress Test & Rate Limit Evasion Endpoint."""
+    try:
+        from core.stress_orchestrator import StressOrchestrator
+        orchestrator = StressOrchestrator()
+        result = orchestrator.execute_stress_test(
+            target_url=req.target_url,
+            bearer_token=req.bearer_token or "",
+            vus=req.vus,
+            duration=req.duration,
+            method=req.method
+        )
+        return JSONResponse({"ok": True, "result": result})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/apk")
+async def run_apk_analysis_api(req: ApkRequest):
+    """Real Mobile APK Decompilation & Static Security Audit Endpoint."""
+    try:
+        from core.apk_analyzer import APKAnalyzer
+        analyzer = APKAnalyzer(req.apk_path)
+        result = analyzer.run_pipeline()
+        return JSONResponse({"ok": True, "result": result})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
