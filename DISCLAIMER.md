@@ -4,7 +4,7 @@
 
 ---
 
-## 🇻🇳 DỊCH BẢO VỆ PHÁP LÝ (VIETNAMESE)
+## 🇻🇳 BẢO VỆ PHÁP LÝ (VIETNAMESE)
 
 ### 1. Chỉ Sử Dụng Cho Mục Đích Được Ủy Quyền
 Công cụ **ADQ (Autonomous Cyber Security Testing & Load Platform)** được thiết kế và phát triển **duy nhất** phục vụ cho mục đích:
