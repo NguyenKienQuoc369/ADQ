@@ -424,7 +424,7 @@ def run_scan_module():
     draw_header()
     console.print("[bold magenta]--- THIẾT LẬP MỤC TIÊU & BẢN ĐỒ DỊCH VỤ SAAS TIERS ---[/bold magenta]")
     
-    target = Prompt.ask("\n[bold]🎯 Nhập mục tiêu (URL, IP hoặc Domain)[/bold]", default="https://target-bank.com")
+    target = Prompt.ask("\n[bold]🎯 Nhập mục tiêu (URL, IP hoặc Domain)[/bold]", default="https://example.com")
     
     console.print("\n[bold]🛡️ CHỌN GÓI DỊCH VỤ SAAS (SaaS Tier Routing):[/bold]")
     console.print("  [1] [bold green]STARTER[/bold green] - Cơ Bản (Lính Trinh Sát Worker-Light | Surface Recon | Executive Summary AI)")
@@ -683,7 +683,7 @@ def run_apk_module():
 def run_stress_module():
     draw_header()
     console.print("[bold red]--- STRESS TEST & RATE LIMIT MODULE (High-Throughput Async/Thread Engine) ---[/bold red]")
-    target_input = Prompt.ask("[bold]🔥 Nhập URL hoặc Domain kiểm thử chịu tải[/bold]", default="https://quoc-bank-v8-0.vercel.app")
+    target_input = Prompt.ask("[bold]🔥 Nhập URL hoặc Domain kiểm thử chịu tải[/bold]")
     
     # Format base target URL
     raw_target = target_input.strip()
@@ -693,7 +693,7 @@ def run_stress_module():
         base_target = raw_target
 
     # Probe & discovery candidate endpoints for this specific target
-    console.print("\n[bold cyan]🔍 [ENDPOINT DISCOVERY] Đang rà quét nhanh các Endpoint khả thi trên mục tiêu...[/bold cyan]")
+    console.print("\n[bold cyan]🔍 [ENDPOINT DISCOVERY] Đang rà quét nhanh các Endpoint thực tế trên mục tiêu...[/bold cyan]")
     try:
         from backend.core.scanner import perform_real_dynamic_scan
     except ImportError:
@@ -702,7 +702,7 @@ def run_stress_module():
     with console.status("[bold green]Đang rà quét bề mặt Endpoint...", spinner="dots"):
         scan_res = perform_real_dynamic_scan(base_target, tier_choice=1)
 
-    # Collect discovered candidate endpoints
+    # Collect discovered candidate endpoints (ONLY real paths discovered)
     discovered_endpoints = [base_target]
     if scan_res.get("exposed_paths"):
         for path_item in scan_res["exposed_paths"]:
@@ -711,15 +711,6 @@ def run_stress_module():
                 discovered_endpoints.append(clean_p)
 
     domain_clean = base_target.replace("https://", "").replace("http://", "").split("/")[0]
-    default_candidates = [
-        f"https://{domain_clean}/",
-        f"https://{domain_clean}/api/v1/health",
-        f"https://{domain_clean}/api/login",
-        f"https://{domain_clean}/search?q=test"
-    ]
-    for cand in default_candidates:
-        if cand not in discovered_endpoints:
-            discovered_endpoints.append(cand)
 
     # Display Endpoint selection guide & table
     guide_panel = Panel(
@@ -740,22 +731,26 @@ def run_stress_module():
 
     active_candidates = discovered_endpoints[:6]
     for idx, ep in enumerate(active_candidates, start=1):
-        ep_lower = ep.lower()
-        if any(k in ep_lower for k in ["login", "auth", "register", "token", "password"]):
-            ep_type = "Auth & Crypto API"
-            ep_eff = "[bold red]💥 Cực Cao[/bold red] (Bcrypt & DB lookup)"
-        elif any(k in ep_lower for k in ["search", "query", "filter", "export", "report", "?"]):
-            ep_type = "Search / Query API"
-            ep_eff = "[bold orange3]🔥 Rất Cao[/bold orange3] (DB Index & CPU Search)"
-        elif "/api" in ep_lower:
-            ep_type = "Backend API Logic"
-            ep_eff = "[bold yellow]⚡ Cao[/bold yellow] (Bypass CDN Cache)"
-        elif ep_lower.endswith(('.png', '.jpg', '.jpeg', '.css', '.js', '.ico', '.svg')):
-            ep_type = "Static Resource"
-            ep_eff = "[dim white]⚪ Cực Thấp[/dim white] (CDN/Browser Cached)"
+        if idx == 1:
+            ep_type = "🎯 Target chính xác đã nhập"
+            ep_eff = "[bold cyan]✅ URL/Path do người dùng cung cấp[/bold cyan]"
         else:
-            ep_type = "Trang chủ / HTML"
-            ep_eff = "[bold cyan]🟡 Thấp[/bold cyan] (Thường bị Edge Cache)"
+            ep_lower = ep.lower()
+            if any(k in ep_lower for k in ["login", "auth", "register", "token", "password"]):
+                ep_type = "Auth & Crypto API"
+                ep_eff = "[bold red]💥 Cực Cao[/bold red] (Bcrypt & DB lookup)"
+            elif any(k in ep_lower for k in ["search", "query", "filter", "export", "report", "?"]):
+                ep_type = "Search / Query API"
+                ep_eff = "[bold orange3]🔥 Rất Cao[/bold orange3] (DB Index & CPU Search)"
+            elif "/api" in ep_lower:
+                ep_type = "Backend API Logic"
+                ep_eff = "[bold yellow]⚡ Cao[/bold yellow] (Bypass CDN Cache)"
+            elif ep_lower.endswith(('.png', '.jpg', '.jpeg', '.css', '.js', '.ico', '.svg')):
+                ep_type = "Static Resource"
+                ep_eff = "[dim white]⚪ Cực Thấp[/dim white] (CDN/Browser Cached)"
+            else:
+                ep_type = "Trang chủ / HTML"
+                ep_eff = "[bold cyan]🟡 Thấp[/bold cyan] (Thường bị Edge Cache)"
 
         ep_table.add_row(str(idx), ep, ep_type, ep_eff)
     ep_table.add_row("0", "Tự nhập URL/Endpoint tùy chỉnh khác", "Custom Path", "[bold white]👉 Tùy chọn[/bold white]")

@@ -213,7 +213,7 @@ export default function C2CommandCenter() {
       if (cliStep === "STRESS_REQS") {
         setCliStep("NONE");
         const reqsCount = parseInt(inputVal) || 100000;
-        const targetUrl = tempTargetUrl || "https://quoc-bank-v8-0.vercel.app/";
+        const targetUrl = tempTargetUrl || "https://example.com";
         const token = tempBypassToken;
 
         setCliLogs((prev) => [
@@ -310,7 +310,7 @@ export default function C2CommandCenter() {
         setCliStep("STRESS_TARGET");
         setCliLogs((prev) => [
           ...prev,
-          `🔥 [3. STRESS TEST MODULE] Nhập URL kiểm thử chịu tải (VD: https://quoc-bank-v8-0.vercel.app/):`
+          `🔥 [3. STRESS TEST MODULE] Nhập URL kiểm thử chịu tải (VD: https://example.com):`
         ]);
       } else if (inputVal === "4" || inputVal.toLowerCase() === "reports" || inputVal.toLowerCase() === "logs") {
         setCliLogs((prev) => [
