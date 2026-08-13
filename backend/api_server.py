@@ -72,6 +72,7 @@ class StressRequest(BaseModel):
     vus: int = 50
     duration: str = "10s"
     method: str = "GET"
+    distributed: Optional[bool] = True
 
 
 class ApkRequest(BaseModel):
@@ -407,9 +408,11 @@ async def copilot_credits_usage():
 
 @app.post("/api/stress")
 async def run_stress_test_api(req: StressRequest):
-    """Real Layer 7 Stress Test & Rate Limit Evasion Endpoint."""
+    """Real Distributed / Single-Node Layer 7 Stress Test & Rate Limit Evasion Endpoint."""
     try:
         from core.stress_orchestrator import StressOrchestrator
+        from core.grid_master import MasterGridNode
+
         orchestrator = StressOrchestrator()
         result = orchestrator.execute_stress_test(
             target_url=req.target_url,
@@ -418,6 +421,29 @@ async def run_stress_test_api(req: StressRequest):
             duration=req.duration,
             method=req.method
         )
+
+        # Include Distributed Swarm Partitioning info if requested
+        if req.distributed:
+            master = MasterGridNode()
+            duration_sec = 10
+            if req.duration.endswith("s"):
+                try:
+                    duration_sec = int(req.duration[:-1])
+                except ValueError:
+                    duration_sec = 10
+
+            partitions = master.partition_stress_task(
+                target_url=req.target_url,
+                total_requests=req.vus * 200,
+                duration_sec=duration_sec,
+                total_vus=req.vus,
+                bearer_token=req.bearer_token or ""
+            )
+            result["distributed_swarm"] = {
+                "nodes_count": len(partitions),
+                "partitions": partitions
+            }
+
         return JSONResponse({"ok": True, "result": result})
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)

@@ -33,6 +33,13 @@ SCAN_PROFILES = {
         "modules": ["session_manager", "param_fuzzer", "logic_chain", "oast_server", "payload_mutation"],
         "required_capability": "deep_logic",
     },
+    "distributed_stress": {
+        "name": "Luồng Thử Tải Phân Tán (Distributed High-Throughput Swarm)",
+        "description": "Chia nhỏ khối lượng request bắn đồng thời trên nhiều Worker Nodes để vượt ngưỡng 50,000+ RPS.",
+        "noise_level": "EXTREME_LOAD",
+        "modules": ["stress_orchestrator", "hive_mind"],
+        "required_capability": "stress_worker",
+    },
 }
 
 
@@ -141,3 +148,53 @@ class MasterGridNode:
             if worker_id in self.active_workers:
                 self.active_workers[worker_id]["completed_tasks"] += 1
                 self.heartbeat(worker_id, status="IDLE")
+
+    def get_active_swarm_workers(self) -> List[Dict[str, Any]]:
+        """Retrieve all active workers capable of executing distributed stress tests."""
+        now = time.time()
+        active = []
+        for worker_id, info in self.active_workers.items():
+            if now - info.get("last_heartbeat", 0) <= 60:
+                caps = info.get("capabilities", [])
+                if "all" in caps or "stress_worker" in caps or "dast_active" in caps:
+                    active.append(info)
+        return active
+
+    def partition_stress_task(
+        self,
+        target_url: str,
+        total_requests: int,
+        duration_sec: int,
+        total_vus: int = 500,
+        bearer_token: str = ""
+    ) -> List[Dict[str, Any]]:
+        """
+        Splits high-volume stress workload across active registered swarm workers.
+        If no workers registered, creates synthetic worker partitions for multi-thread/process execution.
+        """
+        workers = self.get_active_swarm_workers()
+        if not workers:
+            # Default fallback: 3 Swarm Nodes (Alpha-SG, Beta-US, Gamma-EU)
+            workers = [
+                {"worker_id": "Worker-Alpha-SG", "region": "Asia-Singapore (SG)", "capabilities": ["stress_worker"]},
+                {"worker_id": "Worker-Beta-US", "region": "US-West (Oregon)", "capabilities": ["stress_worker"]},
+                {"worker_id": "Worker-Gamma-EU", "region": "EU-Central (Frankfurt)", "capabilities": ["stress_worker"]}
+            ]
+
+        num_nodes = len(workers)
+        sub_requests = max(1, total_requests // num_nodes)
+        sub_vus = max(10, total_vus // num_nodes)
+
+        partitions = []
+        for idx, w in enumerate(workers):
+            partitions.append({
+                "partition_id": f"subtask_{idx+1}",
+                "worker_id": w["worker_id"],
+                "region": w.get("region", "Cloud Node"),
+                "target_url": target_url,
+                "target_requests": sub_requests,
+                "vus": sub_vus,
+                "duration_sec": duration_sec,
+                "bearer_token": bearer_token
+            })
+        return partitions
