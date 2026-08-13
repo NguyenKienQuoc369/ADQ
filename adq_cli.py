@@ -721,17 +721,44 @@ def run_stress_module():
         if cand not in discovered_endpoints:
             discovered_endpoints.append(cand)
 
-    # Display Endpoint selection table
+    # Display Endpoint selection guide & table
+    guide_panel = Panel(
+        "[bold cyan]💡 BÍ QUYẾT CHỌN ENDPOINT KIỂM THỬ TẢI HIỆU QUẢ NHẤT:[/bold cyan]\n"
+        "  • [bold red]1. Endpoint Xử Lý Nặng (💥 Cực Cao / 🔥 Rất Cao):[/bold red] Đường dẫn như [yellow]/api/login[/yellow], [yellow]/search?q=...[/yellow], [yellow]/export[/yellow]. Ép Server chạy Bcrypt Hashing, DB Query, Uncached Logic => [bold white]Đo chính xác ngưỡng sập của Backend & Database.[/bold white]\n"
+        "  • [bold yellow]2. Endpoint API Backend (⚡ Cao):[/bold yellow] Đường dẫn [yellow]/api/...[/yellow]. Bypass hoàn toàn CDN Cache, đánh trực tiếp vào Application Server (Node.js, Python, Go, Java).\n"
+        "  • [bold dim]3. Trang Chủ / Static Files (🟡 Thấp):[/bold dim] Thường bị Cloudflare / Vercel Edge Cache hấp thụ 99% request, Server gốc hầu như không tốn CPU.",
+        title="[bold yellow]📊 HƯỚNG DẪN ĐÁNH GIÁ MỨC ĐỘ HIỆU QUẢ TARGET[/bold yellow]",
+        border_style="cyan"
+    )
+    console.print(guide_panel)
+
     ep_table = Table(title=f"🎯 CHỌN ENDPOINT MỤC TIÊU CỤ THỂ CHO {domain_clean}", show_header=True, header_style="bold cyan")
     ep_table.add_column("STT", style="bold yellow", width=6)
     ep_table.add_column("URL Endpoint Bắn Request", style="bold white")
     ep_table.add_column("Phân Loại Endpoint", style="bold green")
+    ep_table.add_column("Đánh Giá Hiệu Quả Tải", style="bold magenta")
 
     active_candidates = discovered_endpoints[:6]
     for idx, ep in enumerate(active_candidates, start=1):
-        ep_type = "Trang chủ / Root HTML" if ep.endswith("/") or ep == base_target else ("API / Backend" if "/api" in ep else "Tài nguyên / Endpoint")
-        ep_table.add_row(str(idx), ep, ep_type)
-    ep_table.add_row("0", "Tự nhập URL/Endpoint tùy chỉnh khác", "Custom Path")
+        ep_lower = ep.lower()
+        if any(k in ep_lower for k in ["login", "auth", "register", "token", "password"]):
+            ep_type = "Auth & Crypto API"
+            ep_eff = "[bold red]💥 Cực Cao[/bold red] (Bcrypt & DB lookup)"
+        elif any(k in ep_lower for k in ["search", "query", "filter", "export", "report", "?"]):
+            ep_type = "Search / Query API"
+            ep_eff = "[bold orange3]🔥 Rất Cao[/bold orange3] (DB Index & CPU Search)"
+        elif "/api" in ep_lower:
+            ep_type = "Backend API Logic"
+            ep_eff = "[bold yellow]⚡ Cao[/bold yellow] (Bypass CDN Cache)"
+        elif ep_lower.endswith(('.png', '.jpg', '.jpeg', '.css', '.js', '.ico', '.svg')):
+            ep_type = "Static Resource"
+            ep_eff = "[dim white]⚪ Cực Thấp[/dim white] (CDN/Browser Cached)"
+        else:
+            ep_type = "Trang chủ / HTML"
+            ep_eff = "[bold cyan]🟡 Thấp[/bold cyan] (Thường bị Edge Cache)"
+
+        ep_table.add_row(str(idx), ep, ep_type, ep_eff)
+    ep_table.add_row("0", "Tự nhập URL/Endpoint tùy chỉnh khác", "Custom Path", "[bold white]👉 Tùy chọn[/bold white]")
 
     console.print(ep_table)
 
