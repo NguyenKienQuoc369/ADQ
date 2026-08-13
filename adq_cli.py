@@ -770,12 +770,6 @@ def run_stress_module():
 
     console.print(f"\n[bold green][+] Đã chọn mục tiêu bắn chịu tải:[/bold green] [bold cyan]{target}[/bold cyan]")
     bearer_token = Prompt.ask("[bold]🔑 Nhập Bearer Token / Bypass Header (VD: x-vercel-protection-bypass: secret)[/bold]", default="")
-    
-    # Ask user for Execution Mode: Single-Node vs Distributed Swarm
-    console.print("\n[bold cyan]⚙️ CHỌN CHẾ ĐỘ THỰC THI CHỊU TẢI (EXECUTION MODE):[/bold cyan]")
-    console.print("  [bold yellow][1][/bold yellow] Single-Node Engine (Chạy trực tiếp trên máy hiện tại)")
-    console.print("  [bold yellow][2][/bold yellow] Distributed Swarm Engine (Multi-Node Partitioning across Cloud Workers)")
-    exec_mode = IntPrompt.ask("Chọn Chế độ Thực thi [1-2]", choices=["1", "2"], default=2)
 
     # Prompt user for total target requests and duration instead of raw VUs
     target_requests = IntPrompt.ask("\n[bold]💥 Tổng số Request muốn bắn (ví dụ: 10000, 1000000)[/bold]", default=100000)
@@ -822,33 +816,6 @@ def run_stress_module():
 
     # Map request volume dynamically to optimal worker concurrency (VUs)
     vus = max(20, min(int(target_rps / 2), 2000))
-
-    if exec_mode == 2:
-        try:
-            from backend.core.grid_master import MasterGridNode
-        except ImportError:
-            from core.grid_master import MasterGridNode
-
-        master_grid = MasterGridNode()
-        partitions = master_grid.partition_stress_task(
-            target_url=target,
-            total_requests=target_requests,
-            duration_sec=duration_sec,
-            total_vus=vus,
-            bearer_token=bearer_token
-        )
-
-        swarm_table = Table(title="🌐 CỤM CLOUD WORKERS PHÂN TÁN (DISTRIBUTED SWARM NODES)", show_header=True, header_style="bold cyan")
-        swarm_table.add_column("Node ID", style="bold yellow")
-        swarm_table.add_column("Vùng Địa Lý / Cloud Region", style="bold white")
-        swarm_table.add_column("Chỉ Tiêu Requests", style="bold green")
-        swarm_table.add_column("Concurrencies (VUs)", style="bold magenta")
-
-        for p in partitions:
-            swarm_table.add_row(p["worker_id"], p["region"], f"{p['target_requests']:,} reqs", f"{p['vus']} VUs")
-
-        console.print(swarm_table)
-        console.print(f"[bold green][+] Đã chia nhỏ nhiệm vụ thành {len(partitions)} Partitions cho cụm Swarm Nodes bắn đồng thời![/bold green]")
 
     console.print(f"\n[+] Đang kích hoạt Live Attack Matrix cho target: [bold cyan]{target}[/bold cyan] ({target_requests:,} requests / {duration_sec}s - VUs: {vus})...")
     
@@ -922,29 +889,7 @@ def run_stress_module():
         # Background stress test execution task
         def execute_bg():
             nonlocal stress_result
-            if exec_mode == 2:
-                # Distributed Swarm execution across local worker threads and async swarm dispatch
-                async def run_swarm_dispatch():
-                    try:
-                        from backend.core.hive_mind import HiveMindNode
-                    except ImportError:
-                        from core.hive_mind import HiveMindNode
-
-                    hive = HiveMindNode(node_id="Master-CLI-Dispatcher")
-                    await hive.connect()
-                    for partition in partitions:
-                        await hive.broadcast_event(
-                            event_type="EXECUTE_STRESS_SUBJOB",
-                            payload=partition
-                        )
-
-                import asyncio
-                try:
-                    asyncio.run(run_swarm_dispatch())
-                except Exception as swarm_err:
-                    pass
-
-            # Execute high-throughput engine on primary node
+            # Execute high-throughput Go-k6 engine on primary node
             stress_result = orchestrator.execute_stress_test(
                 target_url=target,
                 bearer_token=bearer_token,
