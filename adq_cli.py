@@ -780,78 +780,103 @@ def run_stress_module():
 
     console.print(f"\n[bold green][+] Đã chọn mục tiêu bắn chịu tải:[/bold green] [bold cyan]{target}[/bold cyan]")
     
-    # Universal WAF Bypass Profile Selection
-    console.print("\n[bold cyan]🛡️ [UNIVERSAL WAF BYPASS ENGINE] CHỌN CẤU HÌNH HẠ TẦNG BẢO VỆ CỦA MỤC TIÊU:[/bold cyan]")
-    console.print("  [1] [bold green]Không có WAF / Localhost / Target Công Khai[/bold green]")
-    console.print("  [2] [bold cyan]Vercel Edge Protection[/bold cyan] (Header x-vercel-protection-bypass)")
-    console.print("  [3] [bold yellow]Cloudflare WAF / Zero Trust[/bold yellow] (CF-Access Service Token / cf_clearance Cookie)")
-    console.print("  [4] [bold orange3]AWS WAF & API Gateway[/bold orange3] (x-api-key / X-Amzn-Waf-Bypass)")
-    console.print("  [5] [bold red]Enterprise WAF (Akamai/Imperva)[/bold red] (Custom User-Agent / Whitelist Header)")
-    console.print("  [6] [bold magenta]Universal Custom WAF[/bold magenta] (Tự nhập cặp Header/Cookie tùy chỉnh)")
+    # Auto-Detect WAF Fingerprints
+    console.print("\n[bold cyan]👁️ [WAF FINGERPRINTING ENGINE] Đang 'ngửi' hạ tầng & phân tích khiên WAF mục tiêu...[/bold cyan]")
+    
+    try:
+        from backend.core.waf_detector import detect_target_waf
+    except ImportError:
+        from core.waf_detector import detect_target_waf
 
-    waf_choice = IntPrompt.ask("Chọn WAF Bypass Profile [1-6]", choices=["1", "2", "3", "4", "5", "6"], default=1)
+    with console.status("[bold green]Đang thụ động & chủ động chọc giận WAF để bắt dấu vết...", spinner="dots"):
+        waf_res = detect_target_waf(target)
 
-    bypass_config = None
+    detected_wafs = waf_res.get("detected_wafs", [])
+    has_waf = waf_res.get("has_waf", False)
+
+    stacked_headers = {}
+    stacked_cookies = {}
+    platforms_list = []
     bearer_token = ""
 
-    if waf_choice == 2:
-        sec = Prompt.ask("[bold]🔑 Nhập Vercel Protection Bypass Secret[/bold]", default="")
-        if sec:
-            bypass_config = {
-                "platform": "Vercel Edge Protection",
-                "headers": {
-                    "x-vercel-protection-bypass": sec,
-                    "x-vercel-set-bypass-cookie": "true"
-                }
-            }
-            bearer_token = sec
-    elif waf_choice == 3:
-        cf_type = IntPrompt.ask("Chọn phương thức lách Cloudflare [1: Service Token API | 2: Cookie cf_clearance]", choices=[1, 2], default=1)
-        if cf_type == 1:
-            cid = Prompt.ask("[bold]🔑 Nhập CF-Access-Client-Id[/bold]")
-            csec = Prompt.ask("[bold]🔑 Nhập CF-Access-Client-Secret[/bold]")
-            bypass_config = {
-                "platform": "Cloudflare Zero Trust API",
-                "headers": {
-                    "CF-Access-Client-Id": cid.strip(),
-                    "CF-Access-Client-Secret": csec.strip()
-                }
-            }
-        else:
-            cookie_val = Prompt.ask("[bold]🔑 Nhập Cookie cf_clearance[/bold]")
-            bypass_config = {
-                "platform": "Cloudflare WAF Cookie",
-                "cookies": {
-                    "cf_clearance": cookie_val.strip()
-                }
-            }
-    elif waf_choice == 4:
-        aws_type = IntPrompt.ask("Chọn phương thức AWS [1: x-api-key | 2: X-Amzn-Waf-Bypass]", choices=[1, 2], default=1)
-        if aws_type == 1:
-            k = Prompt.ask("[bold]🔑 Nhập AWS API Key (x-api-key)[/bold]")
-            bypass_config = {
-                "platform": "AWS API Gateway",
-                "headers": {"x-api-key": k.strip()}
-            }
-        else:
-            k = Prompt.ask("[bold]🔑 Nhập AWS WAF Bypass Secret (X-Amzn-Waf-Bypass)[/bold]")
-            bypass_config = {
-                "platform": "AWS WAF Bypass",
-                "headers": {"X-Amzn-Waf-Bypass": k.strip()}
-            }
-    elif waf_choice == 5:
-        ua_val = Prompt.ask("[bold]🔑 Nhập User-Agent / Whitelist Header[/bold]", default="ADQ-Authorized-Scanner-2026")
+    if has_waf and detected_wafs != ["No WAF / Generic Server"]:
+        console.print(Panel(
+            f"[bold red]🚨 PHÁT HIỆN TỰ ĐỘNG MỤC TIÊU ĐANG NẰM SAU KHIÊN BẢO VỆ:[/bold red]\n" +
+            "\n".join([f"  • [bold yellow]Lớp {idx+1}: {waf}[/bold yellow]" for idx, waf in enumerate(detected_wafs)]) +
+            f"\n\n[bold white]💡 CẢNH BÁO:[/bold white] Để Stress Test đi xuyên qua 100% không bị WAF chặn 403, vui lòng nhập mã/token lách cho các hệ thống trên.",
+            title="[bold yellow]👁️ WAF FINGERPRINT DETECTED[/bold yellow]",
+            border_style="yellow"
+        ))
+
+        # Loop through detected WAFs and prompt for secrets for each
+        for waf in detected_wafs:
+            if "Cloudflare" in waf:
+                console.print(f"\n[bold yellow]🛡️ CẤU HÌNH LÁCH CLOUDFLARE ({waf}):[/bold yellow]")
+                cf_type = IntPrompt.ask("  Chọn phương thức [1: Service Token API | 2: Cookie cf_clearance | 3: Bỏ qua]", choices=[1, 2, 3], default=1)
+                if cf_type == 1:
+                    cid = Prompt.ask("  🔑 Nhập CF-Access-Client-Id", default="")
+                    csec = Prompt.ask("  🔑 Nhập CF-Access-Client-Secret", default="")
+                    if cid and csec:
+                        stacked_headers["CF-Access-Client-Id"] = cid.strip()
+                        stacked_headers["CF-Access-Client-Secret"] = csec.strip()
+                        platforms_list.append("Cloudflare Zero Trust API")
+                elif cf_type == 2:
+                    cookie_val = Prompt.ask("  🔑 Nhập Cookie cf_clearance", default="")
+                    if cookie_val:
+                        stacked_cookies["cf_clearance"] = cookie_val.strip()
+                        platforms_list.append("Cloudflare Cookie")
+
+            elif "Vercel" in waf:
+                console.print(f"\n[bold cyan]🛡️ CẤU HÌNH LÁCH VERCEL EDGE ({waf}):[/bold cyan]")
+                sec = Prompt.ask("  🔑 Nhập Vercel Protection Bypass Secret", default="")
+                if sec:
+                    stacked_headers["x-vercel-protection-bypass"] = sec.strip()
+                    stacked_headers["x-vercel-set-bypass-cookie"] = "true"
+                    platforms_list.append("Vercel Edge Protection")
+                    bearer_token = sec.strip()
+
+            elif "AWS" in waf:
+                console.print(f"\n[bold orange3]🛡️ CẤU HÌNH LÁCH AWS WAF / API GATEWAY ({waf}):[/bold orange3]")
+                aws_type = IntPrompt.ask("  Chọn phương thức AWS [1: x-api-key | 2: X-Amzn-Waf-Bypass | 3: Bỏ qua]", choices=[1, 2, 3], default=1)
+                if aws_type == 1:
+                    k = Prompt.ask("  🔑 Nhập AWS API Key (x-api-key)", default="")
+                    if k:
+                        stacked_headers["x-api-key"] = k.strip()
+                        platforms_list.append("AWS API Gateway")
+                elif aws_type == 2:
+                    k = Prompt.ask("  🔑 Nhập AWS WAF Bypass Secret (X-Amzn-Waf-Bypass)", default="")
+                    if k:
+                        stacked_headers["X-Amzn-Waf-Bypass"] = k.strip()
+                        platforms_list.append("AWS WAF Bypass")
+
+            elif any(w in waf for w in ["Akamai", "Imperva", "F5", "Sucuri", "Fortinet"]):
+                console.print(f"\n[bold red]🛡️ CẤU HÌNH LÁCH ENTERPRISE WAF ({waf}):[/bold red]")
+                ua_val = Prompt.ask("  🔑 Nhập User-Agent / Whitelist Header", default="ADQ-Authorized-Scanner-2026")
+                if ua_val:
+                    stacked_headers["User-Agent"] = ua_val.strip()
+                    platforms_list.append(f"{waf} Whitelist")
+    else:
+        console.print("[bold green]✅ Không phát hiện khiên WAF công khai mạnh mẽ. Hạ tầng ở trạng thái tiêu chuẩn.[/bold green]")
+
+    # Ask if user wants to add manual extra custom headers
+    add_custom = Confirm.ask("\n[bold magenta]➕ Bạn có muốn thêm Header / Cookie tùy chỉnh khác thủ công không?[/bold magenta]", default=False)
+    if add_custom:
+        h_name = Prompt.ask("  🔑 Nhập Tên Header bí mật (VD: X-Custom-Auth)", default="")
+        h_val = Prompt.ask(f"  🔑 Nhập Giá trị cho {h_name}", default="")
+        if h_name and h_val:
+            stacked_headers[h_name.strip()] = h_val.strip()
+            platforms_list.append("Custom Header")
+
+    bypass_config = None
+    if stacked_headers or stacked_cookies:
         bypass_config = {
-            "platform": "Enterprise WAF Whitelist",
-            "headers": {"User-Agent": ua_val.strip()}
+            "platform": " + ".join(platforms_list) if platforms_list else "Multi-WAF Stack",
+            "headers": stacked_headers,
+            "cookies": stacked_cookies
         }
-    elif waf_choice == 6:
-        h_name = Prompt.ask("[bold]🔑 Nhập Tên Header bí mật (VD: X-Custom-Auth)[/bold]")
-        h_val = Prompt.ask(f"[bold]🔑 Nhập Giá trị cho {h_name}[/bold]")
-        bypass_config = {
-            "platform": "Universal Custom WAF",
-            "headers": {h_name.strip(): h_val.strip()}
-        }
+        console.print(f"\n[bold green]✅ [PROFILES STACKED] Đã gộp thành công {len(stacked_headers)} Headers & {len(stacked_cookies)} Cookies lách đa lớp WAF![/bold green]")
+    else:
+        console.print("\n[bold dim]ℹ️ Không cấu hình WAF Bypass Secret. Bắn chịu tải trực tiếp công khai.[/bold dim]")
 
     # Prompt user for total target requests and duration instead of raw VUs
     target_requests = IntPrompt.ask("\n[bold]💥 Tổng số Request muốn bắn (ví dụ: 10000, 1000000)[/bold]", default=100000)
