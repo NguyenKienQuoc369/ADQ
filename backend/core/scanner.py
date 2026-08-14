@@ -185,11 +185,27 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
     vulns = []
     resp_text = ""
 
+    # Realistic browser headers to bypass automated bot checks (Cloudflare, Akamai, AWS WAF, etc.)
+    browser_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
+    }
+
     try:
         resp = requests.get(
             target_url,
             timeout=5,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ADQ-Security-Scanner/2.0"},
+            headers=browser_headers,
             verify=False
         )
         status_code = resp.status_code
@@ -211,9 +227,11 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
 
         # CORS Testing
         try:
+            cors_headers = dict(browser_headers)
+            cors_headers["Origin"] = "https://evil-attacker-adq.com"
             cors_resp = requests.options(
                 target_url,
-                headers={"Origin": "https://evil-attacker-adq.com", "User-Agent": "ADQ-Security-Scanner/2.0"},
+                headers=cors_headers,
                 timeout=3,
                 verify=False
             )
@@ -248,7 +266,7 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
             r = requests.get(
                 test_url,
                 timeout=3,
-                headers={"User-Agent": "Mozilla/5.0 ADQ-Security-Scanner/2.0"},
+                headers=browser_headers,
                 verify=False
             )
             if r.status_code == 200:
