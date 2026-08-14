@@ -293,7 +293,7 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
     secrets = []
     if resp_text:
         try:
-            from core.js_analyzer import DeepJSAnalyzer
+            from .js_analyzer import DeepJSAnalyzer
             analyzer = DeepJSAnalyzer()
             js_res = analyzer.analyze_code(resp_text, source_url=target_url)
             secrets = js_res.get("secrets", [])

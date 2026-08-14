@@ -2,7 +2,10 @@ import json
 import importlib
 from typing import Any, Dict, List, Optional
 
-from config import config
+try:
+    from config import config
+except ImportError:
+    from backend.config import config
 
 SupabaseClient = Any
 

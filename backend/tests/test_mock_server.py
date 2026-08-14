@@ -1,7 +1,10 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from target_mock import app
+try:
+    from backend.tests.target_mock import app
+except ImportError:
+    from target_mock import app
 
 
 @pytest.fixture

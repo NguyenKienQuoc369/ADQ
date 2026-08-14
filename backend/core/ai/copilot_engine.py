@@ -12,12 +12,12 @@ except ImportError:
     pass
 
 try:
-    from backend.core.copilot_masker import SensitiveDataMasker  # type: ignore
+    from backend.core.ai.copilot_masker import SensitiveDataMasker  # type: ignore
 except ImportError:
     try:
-        from core.copilot_masker import SensitiveDataMasker  # type: ignore
+        from core.ai.copilot_masker import SensitiveDataMasker  # type: ignore
     except ImportError:
-        from copilot_masker import SensitiveDataMasker  # type: ignore
+        from .copilot_masker import SensitiveDataMasker  # type: ignore
 
 try:
     import redis  # type: ignore
@@ -325,9 +325,9 @@ class ADQSecurityCopilot:
                 bypass_cfg = args.get("bypass_config")
                 target_reqs = target_rps * duration_sec
                 try:
-                    from backend.core.stress_orchestrator import StressOrchestrator
+                    from backend.core.security.stress_orchestrator import StressOrchestrator
                 except ImportError:
-                    from core.stress_orchestrator import StressOrchestrator
+                    from core.security.stress_orchestrator import StressOrchestrator
                 orchestrator = StressOrchestrator()
                 res = orchestrator.execute_stress_test(
                     target_url=target_url,
@@ -353,9 +353,9 @@ class ADQSecurityCopilot:
                     full_target = target_path or default_target
 
                 try:
-                    from backend.core.scanner import perform_real_dynamic_scan
+                    from backend.core.recon.scanner import perform_real_dynamic_scan
                 except ImportError:
-                    from core.scanner import perform_real_dynamic_scan
+                    from core.recon.scanner import perform_real_dynamic_scan
                 scan_res = perform_real_dynamic_scan(full_target)
                 return {
                     "tool": func_name,

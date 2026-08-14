@@ -8,9 +8,12 @@ import logging
 import zipfile
 from typing import Any, Dict, List, Optional, Set
 try:
-    from backend.core.js_analyzer import SECRET_PATTERNS, ENDPOINT_PATTERNS
+    from .js_analyzer import SECRET_PATTERNS, ENDPOINT_PATTERNS
 except ImportError:
-    from core.js_analyzer import SECRET_PATTERNS, ENDPOINT_PATTERNS
+    try:
+        from backend.core.js_analyzer import SECRET_PATTERNS, ENDPOINT_PATTERNS
+    except ImportError:
+        from core.js_analyzer import SECRET_PATTERNS, ENDPOINT_PATTERNS
 
 logger = logging.getLogger(__name__)
 

@@ -1,13 +1,24 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from core.js_analyzer import DeepJSAnalyzer
-from core.param_fuzzer import ContextAwareParamFuzzer
-from core.session_manager import AuthenticatedSessionManager
-from core.waf_evasion import AdaptiveWAFEvasionEngine
-from modules.logic.idor_scanner import IDORScanner
-from modules.logic.race_condition import RaceConditionScanner
-from modules.logic.workflow_bypass import WorkflowBypassScanner
+try:
+    from backend.core.recon.js_analyzer import DeepJSAnalyzer
+    from backend.core.fuzzing.param_fuzzer import ContextAwareParamFuzzer
+    from backend.core.engine.session_manager import AuthenticatedSessionManager
+    from backend.core.security.waf_evasion import AdaptiveWAFEvasionEngine
+except ImportError:
+    from core.recon.js_analyzer import DeepJSAnalyzer
+    from core.fuzzing.param_fuzzer import ContextAwareParamFuzzer
+    from core.engine.session_manager import AuthenticatedSessionManager
+    from core.security.waf_evasion import AdaptiveWAFEvasionEngine
+try:
+    from backend.modules.logic.idor_scanner import IDORScanner
+    from backend.modules.logic.race_condition import RaceConditionScanner
+    from backend.modules.logic.workflow_bypass import WorkflowBypassScanner
+except ImportError:
+    from modules.logic.idor_scanner import IDORScanner
+    from modules.logic.race_condition import RaceConditionScanner
+    from modules.logic.workflow_bypass import WorkflowBypassScanner
 
 
 class AutomatedLogicChainingEngine:

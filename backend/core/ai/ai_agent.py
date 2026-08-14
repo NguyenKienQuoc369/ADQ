@@ -4,7 +4,10 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from config import config
+try:
+    from config import config
+except ImportError:
+    from backend.config import config
 
 
 def _severity_score(severity: str) -> int:

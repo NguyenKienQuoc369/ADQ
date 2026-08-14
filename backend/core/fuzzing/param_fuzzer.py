@@ -2,7 +2,10 @@ import time
 import requests
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.waf_evasion import AdaptiveWAFEvasionEngine
+try:
+    from backend.core.security.waf_evasion import AdaptiveWAFEvasionEngine
+except ImportError:
+    from core.security.waf_evasion import AdaptiveWAFEvasionEngine
 
 
 DEFAULT_PARAM_WORDLIST = [
