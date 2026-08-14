@@ -171,43 +171,6 @@ def _call_llm_analysis(target: str, vulnerabilities: List[Dict[str, Any]], live_
     return parsed
 
 
-def build_telegram_review_message(scan_id: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
-    risk = str(analysis.get("risk_level", "unknown")).upper()
-    confidence = analysis.get("confidence", "N/A")
-    summary = analysis.get("summary", "Không có tóm tắt")
-    text = (
-        f"🤖 <b>AI Security Review</b>\n"
-        f"• Scan: <code>{scan_id}</code>\n"
-        f"• Risk: <b>{risk}</b>\n"
-        f"• Confidence: <b>{confidence}</b>\n\n"
-        f"{summary}"
-    )
-
-    callback_vuln_type = "config_leak"
-    top_findings = analysis.get("top_findings") or []
-    if isinstance(top_findings, list) and top_findings:
-        first = top_findings[0] or {}
-        source = str(first.get("source") or "").lower()
-        endpoint = str(first.get("endpoint") or "").lower()
-        if source == "ffuf" and any(word in endpoint for word in ["admin", "dir", "listing"]):
-            callback_vuln_type = "directory_listing"
-        elif source == "nuclei" and "port" in str(first.get("template_id") or "").lower():
-            callback_vuln_type = "open_port"
-
-    return {
-        "text": text,
-        "parse_mode": "HTML",
-        "reply_markup": {
-            "inline_keyboard": [
-                [
-                    {"text": "✅ Approve Escalation", "callback_data": f"approve:{scan_id}:{callback_vuln_type}"},
-                    {"text": "❌ Reject / Needs Review", "callback_data": f"reject:{scan_id}:{callback_vuln_type}"},
-                ]
-            ]
-        },
-    }
-
-
 def analyze_security_findings(
     scan_id: str,
     target: str,
@@ -229,5 +192,4 @@ def analyze_security_findings(
         if llm_result and llm_result.get("engine") == "llm_error":
             analysis["llm_error"] = llm_result.get("error")
 
-    analysis["telegram_review"] = build_telegram_review_message(scan_id=scan_id, analysis=analysis)
     return analysis

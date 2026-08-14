@@ -3,9 +3,12 @@ import requests
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
-    from backend.core.security.waf_evasion import AdaptiveWAFEvasionEngine
+    from backend.core.stress_test.waf_evasion import AdaptiveWAFEvasionEngine
 except ImportError:
-    from core.security.waf_evasion import AdaptiveWAFEvasionEngine
+    try:
+        from backend.core.waf_evasion import AdaptiveWAFEvasionEngine
+    except ImportError:
+        from core.waf_evasion import AdaptiveWAFEvasionEngine
 
 
 DEFAULT_PARAM_WORDLIST = [

@@ -2,15 +2,21 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 try:
-    from backend.core.recon.js_analyzer import DeepJSAnalyzer
-    from backend.core.fuzzing.param_fuzzer import ContextAwareParamFuzzer
+    from backend.core.recon_scan.js_analyzer import DeepJSAnalyzer
+    from backend.core.recon_scan.param_fuzzer import ContextAwareParamFuzzer
     from backend.core.engine.session_manager import AuthenticatedSessionManager
-    from backend.core.security.waf_evasion import AdaptiveWAFEvasionEngine
+    from backend.core.stress_test.waf_evasion import AdaptiveWAFEvasionEngine
 except ImportError:
-    from core.recon.js_analyzer import DeepJSAnalyzer
-    from core.fuzzing.param_fuzzer import ContextAwareParamFuzzer
-    from core.engine.session_manager import AuthenticatedSessionManager
-    from core.security.waf_evasion import AdaptiveWAFEvasionEngine
+    try:
+        from backend.core.js_analyzer import DeepJSAnalyzer
+        from backend.core.param_fuzzer import ContextAwareParamFuzzer
+        from backend.core.session_manager import AuthenticatedSessionManager
+        from backend.core.waf_evasion import AdaptiveWAFEvasionEngine
+    except ImportError:
+        from core.js_analyzer import DeepJSAnalyzer
+        from core.param_fuzzer import ContextAwareParamFuzzer
+        from core.session_manager import AuthenticatedSessionManager
+        from core.waf_evasion import AdaptiveWAFEvasionEngine
 try:
     from backend.modules.logic.idor_scanner import IDORScanner
     from backend.modules.logic.race_condition import RaceConditionScanner
