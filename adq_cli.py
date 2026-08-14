@@ -812,7 +812,7 @@ def run_stress_module():
         for waf in detected_wafs:
             if "Cloudflare" in waf:
                 console.print(f"\n[bold yellow]🛡️ CẤU HÌNH LÁCH CLOUDFLARE ({waf}):[/bold yellow]")
-                cf_type = IntPrompt.ask("  Chọn phương thức [1: Service Token API | 2: Cookie cf_clearance | 3: Bỏ qua]", choices=[1, 2, 3], default=1)
+                cf_type = IntPrompt.ask("  Chọn phương thức [1: Service Token API | 2: Cookie cf_clearance | 3: Bỏ qua]", choices=["1", "2", "3"], default=1)
                 if cf_type == 1:
                     cid = Prompt.ask("  🔑 Nhập CF-Access-Client-Id", default="")
                     csec = Prompt.ask("  🔑 Nhập CF-Access-Client-Secret", default="")
@@ -837,7 +837,7 @@ def run_stress_module():
 
             elif "AWS" in waf:
                 console.print(f"\n[bold orange3]🛡️ CẤU HÌNH LÁCH AWS WAF / API GATEWAY ({waf}):[/bold orange3]")
-                aws_type = IntPrompt.ask("  Chọn phương thức AWS [1: x-api-key | 2: X-Amzn-Waf-Bypass | 3: Bỏ qua]", choices=[1, 2, 3], default=1)
+                aws_type = IntPrompt.ask("  Chọn phương thức AWS [1: x-api-key | 2: X-Amzn-Waf-Bypass | 3: Bỏ qua]", choices=["1", "2", "3"], default=1)
                 if aws_type == 1:
                     k = Prompt.ask("  🔑 Nhập AWS API Key (x-api-key)", default="")
                     if k:
