@@ -322,6 +322,8 @@ class ADQSecurityCopilot:
                 target_url = args.get("target_url") or default_target
                 target_rps = int(args.get("target_rps") or 500)
                 duration_sec = int(args.get("duration_sec") or 5)
+                bypass_cfg = args.get("bypass_config")
+                target_reqs = target_rps * duration_sec
                 try:
                     from backend.core.stress_orchestrator import StressOrchestrator
                 except ImportError:
@@ -329,8 +331,9 @@ class ADQSecurityCopilot:
                 orchestrator = StressOrchestrator()
                 res = orchestrator.execute_stress_test(
                     target_url=target_url,
-                    target_rps=target_rps,
-                    duration_sec=duration_sec
+                    target_requests=target_reqs,
+                    duration=f"{duration_sec}s",
+                    bypass_config=bypass_cfg
                 )
                 return {
                     "tool": "run_stress_test",

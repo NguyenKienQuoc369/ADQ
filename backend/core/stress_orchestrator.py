@@ -53,12 +53,25 @@ class StressOrchestrator:
         vus: int = 50,
         duration: str = "30s",
         ramp_up: bool = False,
-        target_requests: Optional[int] = None
+        target_requests: Optional[int] = None,
+        bypass_config: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Generates dynamic JavaScript script for k6 execution with high-throughput arrival-rate scenarios."""
+        """Generates dynamic JavaScript script for k6 execution with high-throughput arrival-rate scenarios and dynamic bypass profiles."""
         headers_dict = headers.copy() if headers else {}
         headers_dict["Content-Type"] = headers_dict.get("Content-Type", "application/json")
         headers_dict["User-Agent"] = headers_dict.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        
+        # Inject Universal WAF Bypass Config Profile if supplied
+        if bypass_config:
+            if "headers" in bypass_config and isinstance(bypass_config["headers"], dict):
+                headers_dict.update(bypass_config["headers"])
+            if "cookies" in bypass_config and isinstance(bypass_config["cookies"], dict):
+                cookie_str = "; ".join([f"{k}={v}" for k, v in bypass_config["cookies"].items()])
+                if "Cookie" in headers_dict:
+                    headers_dict["Cookie"] += f"; {cookie_str}"
+                else:
+                    headers_dict["Cookie"] = cookie_str
+
         if bearer_token:
             clean_token = bearer_token.strip()
             if ":" in clean_token:
@@ -167,7 +180,8 @@ export default function () {{
         duration: str = "30s",
         ramp_up: bool = False,
         target_requests: Optional[int] = None,
-        stats_callback: Optional[Any] = None
+        stats_callback: Optional[Any] = None,
+        bypass_config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Runs load attack against REAL target URL and parses execution statistics."""
         duration_sec = 10
@@ -191,7 +205,8 @@ export default function () {{
             vus=vus,
             duration=duration,
             ramp_up=ramp_up,
-            target_requests=target_requests
+            target_requests=target_requests,
+            bypass_config=bypass_config
         )
 
         # Try k6 binary if installed, otherwise run native Python Thread Fleet HTTP engine
@@ -273,7 +288,8 @@ export default function () {{
             body=body,
             vus=vus,
             duration_sec=duration_sec,
-            stats_callback=stats_callback
+            stats_callback=stats_callback,
+            bypass_config=bypass_config
         )
 
     def execute_python_http_stress_test(
@@ -285,7 +301,8 @@ export default function () {{
         body: Optional[str] = None,
         vus: int = 50,
         duration_sec: int = 10,
-        stats_callback: Optional[Any] = None
+        stats_callback: Optional[Any] = None,
+        bypass_config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Native High-Concurrency Async/Threaded Python HTTP Load Engine.
@@ -300,6 +317,15 @@ export default function () {{
         import concurrent.futures
 
         headers_dict = headers.copy() if headers else {}
+        if bypass_config:
+            if "headers" in bypass_config and isinstance(bypass_config["headers"], dict):
+                headers_dict.update(bypass_config["headers"])
+            if "cookies" in bypass_config and isinstance(bypass_config["cookies"], dict):
+                cookie_str = "; ".join([f"{k}={v}" for k, v in bypass_config["cookies"].items()])
+                if "Cookie" in headers_dict:
+                    headers_dict["Cookie"] += f"; {cookie_str}"
+                else:
+                    headers_dict["Cookie"] = cookie_str
         # Clean default Chrome Browser headers
         if "User-Agent" not in headers_dict:
             headers_dict["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

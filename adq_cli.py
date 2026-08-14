@@ -779,7 +779,79 @@ def run_stress_module():
         target = active_candidates[ep_choice - 1]
 
     console.print(f"\n[bold green][+] Đã chọn mục tiêu bắn chịu tải:[/bold green] [bold cyan]{target}[/bold cyan]")
-    bearer_token = Prompt.ask("[bold]🔑 Nhập Bearer Token / Bypass Header (VD: x-vercel-protection-bypass: secret)[/bold]", default="")
+    
+    # Universal WAF Bypass Profile Selection
+    console.print("\n[bold cyan]🛡️ [UNIVERSAL WAF BYPASS ENGINE] CHỌN CẤU HÌNH HẠ TẦNG BẢO VỆ CỦA MỤC TIÊU:[/bold cyan]")
+    console.print("  [1] [bold green]Không có WAF / Localhost / Target Công Khai[/bold green]")
+    console.print("  [2] [bold cyan]Vercel Edge Protection[/bold cyan] (Header x-vercel-protection-bypass)")
+    console.print("  [3] [bold yellow]Cloudflare WAF / Zero Trust[/bold yellow] (CF-Access Service Token / cf_clearance Cookie)")
+    console.print("  [4] [bold orange3]AWS WAF & API Gateway[/bold orange3] (x-api-key / X-Amzn-Waf-Bypass)")
+    console.print("  [5] [bold red]Enterprise WAF (Akamai/Imperva)[/bold red] (Custom User-Agent / Whitelist Header)")
+    console.print("  [6] [bold magenta]Universal Custom WAF[/bold magenta] (Tự nhập cặp Header/Cookie tùy chỉnh)")
+
+    waf_choice = IntPrompt.ask("Chọn WAF Bypass Profile [1-6]", choices=["1", "2", "3", "4", "5", "6"], default=1)
+
+    bypass_config = None
+    bearer_token = ""
+
+    if waf_choice == 2:
+        sec = Prompt.ask("[bold]🔑 Nhập Vercel Protection Bypass Secret[/bold]", default="")
+        if sec:
+            bypass_config = {
+                "platform": "Vercel Edge Protection",
+                "headers": {
+                    "x-vercel-protection-bypass": sec,
+                    "x-vercel-set-bypass-cookie": "true"
+                }
+            }
+            bearer_token = sec
+    elif waf_choice == 3:
+        cf_type = IntPrompt.ask("Chọn phương thức lách Cloudflare [1: Service Token API | 2: Cookie cf_clearance]", choices=[1, 2], default=1)
+        if cf_type == 1:
+            cid = Prompt.ask("[bold]🔑 Nhập CF-Access-Client-Id[/bold]")
+            csec = Prompt.ask("[bold]🔑 Nhập CF-Access-Client-Secret[/bold]")
+            bypass_config = {
+                "platform": "Cloudflare Zero Trust API",
+                "headers": {
+                    "CF-Access-Client-Id": cid.strip(),
+                    "CF-Access-Client-Secret": csec.strip()
+                }
+            }
+        else:
+            cookie_val = Prompt.ask("[bold]🔑 Nhập Cookie cf_clearance[/bold]")
+            bypass_config = {
+                "platform": "Cloudflare WAF Cookie",
+                "cookies": {
+                    "cf_clearance": cookie_val.strip()
+                }
+            }
+    elif waf_choice == 4:
+        aws_type = IntPrompt.ask("Chọn phương thức AWS [1: x-api-key | 2: X-Amzn-Waf-Bypass]", choices=[1, 2], default=1)
+        if aws_type == 1:
+            k = Prompt.ask("[bold]🔑 Nhập AWS API Key (x-api-key)[/bold]")
+            bypass_config = {
+                "platform": "AWS API Gateway",
+                "headers": {"x-api-key": k.strip()}
+            }
+        else:
+            k = Prompt.ask("[bold]🔑 Nhập AWS WAF Bypass Secret (X-Amzn-Waf-Bypass)[/bold]")
+            bypass_config = {
+                "platform": "AWS WAF Bypass",
+                "headers": {"X-Amzn-Waf-Bypass": k.strip()}
+            }
+    elif waf_choice == 5:
+        ua_val = Prompt.ask("[bold]🔑 Nhập User-Agent / Whitelist Header[/bold]", default="ADQ-Authorized-Scanner-2026")
+        bypass_config = {
+            "platform": "Enterprise WAF Whitelist",
+            "headers": {"User-Agent": ua_val.strip()}
+        }
+    elif waf_choice == 6:
+        h_name = Prompt.ask("[bold]🔑 Nhập Tên Header bí mật (VD: X-Custom-Auth)[/bold]")
+        h_val = Prompt.ask(f"[bold]🔑 Nhập Giá trị cho {h_name}[/bold]")
+        bypass_config = {
+            "platform": "Universal Custom WAF",
+            "headers": {h_name.strip(): h_val.strip()}
+        }
 
     # Prompt user for total target requests and duration instead of raw VUs
     target_requests = IntPrompt.ask("\n[bold]💥 Tổng số Request muốn bắn (ví dụ: 10000, 1000000)[/bold]", default=100000)
@@ -906,7 +978,8 @@ def run_stress_module():
                 vus=vus,
                 duration=duration,
                 target_requests=target_requests,
-                stats_callback=on_http_request_complete
+                stats_callback=on_http_request_complete,
+                bypass_config=bypass_config
             )
 
         import threading
