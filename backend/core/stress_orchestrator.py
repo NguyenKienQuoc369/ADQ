@@ -80,9 +80,14 @@ class StressOrchestrator:
             elif "=" in clean_token and not clean_token.startswith("eyJ"):
                 k, v = clean_token.split("=", 1)
                 headers_dict[k.strip()] = v.strip()
-            elif clean_token.startswith("eyJ") or clean_token.startswith("secret_"):
-                headers_dict["Authorization"] = f"Bearer {clean_token}"
+            elif clean_token.startswith("eyJ") or clean_token.startswith("secret_") or clean_token.lower().startswith("bearer "):
+                if clean_token.lower().startswith("bearer "):
+                    headers_dict["Authorization"] = clean_token
+                else:
+                    headers_dict["Authorization"] = f"Bearer {clean_token}"
             else:
+                # Support universal token string (could be Vercel bypass secret, Cloudflare token, or custom auth token)
+                headers_dict["Authorization"] = f"Bearer {clean_token}"
                 headers_dict["x-vercel-protection-bypass"] = clean_token
                 headers_dict["x-vercel-set-bypass-cookie"] = "true"
 
@@ -349,10 +354,14 @@ export default function () {{
             elif "=" in clean_token and not clean_token.startswith("eyJ"):
                 k, v = clean_token.split("=", 1)
                 headers_dict[k.strip()] = v.strip()
-            elif clean_token.startswith("eyJ") or clean_token.startswith("secret_"):
-                headers_dict["Authorization"] = f"Bearer {clean_token}"
+            elif clean_token.startswith("eyJ") or clean_token.startswith("secret_") or clean_token.lower().startswith("bearer "):
+                if clean_token.lower().startswith("bearer "):
+                    headers_dict["Authorization"] = clean_token
+                else:
+                    headers_dict["Authorization"] = f"Bearer {clean_token}"
             else:
-                # Default to Vercel/Cloudflare WAF Protection Bypass Header
+                # Support universal token string (Authorization + optional WAF headers)
+                headers_dict["Authorization"] = f"Bearer {clean_token}"
                 headers_dict["x-vercel-protection-bypass"] = clean_token
                 headers_dict["x-vercel-set-bypass-cookie"] = "true"
 
@@ -365,6 +374,7 @@ export default function () {{
             "status_429_rate_limited": 0,
             "status_500_crashed": 0,
             "other_status": 0,
+            "waf_mitigated_count": 0,
             "vercel_mitigated_count": 0,
             "rps": 0.0,
             "p95_latency": "0ms",
@@ -422,7 +432,14 @@ export default function () {{
                         timeout=5
                     )
                     status_code = resp.status_code
-                    if resp.headers.get("x-vercel-mitigated") or "x-vercel-challenge-token" in resp.headers:
+                    h_lower = {k.lower(): v.lower() for k, v in resp.headers.items()}
+                    if ("x-vercel-mitigated" in h_lower or 
+                        "x-vercel-challenge-token" in h_lower or
+                        "cf-mitigated" in h_lower or
+                        "x-amzn-waf-action" in h_lower or
+                        "x-cdn-waf-mitigated" in h_lower or
+                        "x-sucuri-id" in h_lower or
+                        "incap-ses" in h_lower):
                         is_mitigated = True
                 except Exception:
                     status_code = 500
@@ -438,7 +455,14 @@ export default function () {{
                         status_code = response.getcode()
                 except urllib.error.HTTPError as http_err:
                     status_code = http_err.code
-                    if "x-vercel-mitigated" in http_err.headers or "x-vercel-challenge-token" in http_err.headers:
+                    h_lower = {k.lower(): v.lower() for k, v in http_err.headers.items()}
+                    if ("x-vercel-mitigated" in h_lower or 
+                        "x-vercel-challenge-token" in h_lower or
+                        "cf-mitigated" in h_lower or
+                        "x-amzn-waf-action" in h_lower or
+                        "x-cdn-waf-mitigated" in h_lower or
+                        "x-sucuri-id" in h_lower or
+                        "incap-ses" in h_lower):
                         is_mitigated = True
                 except Exception:
                     status_code = 500
@@ -463,6 +487,7 @@ export default function () {{
                 metrics["total_requests"] += 1
 
                 if res.get("is_mitigated"):
+                    metrics["waf_mitigated_count"] += 1
                     metrics["vercel_mitigated_count"] += 1
                 
                 if code in (200, 201, 204):

@@ -358,7 +358,7 @@ def render_telegram_style_stress_report(
     s500 = metrics.get("status_500_crashed", 0)
 
     res_table.add_row("[bold green]HTTP 200 OK[/bold green]", str(s200), f"{round(s200/tot*100, 1)}%", "Xử lý thành công bình thường")
-    res_table.add_row("[bold red]HTTP 403 WAF Blocked[/bold red]", str(s403), f"{round(s403/tot*100, 1)}%", "🛡️ Vercel Security Checkpoint / WAF Chặn Bot")
+    res_table.add_row("[bold red]HTTP 403 WAF Blocked[/bold red]", str(s403), f"{round(s403/tot*100, 1)}%", "🛡️ WAF / Cloudflare / AWS / Vercel Chặn Bot")
     res_table.add_row("[bold yellow]HTTP 429 Rate Limited[/bold yellow]", str(s429), f"{round(s429/tot*100, 1)}%", "Cơ chế Rate Limit WAF hoạt động")
     res_table.add_row("[bold red]HTTP 500+ Server Crash[/bold red]", str(s500), f"{round(s500/tot*100, 1)}%", "⚠️ Máy chủ quá tải hoặc bị lỗi bộ nhớ")
 
@@ -367,7 +367,7 @@ def render_telegram_style_stress_report(
     # Dynamic calculation of WAF bypass rate based on actual response metrics
     bypass_rate = round((s200 / tot) * 100, 1)
     if s403 > 0 and s200 == 0:
-        bypass_eval = f"[bold red]Kích hoạt Vercel Security Checkpoint / WAF (Chặn 100% Request với HTTP 403)[/bold red]"
+        bypass_eval = f"[bold red]Kích hoạt WAF Security Checkpoint (Chặn 100% Request với HTTP 403)[/bold red]"
     elif s429 == 0 and s403 == 0:
         bypass_eval = f"[bold green]Lách hoàn toàn Rate Limit & WAF (Tỷ lệ 200 OK: {bypass_rate}%)[/bold green]"
     elif s200 > (s429 + s403):
@@ -383,13 +383,13 @@ def render_telegram_style_stress_report(
         border_style="yellow"
     ))
 
-    if metrics.get("vercel_mitigated_count", 0) > 0 or (s403 > 0 and s200 == 0):
+    if metrics.get("waf_mitigated_count", 0) > 0 or metrics.get("vercel_mitigated_count", 0) > 0 or (s403 > 0 and s200 == 0):
         console.print(Panel(
-            f"[bold yellow]💡 LƯU Ý BẢO MẬT & MẸO BYPASS VERCEL / CLOUDFLARE WAF:[/bold yellow]\n"
-            f"• Máy chủ Edge CDN của mục tiêu đã bật chế độ [bold red]Security Checkpoint (x-vercel-mitigated: challenge)[/bold red] do quá tải.\n"
-            f"• Khi tự kiểm thử trang web Vercel chính chủ của bạn, hãy nhập header bypass vào mục Token:\n"
-            f"  [bold cyan]x-vercel-protection-bypass: <your_protection_bypass_secret>[/bold cyan]\n"
-            f"  (Lấy Secret tại: Vercel Dashboard -> Project Settings -> Security -> Protection Bypass for Automation)",
+            f"[bold yellow]💡 LƯU Ý BẢO MẬT & MẸO BYPASS WAF (CLOUDFLARE / VERCEL / AWS WAF):[/bold yellow]\n"
+            f"• Máy chủ Edge CDN/WAF của mục tiêu đã kích hoạt chế độ [bold red]Security Checkpoint / CAPTCHA Challenge[/bold red] do quá tải.\n"
+            f"• Khi tự kiểm thử hệ thống chính chủ, hãy truyền Header / Cookie bypass vào mục Token / Bypass Profile:\n"
+            f"  - Vercel: [bold cyan]x-vercel-protection-bypass: <secret>[/bold cyan]\n"
+            f"  - Cloudflare / Custom WAF: [bold cyan]Authorization: Bearer <token>[/bold cyan] hoặc [bold cyan]cf-clearance / cf_bm cookie[/bold cyan]",
             border_style="cyan"
         ))
 
