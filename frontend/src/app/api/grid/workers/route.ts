@@ -61,7 +61,10 @@ export async function GET() {
       activeWorkersCount: activeJobs.length > 0 ? 4 : 0,
       workers,
     });
-  } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Không thể tải trạng thái worker." },
+      { status: 500 },
+    );
   }
 }

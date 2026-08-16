@@ -64,7 +64,10 @@ export async function GET(req: Request) {
     };
 
     return NextResponse.json({ ok: true, data: graphData });
-  } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Không thể dựng dữ liệu graph." },
+      { status: 500 },
+    );
   }
 }

@@ -21,7 +21,7 @@ export async function GET(req: Request) {
       },
     });
 
-    const matrix = targets.map((t, idx) => {
+    const matrix = targets.map((t) => {
       const latestJob = t.scanJobs[0];
       const liveHosts = latestJob?.liveHosts || [];
 
@@ -73,7 +73,7 @@ export async function GET(req: Request) {
     });
 
     // Filter matrix according to delta toggles
-    let filteredMatrix = matrix.map((root) => ({
+    const filteredMatrix = matrix.map((root) => ({
       ...root,
       subdomains: root.subdomains.filter((sub) => {
         if (showNewOnly && !sub.isNew) return false;
@@ -87,7 +87,10 @@ export async function GET(req: Request) {
       totalRoots: filteredMatrix.length,
       matrix: filteredMatrix,
     });
-  } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Không thể dựng bản đồ tài sản." },
+      { status: 500 },
+    );
   }
 }

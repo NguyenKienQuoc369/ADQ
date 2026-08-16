@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import { getPrismaClient } from "@/lib/prisma";
 
+type DispatchRequestBody = {
+  targets?: string[];
+  profiles?: string[];
+  capability?: string;
+  priority?: number;
+};
+
 export async function POST(req: Request) {
   try {
     const prisma = getPrismaClient();
-    const body = await req.json();
-    const { targets, profiles, capability, priority, extraParams } = body;
+    const body = (await req.json()) as DispatchRequestBody;
+    const { targets, profiles, capability, priority } = body;
 
     if (!targets || !Array.isArray(targets) || targets.length === 0) {
       return NextResponse.json({ ok: false, error: "No targets provided" }, { status: 400 });
@@ -75,7 +82,10 @@ export async function POST(req: Request) {
       message: `Dispatched ${createdJobs.length} target(s) to Master Grid`,
       jobs: createdJobs,
     });
-  } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Không thể điều phối lượt quét." },
+      { status: 500 },
+    );
   }
 }
