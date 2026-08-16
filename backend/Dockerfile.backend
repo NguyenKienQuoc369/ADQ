@@ -3,19 +3,31 @@ FROM python:3.11-slim
 
 # Cài đặt các gói hệ thống cơ bản và Golang
 RUN apt-get update && apt-get install -y \
-    wget curl git gcc make libpcap-dev \
-    golang-go netcat-openbsd \
+    wget curl git gcc make libpcap-dev golang-go netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
-# Thiết lập đường dẫn cho Go binaries
-ENV GOPATH=/root/go
-ENV PATH=$PATH:/root/go/bin
+# Tải wordlist SecLists chất lượng cao cho FFuf
+RUN mkdir -p /usr/share/seclists/Discovery/Web-Content && \
+    curl -sSL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt -o /usr/share/seclists/Discovery/Web-Content/common.txt && \
+    curl -sSL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/api-endpoints.txt -o /usr/share/seclists/Discovery/Web-Content/api-endpoints.txt
 
-# Cài đặt các công cụ bảo mật lõi
+# Cấu hình môi trường Go để cài đặt tool
+ENV GOPATH=/root/go
+ENV PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
+
+# Cài đặt toàn bộ bộ công cụ từ ProjectDiscovery và các tool cần thiết
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
+    mv $GOPATH/bin/httpx $GOPATH/bin/httpx-toolkit && \
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/ffuf/ffuf/v2@latest
+    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
+    go install -v github.com/lc/gau/v2/cmd/gau@latest && \
+    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
+    go install -v github.com/ffuf/ffuf/v2@latest && \
+    go install -v github.com/tomnomnom/waybackurls@latest && \
+    go install -v github.com/lc/subjs@latest && \
+    mv $GOPATH/bin/* /usr/local/bin/
 
 # Thiết lập thư mục làm việc cho Python
 WORKDIR /app

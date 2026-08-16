@@ -2,7 +2,10 @@ import pytest
 import os
 import json
 import tempfile
-from core.grid_master import MasterGridNode
+try:
+    from core.grid_master import MasterGridNode
+except ImportError:
+    from backend.core.grid_master import MasterGridNode
 
 def test_offline_jsonl_fallback_persistence():
     # Simulate DB failure fallback writing to local JSONL

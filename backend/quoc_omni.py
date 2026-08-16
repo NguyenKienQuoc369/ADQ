@@ -15,7 +15,17 @@ from queue import Queue
 from io import StringIO
 from functools import lru_cache
 
-os.environ["PATH"] += os.pathsep + os.path.expanduser("~/go/bin")
+# HIGH-PERFORMANCE I/O EVENT LOOP (UVLOOP)
+try:
+    import uvloop
+    uvloop.install()
+    UVLOOP_ACTIVE = True
+except ImportError:
+    UVLOOP_ACTIVE = False
+
+for extra_path in ["/root/go/bin", "/usr/local/bin", "/usr/local/go/bin", os.path.expanduser("~/go/bin")]:
+    if extra_path not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = f"{extra_path}{os.pathsep}{os.environ.get('PATH', '')}"
 
 # =================================================================
 # CẤU HÌNH HỆ THỐNG & HIỆU SUẤT
@@ -39,11 +49,20 @@ DEFAULT_NUCLEI_RL_MIN = 50
 DEFAULT_NUCLEI_C_MIN = 10
 DEFAULT_NUCLEI_RL_STEP = 25
 DEFAULT_NUCLEI_C_STEP = 10
-EXTRA_TOOLS = ["naabu", "katana", "waybackurls", "dnsx", "httpx"]
+EXTRA_TOOLS = ["naabu", "katana", "waybackurls", "dnsx", "httpx-toolkit", "arjun"]
 INTERESTING_KEYWORDS = [
     "admin", "login", "swagger", "graphql", "api", "debug", "backup", "test", "staging", "dev",
     ".env", ".git", ".zip", ".tar", ".gz", ".bak", ".sql", ".old"
 ]
+
+SECRET_PATTERNS = {
+    "Prisma / Postgres Connection String": r"postgres(?:ql)?://[a-zA-Z0-9_]+:[^@\s]+@[a-zA-Z0-9.-]+:\d+/[a-zA-Z0-9_]+",
+    "JWT Bearer Token": r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+",
+    "AWS Access Key ID": r"AKIA[0-9A-Z]{16}",
+    "Generic Private Key / Secret": r"(?i)(?:api_key|secret|token|password|private_key)[\s]*[=:]\s*['\"]([a-zA-Z0-9_\-]{16,})['\"]",
+    "Supabase Secret / Key": r"sb_[a-zA-Z0-9_-]{20,}",
+    "Stripe Secret Key": r"sk_live_[0-9a-zA-Z]{24}",
+}
 TECH_TAG_MAP = {
     "wordpress": "wordpress",
     "drupal": "drupal",
@@ -228,19 +247,106 @@ def log(msg, color=Colors.W):
     print(f"{color}{msg}{Colors.W}")
 
 def send_telegram(message):
-    if not TELEGRAM_ENABLED or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    token = TELEGRAM_TOKEN or os.environ.get("TELEGRAM_TOKEN", "")
+    chat_id = TELEGRAM_CHAT_ID or os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not TELEGRAM_ENABLED or not token or not chat_id:
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    for i in range(0, len(message), 4000):
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    MAX_LEN = 4000
+
+    if len(message) > MAX_LEN:
+        text_to_send = message[:MAX_LEN] + "\n\n... (Báo cáo đã bị cắt ngắn do giới hạn của Telegram) ..."
+    else:
+        text_to_send = message
+
+    payload = {
+        "chat_id": chat_id,
+        "text": text_to_send,
+        "parse_mode": "HTML"
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code == 200:
+            log("[v] Đã gửi báo cáo Telegram thành công!", Colors.G)
+        else:
+            # Fallback plain text nếu HTML tag bị lỗi parse
+            fallback_payload = {
+                "chat_id": chat_id,
+                "text": text_to_send,
+            }
+            res_fb = requests.post(url, json=fallback_payload, timeout=10)
+            if res_fb.status_code != 200:
+                log(f"[!] Lỗi gửi Telegram: {res_fb.status_code} - {res_fb.text}", Colors.Y)
+            else:
+                log("[v] Đã gửi báo cáo Telegram thành công (Plain Text)!", Colors.G)
+    except Exception as e:
+        log(f"[!] Ngoại lệ khi gửi Telegram: {str(e)}", Colors.Y)
+
+def analyze_js_secrets_deep(js_links_file, folder):
+    """Phân tích tĩnh các file JavaScript để tìm secret/credentials hardcoded"""
+    if not os.path.exists(js_links_file):
+        return []
+
+    log("\n⚙️ [*] Đang phân tích JS Secrets & Hardcoded Credentials...", Colors.C)
+    js_urls = _read_txt_lines(js_links_file)[:30]
+    found_secrets = []
+
+    def fetch_and_scan(url):
         try:
-            requests.post(
-                url,
-                json={"chat_id": TELEGRAM_CHAT_ID, "text": message[i:i+4000], "parse_mode": "HTML"},
-                timeout=10,
-            )
-        except requests.RequestException as e:
-            log(f"[!] Telegram timeout/lỗi mạng (bỏ qua): {e}", Colors.Y)
-            break
+            res = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            if res.status_code == 200 and res.text:
+                for name, pattern in SECRET_PATTERNS.items():
+                    matches = re.findall(pattern, res.text)
+                    for match in matches:
+                        secret_val = match if isinstance(match, str) else match[0]
+                        found_secrets.append({
+                            "type": name,
+                            "url": url,
+                            "secret_snippet": secret_val[:120]
+                        })
+        except Exception:
+            pass
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        executor.map(fetch_and_scan, js_urls)
+
+    out_file = os.path.join(folder, "js_secrets.json")
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(found_secrets, f, indent=2, ensure_ascii=False)
+
+    if found_secrets:
+        log(f"[+] Tìm thấy {len(found_secrets)} Secret(s) nhạy cảm trong các file JS!", Colors.G)
+    return found_secrets
+
+def run_arjun_idor_scan(combined_urls_file, folder, timeout=300):
+    """Săn tham số ẩn và nguy cơ IDOR bằng Arjun"""
+    if not tool_available("arjun") or not os.path.exists(combined_urls_file):
+        return {}
+
+    urls = _read_txt_lines(combined_urls_file)
+    api_urls = [u for u in urls if "/api/" in u or "id=" in u or "user=" in u][:10]
+    if not api_urls:
+        return {}
+
+    log("\n⚙️ [*] Đang chạy Arjun Parameter & IDOR Discovery...", Colors.C)
+    targets_file = os.path.join(folder, "arjun_targets.txt")
+    out_file = os.path.join(folder, "arjun_params.json")
+    with open(targets_file, "w") as f:
+        f.write("\n".join(api_urls) + "\n")
+
+    run_command("Arjun", ["arjun", "-oJ", out_file, "-i", targets_file, "-t", "5", "--stable"], timeout=timeout)
+
+    results = {}
+    if os.path.exists(out_file):
+        try:
+            with open(out_file, "r", encoding="utf-8") as f:
+                results = json.load(f)
+        except Exception:
+            pass
+    return results
 
 def send_telegram_file(file_path, caption=""):
     if not TELEGRAM_ENABLED or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -345,7 +451,7 @@ def normalize_target(raw_target):
     cleaned = raw_target.strip()
     cleaned = re.sub(r"^https?://", "", cleaned)
     cleaned = cleaned.strip("/")
-    if not re.fullmatch(r"[A-Za-z0-9.-]+", cleaned):
+    if not re.fullmatch(r"[A-Za-z0-9.:-]+", cleaned):
         raise ValueError("Target không hợp lệ. Vui lòng nhập domain hoặc IP (không kèm path).")
     return cleaned
 
@@ -360,8 +466,8 @@ def sanitize_folder_name(target):
     Returns:
         str: Tên folder an toàn để sử dụng
     """
-    # Thay dấu chấm bằng underscore
-    safe_name = target.replace(".", "_")
+    # Thay dấu chấm và hai chấm bằng underscore
+    safe_name = target.replace(".", "_").replace(":", "_")
     # Loại bỏ các ký tự không phải alphanumeric và underscore
     safe_name = re.sub(r"[^a-zA-Z0-9_-]", "", safe_name)
     # Giới hạn độ dài để tránh lỗi filesystem (filesystem limit thường là 255)
@@ -402,6 +508,29 @@ def count_lines(file_path):
         return 0
     with open(file_path, "r") as f:
         return len(f.readlines())
+
+def cleanup_temp_files(folder):
+    """Xóa các file tạm sinh ra trong quá trình quét, giải phóng dung lượng ổ cứng cho Worker."""
+    temp_files = [
+        "subdomains.txt", "dnsx_live.txt", "httpx_tech.txt", "history_urls.txt",
+        "wayback_urls.txt", "crawl_urls.txt", "js_links.txt", "combined_urls.txt",
+        "open_ports.txt", "ffuf_main.txt", "live_sites.txt", "nuclei_results.txt"
+    ]
+    for filename in temp_files:
+        filepath = os.path.join(folder, filename)
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
+
+    if os.path.isdir(folder):
+        for f in os.listdir(folder):
+            if (f.startswith("tech_") or f.startswith("nuclei_pass") or f.startswith("nuclei_tech_")) and f.endswith(".txt"):
+                try:
+                    os.remove(os.path.join(folder, f))
+                except Exception:
+                    pass
 
 def ensure_file(file_path):
     if not os.path.exists(file_path):
@@ -477,6 +606,11 @@ def parse_args():
     parser.add_argument("--nuclei-two-pass", action="store_true", help="Chạy 2 lượt Nuclei (tech tags + CTF pack)")
     parser.add_argument("--nuclei-group-by-tech", action="store_true", help="Ưu tiên target theo tech stack (chạy Nuclei theo nhóm tech)")
     parser.add_argument("--telegram-files", action="store_true", help="Gửi file đính kèm qua Telegram")
+    parser.add_argument("--cleanup", action="store_true", help="Dọn dẹp file tạm sau khi hoàn tất quét")
+    parser.add_argument("--oast-server", default="", help="Địa chỉ OAST Interaction Server, ví dụ: http://adq_oast:8888")
+    parser.add_argument("--auth-token", default="", help="Bearer Token hoặc Cookie dùng để quét sau đăng nhập (Behind-the-login)")
+    parser.add_argument("--auth-type", default="Bearer", help="Loại Auth: Bearer hoặc Cookie")
+    parser.add_argument("--waf-bypass", action="store_true", help="Bật Mutation Engine & WAF Evasion headers (HTTP Desync/Smuggling)")
     parser.add_argument("--logic-scan", action="store_true", help="Bật quét lỗ hổng logic (Race/IDOR/Workflow)")
     parser.add_argument("--logic-base-url", default="", help="Base URL cho các module logic, ví dụ: http://127.0.0.1:8001")
     parser.add_argument("--race-endpoint", default="", help="Endpoint test race condition, ví dụ: /api/v1/coupon/apply")
@@ -485,6 +619,11 @@ def parse_args():
     parser.add_argument("--token-a", default="", help="Token người dùng A")
     parser.add_argument("--token-b", default="", help="Token người dùng B")
     parser.add_argument("--workflow-endpoint", default="", help="Endpoint cuối quy trình, ví dụ: /api/v1/transfer/execute")
+    parser.add_argument("--use-dag", action="store_true", help="Kích hoạt Động cơ Thực thi Dạng Đồ thị (Event-Driven DAG Engine)")
+    parser.add_argument("--fuzz-ws", action="store_true", help="Kích hoạt Fuzzing WebSockets Real-time Data Frames")
+    parser.add_argument("--probe-grpc", action="store_true", help="Dò quét & Fuzzing bộ đệm nhị phân gRPC Microservices")
+    parser.add_argument("--raw-syn-scan", action="store_true", help="Kích hoạt Kernel Bypass Raw Socket SYN Port Prober")
+    parser.add_argument("--hive-mind", action="store_true", help="Kích hoạt Distributed Shared Memory (Redis Hive-Mind Swarm Intelligence)")
     return parser.parse_args()
 
 # =================================================================
@@ -725,7 +864,7 @@ def build_checklist(highlights):
         "Tìm file backup hoặc cấu hình rò rỉ (.env/.git/.zip/.sql)",
         "Đọc nhanh nuclei_results.txt để ưu tiên lỗi nặng",
         "Kiểm tra tham số URL có token/secret",
-        "Mở screenshot để tìm trang quan trọng",
+        "Rà soát các endpoint có khả năng lộ cấu hình hệ thống",
     ]
     if highlights.get("critical_alerts"):
         steps.insert(0, "Ưu tiên xử lý các dòng HIGH/CRITICAL trước")
@@ -1107,19 +1246,36 @@ def main():
     if not os.path.exists(folder): os.makedirs(folder)
 
     start_time = time.time()
-    
+
+    # Đột phá 1 & 2: Thiết lập OAST Server, Authenticated Session Manager & Mutation Engine
+    from core.session_manager import AuthenticatedSessionManager
+    from core.payload_mutation import ContextAwarePayloadMutator
+    from core.oast_server import ADQInteractionServer
+
+    session_mgr = None
+    if args.auth_token:
+        session_mgr = AuthenticatedSessionManager(token_a=args.auth_token, auth_type=args.auth_type)
+        log(f"[🛡️ SessionManager] Đã nạp Auth Token ({args.auth_type}) cho quét sâu Behind-the-login", Colors.G)
+
+    oast_url = args.oast_server or os.getenv("OAST_SERVER_URL", "http://adq_oast:8888")
+    mutator = ContextAwarePayloadMutator() if args.waf_bypass else None
+    if args.waf_bypass:
+        log("[🔥 MutationEngine] Đã kích hoạt Dynamic WAF Bypass & Request Mutation Engine", Colors.G)
+
     send_telegram(f"▶️ <b>[KHỞI ĐỘNG] Mục tiêu:</b> <code>{target}</code>")
 
-    tool_list = ["subfinder", "httpx-toolkit", "gowitness", "gau", "subjs", "nuclei", "ffuf"] + EXTRA_TOOLS
+    tool_list = list(dict.fromkeys(["subfinder", "httpx-toolkit", "gau", "subjs", "nuclei", "ffuf"] + EXTRA_TOOLS))
     missing_tools = [tool for tool in tool_list if not tool_available(tool)]
     if missing_tools:
-        log(f"[!] Thiếu công cụ: {', '.join(missing_tools)}", Colors.Y)
+        log(f"[!] Cảnh báo: Thiếu các công cụ sau ({', '.join(missing_tools)}). Hệ thống sẽ bỏ qua và tiếp tục.", Colors.Y)
 
     # BƯỚC 1: Subdomain
     send_telegram("⏳ <b>[TIẾN TRÌNH]</b> Quét Subfinder...")
     sub_file = f"{folder}/subdomains.txt"
     if tool_available("subfinder"):
         run_command("Subfinder", ["subfinder", "-d", target, "-silent"], sub_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    else:
+        log("[!] Cảnh báo: subfinder không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(sub_file)
     with open(sub_file, "a") as f:
         f.write(f"{target}\n")
@@ -1138,6 +1294,8 @@ def main():
     ports_file = f"{folder}/open_ports.txt"
     if tool_available("naabu"):
         run_command("Naabu", ["naabu", "-l", sub_file, "-silent"], ports_file, timeout=args.timeout)
+    else:
+        log("[!] Cảnh báo: naabu không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(ports_file)
 
     # BƯỚC 2: Live Host
@@ -1145,30 +1303,27 @@ def main():
     live_file = f"{folder}/live_sites.txt"
     if tool_available("httpx-toolkit"):
         run_command("HTTPX", ["httpx-toolkit", "-l", sub_file_for_httpx, "-silent", "-mc", "200,301,302,403"], live_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    else:
+        log("[!] Cảnh báo: httpx-toolkit không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(live_file)
 
     live_count = count_lines(live_file)
 
     tech_file = f"{folder}/httpx_tech.txt"
-    if tool_available("httpx"):
-        run_command("HTTPX-Tech", ["httpx", "-l", live_file, "-title", "-tech-detect", "-status-code", "-silent"], tech_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    if tool_available("httpx-toolkit"):
+        run_command("HTTPX-Tech", ["httpx-toolkit", "-l", live_file, "-title", "-tech-detect", "-status-code", "-silent"], tech_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    else:
+        log("[!] Cảnh báo: httpx-toolkit không khả dụng cho tech-detect, bỏ qua.", Colors.Y)
     ensure_file(tech_file)
 
-    # BƯỚC 3 & 4: Screenshot & URL History
-    send_telegram(f"✅ <b>[THÔNG TIN]</b> Có {live_count} host đang hoạt động. Khởi chạy Gowitness & GAU...")
-    screenshot_dir = f"{folder}/screenshots"
-    if tool_available("gowitness"):
-        run_command(
-            "Gowitness",
-            ["gowitness", "-q", "scan", "file", "-f", live_file, "-s", screenshot_dir, "--write-none"],
-            timeout=args.timeout,
-            retries=args.retries,
-            backoff=args.retry_backoff,
-        )
+    # BƯỚC 3 & 4: URL Crawling & History
+    send_telegram(f"✅ <b>[THÔNG TIN]</b> Có {live_count} host đang hoạt động. Khởi chạy Crawl & GAU...")
 
     katana_file = f"{folder}/crawl_urls.txt"
     if tool_available("katana"):
         run_command("Katana", ["katana", "-list", live_file, "-silent"], katana_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
+    else:
+        log("[!] Cảnh báo: katana không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(katana_file)
 
     gau_file = f"{folder}/history_urls.txt"
@@ -1192,6 +1347,10 @@ def main():
     if tool_available("subjs"):
         run_command("SubJS", ["subjs"], js_file, input_file=combined_urls, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
     ensure_file(js_file)
+
+    # BƯỚC 4.5: Phân tích Tĩnh JS Secrets & Arjun IDOR Discovery
+    analyze_js_secrets_deep(js_file, folder)
+    arjun_results = run_arjun_idor_scan(combined_urls, folder, timeout=args.timeout)
 
     # BƯỚC 5: Nuclei
     send_telegram("⏳ <b>[TIẾN TRÌNH]</b> Quét lỗ hổng bằng Nuclei...")
@@ -1392,6 +1551,10 @@ def main():
         send_telegram_file(tech_file, "🧬 [TỆP] Tech stack (HTTPX)")
         send_telegram_file(ffuf_out, "📁 [TỆP] Kết quả dò thư mục (FFuf)")
     
+    if args.cleanup:
+        log("\n🧹 [*] Đang dọn dẹp các file tạm thời...", Colors.C)
+        cleanup_temp_files(folder)
+
     log(f"{Colors.G}🏁 [HOÀN TẤT] Đóng hệ thống.{Colors.W}")
 
 if __name__ == "__main__":

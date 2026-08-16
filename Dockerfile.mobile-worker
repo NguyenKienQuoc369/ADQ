@@ -1,0 +1,37 @@
+# ADQ Mobile Audit Worker - Dedicated Container Environment
+FROM python:3.11-slim
+
+# Prevent interactive prompts during apt installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install Java JRE, apktool, wget, unzip and dependencies for JADX
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-jre \
+    apktool \
+    wget \
+    unzip \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install JADX CLI Decompiler
+ENV JADX_VERSION=1.5.0
+RUN wget -q https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip -O /tmp/jadx.zip \
+    && mkdir -p /opt/jadx \
+    && unzip -q /tmp/jadx.zip -d /opt/jadx \
+    && ln -s /opt/jadx/bin/jadx /usr/local/bin/jadx \
+    && rm /tmp/jadx.zip
+
+# Copy Python requirements & install
+COPY backend/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend source code
+COPY backend /app/backend
+COPY adq_cli.py /app/adq_cli.py
+
+# Default entrypoint for Mobile Worker
+CMD ["python", "backend/worker.py"]
