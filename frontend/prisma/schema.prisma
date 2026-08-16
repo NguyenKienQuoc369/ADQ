@@ -74,3 +74,79 @@ model Vulnerability {
   @@index([severity])
   @@map("vulnerabilities")
 }
+
+model AdminUser {
+  id               String    @id @default(cuid())
+  authUserId       String?   @unique @map("auth_user_id")
+  name             String?
+  email            String    @unique
+  role             String    @default("USER")
+  packageTier      String    @default("FREE") @map("package_tier")
+  status           String    @default("ACTIVE")
+  dailyLimit       Int       @default(5) @map("daily_limit")
+  scansToday       Int       @default(0) @map("scans_today")
+  telegramConnected Boolean  @default(false) @map("telegram_connected")
+  planExpiresAt    DateTime? @map("plan_expires_at")
+  oauthProvider    String?   @map("oauth_provider")
+  lastLoginAt      DateTime? @map("last_login_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@map("admin_users")
+}
+
+model RedeemCode {
+  id                  String                 @id @default(cuid())
+  code                String                 @unique
+  packageTier         String                 @map("package_tier")
+  durationLabel       String                 @map("duration_label")
+  durationDays        Int?                   @map("duration_days")
+  maxUses             Int                    @default(1) @map("max_uses")
+  usedCount           Int                    @default(0) @map("used_count")
+  status              String                 @default("UNUSED")
+  activatedBy         String?                @map("activated_by")
+  createdByAuthUserId String?                @map("created_by_auth_user_id")
+  createdByEmail      String?                @map("created_by_email")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+  redemptions         RedeemCodeRedemption[]
+
+  @@map("redeem_codes")
+}
+
+model RedeemCodeRedemption {
+  id           String     @id @default(cuid())
+  redeemCodeId String     @map("redeem_code_id")
+  userAuthId   String     @map("user_auth_id")
+  userEmail    String     @map("user_email")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  redeemCode   RedeemCode @relation(fields: [redeemCodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([redeemCodeId, userEmail])
+  @@index([userAuthId])
+  @@index([userEmail])
+  @@map("redeem_code_redemptions")
+}
+
+model AdminAction {
+  id                 String   @id @default(cuid())
+  adminAuthUserId    String?  @map("admin_auth_user_id")
+  targetAdminUserId  String?  @map("target_admin_user_id")
+  action             String
+  detail             Json?    
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@map("admin_actions")
+}
+
+model OutgoingEmail {
+  id        String   @id @default(cuid())
+  to        String   @map("to")
+  subject   String
+  bodyText  String?  @map("body_text")
+  bodyHtml  String?  @map("body_html")
+  sentAt    DateTime? @map("sent_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("outgoing_emails")
+}

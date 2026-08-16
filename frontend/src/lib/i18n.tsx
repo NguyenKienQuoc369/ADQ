@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 
 export type LanguageCode = "en" | "vi";
 
@@ -222,20 +222,18 @@ type I18nContextValue = {
 const I18nContext = createContext<I18nContextValue | undefined>(undefined);
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguageState] = useState<LanguageCode>("en");
+  const [language, setLanguageState] = useState<LanguageCode>(() => {
+    if (typeof window === "undefined") {
+      return "en";
+    }
 
-  useEffect(() => {
     const saved = window.localStorage.getItem("adq_lang");
     if (saved === "en" || saved === "vi") {
-      setLanguageState(saved);
-      return;
+      return saved;
     }
 
-    const browserLang = window.navigator.language.toLowerCase();
-    if (browserLang.startsWith("vi")) {
-      setLanguageState("vi");
-    }
-  }, []);
+    return window.navigator.language.toLowerCase().startsWith("vi") ? "vi" : "en";
+  });
 
   const setLanguage = (value: LanguageCode) => {
     setLanguageState(value);
