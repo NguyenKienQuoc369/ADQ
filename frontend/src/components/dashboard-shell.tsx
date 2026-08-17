@@ -21,8 +21,6 @@ import {
   Terminal,
   Users,
   X,
-  Folder,
-  Settings,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -38,10 +36,12 @@ const workspaceSections = [
   {
     title: "Không gian chính",
     links: [
-      { href: "/dashboard", label: "Dự án", icon: Folder },
-      { href: "/vulnerabilities", label: "Chi tiết lỗ hổng", icon: Bug },
+      { href: "/dashboard", label: "Trang tổng quan", icon: LayoutDashboard },
+      { href: "/c2", label: "Điều phối quét nâng cao", icon: Terminal },
+      { href: "/ctem", label: "Bản đồ tài sản website", icon: ShieldAlert },
+      { href: "/graph", label: "Sơ đồ liên kết rủi ro", icon: Network },
+      { href: "/vulnerabilities", label: "Chi tiết cảnh báo kỹ thuật", icon: Bug },
       { href: "/dashboard/billing", label: "Gói dịch vụ", icon: CreditCard },
-      { href: "/settings", label: "Cài đặt", icon: Settings },
     ],
   },
 ] as const;
@@ -53,12 +53,14 @@ const adminLinks = [
 ];
 
 const routeMeta: Record<string, { eyebrow: string; title: string }> = {
-  "/dashboard": { eyebrow: "Dự án", title: "Tổng quan dự án" },
-  "/dashboard/results": { eyebrow: "Kết quả", title: "Xem toàn bộ kết quả và tải báo cáo" },
-  "/dashboard/tools": { eyebrow: "Công cụ", title: "Trung tâm công cụ" },
-  "/dashboard/billing": { eyebrow: "Tài khoản", title: "Gói dịch vụ" },
-  "/vulnerabilities": { eyebrow: "Chi tiết", title: "Chi tiết lỗ hổng" },
-  "/settings": { eyebrow: "Cài đặt", title: "Cấu hình dự án" },
+  "/dashboard": { eyebrow: "Điều phối quét", title: "Tổng quan và điều phối quét nâng cao" },
+  "/dashboard/results": { eyebrow: "Lối cũ", title: "Xem toàn bộ kết quả và tải báo cáo" },
+  "/dashboard/tools": { eyebrow: "Chuyên sâu", title: "Trung tâm công cụ nâng cao" },
+  "/dashboard/billing": { eyebrow: "Tài khoản", title: "Gói dịch vụ và mã nâng cấp" },
+  "/c2": { eyebrow: "Công cụ nâng cao", title: "Điều phối quét nâng cao" },
+  "/ctem": { eyebrow: "Công cụ nâng cao", title: "Bản đồ tài sản website" },
+  "/graph": { eyebrow: "Công cụ nâng cao", title: "Sơ đồ liên kết rủi ro" },
+  "/vulnerabilities": { eyebrow: "Công cụ nâng cao", title: "Chi tiết cảnh báo kỹ thuật" },
   "/admin": { eyebrow: "Quản trị", title: "Tổng quan hệ thống" },
   "/admin/users": { eyebrow: "Quản trị", title: "Quản lý tài khoản người dùng" },
   "/admin/redeem-codes": { eyebrow: "Quản trị", title: "Tạo và theo dõi mã nâng cấp" },

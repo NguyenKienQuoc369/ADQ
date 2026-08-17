@@ -188,20 +188,7 @@ export interface SystemStats {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  // Normalize URL: if path is a relative API path (/api/...), prefix with API_BASE_URL.
-  let url = path;
-  try {
-    // treat absolute URLs as-is
-    const parsed = new URL(path, API_BASE_URL);
-    if (!/^(https?:)?\/\//.test(path)) {
-      // path was relative, ensure we build absolute using API_BASE_URL
-      url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
-    }
-  } catch (e) {
-    url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
-  }
-
-  const res = await fetch(url, {
+  const res = await fetch(path, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -323,45 +310,6 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
 export async function getScanResults(): Promise<ScanResult[]> {
   const res = await requestJson<{ ok: true; scans: ScanResult[] }>("/api/scans");
   return res.scans;
-}
-
-export async function getProjects(): Promise<any[]> {
-  const res = await requestJson<{ ok: true; projects: any[] }>("/api/projects");
-  return res.projects ?? [];
-}
-
-export async function getProjectById(projectId: string): Promise<any> {
-  const res = await requestJson<{ ok: true; project: any }>(`/api/projects/${encodeURIComponent(projectId)}`);
-  return res.project;
-}
-
-export async function createProject(input: {
-  name: string;
-  domain?: string;
-  description?: string;
-  password?: string;
-  module?: string;
-}): Promise<any> {
-  const res = await requestJson<{ ok: true; project: any }>("/api/projects", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-  return res.project;
-}
-
-export async function deleteProject(projectId: string): Promise<boolean> {
-  const res = await requestJson<{ ok: true; deleted: boolean }>(`/api/projects/${encodeURIComponent(projectId)}`, {
-    method: "DELETE",
-  });
-  return Boolean(res.deleted);
-}
-
-export async function saveProjectDetail(projectId: string, payload: Record<string, any>) {
-  const res = await requestJson<{ ok: true; detail: any }>(`/api/projects/${encodeURIComponent(projectId)}/details`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  return res.detail;
 }
 
 export async function exportReport(scanId: string, format: "json" | "html" | "markdown") {
