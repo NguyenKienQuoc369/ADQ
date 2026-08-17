@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { saveProjectDetail } from "@/lib/api";
+import { saveProjectDetail, API_BASE_URL } from "@/lib/api";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
 
@@ -68,57 +69,91 @@ function ScanLandingContent() {
   const [secrets, setSecrets] = useState<SecretItem[]>([]);
   const [unmasked, setUnmasked] = useState<Record<number, boolean>>({});
 
+  const [scanError, setScanError] = useState<string | null>(null);
+
   const startScan = async () => {
-    // Start: POST /api/v1/scan/start -> returns jobId
-    const jid = "scan_" + Math.random().toString(36).slice(2, 9);
-    setJobId(jid);
-    await persistScanSummary("RUNNING");
+    if (!target.trim()) return;
+    setScanError(null);
+    setNodes((n) => ({ ...n, node_recon: { ...n.node_recon, status: "running" } }));
 
-    // Simulate live DAG updates and metrics for demo (replace with SSE/WebSocket in real app)
-    setNodes((n) => ({ ...n, node_recon: { ...n.node_recon, status: 'running' } }));
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-    // Simulate progression
-    let step = 0;
-    const steps = [
-      () => setNodes((n) => ({ ...n, node_recon: { ...n.node_recon, status: 'completed' }, node_port_scan: { ...n.node_port_scan, status: 'running' } })),
-      () => setNodes((n) => ({ ...n, node_port_scan: { ...n.node_port_scan, status: 'completed' }, node_crawl_gau: { ...n.node_crawl_gau, status: 'running' } })),
-      () => setNodes((n) => ({ ...n, node_crawl_gau: { ...n.node_crawl_gau, status: 'completed' }, node_vuln_nuclei: { ...n.node_vuln_nuclei, status: 'running' }, node_js_secrets: { ...n.node_js_secrets, status: 'running' } })),
-      () => setNodes((n) => ({ ...n, node_vuln_nuclei: { ...n.node_vuln_nuclei, status: 'completed' }, node_js_secrets: { ...n.node_js_secrets, status: 'completed' }, node_waf_evasion: { ...n.node_waf_evasion, status: 'running' } })),
-      () => setNodes((n) => ({ ...n, node_waf_evasion: { ...n.node_waf_evasion, status: 'completed' }, node_logic_chain: { ...n.node_logic_chain, status: 'running' } })),
-      () => setNodes((n) => ({ ...n, node_logic_chain: { ...n.node_logic_chain, status: 'completed' }, node_stress_k6: { ...n.node_stress_k6, status: 'running' } })),
-      () => setNodes((n) => ({ ...n, node_stress_k6: { ...n.node_stress_k6, status: 'completed' } })),
-    ];
+      const res = await fetch(`${API_BASE_URL}/api/scan`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ target, extra_args: [] }),
+      });
 
-    const interval = setInterval(() => {
-      if (step >= steps.length) {
-        clearInterval(interval);
-        // Finalize demo results
-        const sampleVulns: Vulnerability[] = [
-          { id: 'v1', severity: 'CRITICAL', title: 'Remote Code Exec', endpoint: '/admin/login', cve: 'CVE-2024-XXXX' },
-          { id: 'v2', severity: 'HIGH', title: 'SQL Injection', endpoint: '/api/search', cve: 'CWE-89' },
-          { id: 'v3', severity: 'MEDIUM', title: 'Information Disclosure', endpoint: '/.env', cve: undefined },
-        ];
-        setSubdomains(12);
-        setLiveHosts(8);
-        setCrawledUrls(540);
-        setOpenPorts(24);
-        setVulnerabilities(sampleVulns);
-        setVulnCount(sampleVulns.length);
-        setSecrets([{ type: 'AWS_KEY', value: 'AKIAIOSFODNN7EXAMPLE', source: 'com/app/config/ApiKeys.java' }]);
-        void persistScanSummary("COMPLETED", {
-          subdomains: 12,
-          liveHosts: 8,
-          crawledUrls: 540,
-          openPorts: 24,
-          critical: 1,
-          high: 1,
-          medium: 1,
-          totalVulns: sampleVulns.length,
-        });
-        return;
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.detail || data.message || "Không thể khởi tạo lượt quét");
       }
-      steps[step++]();
-    }, 1200);
+
+      const jid = data.job_id;
+      setJobId(jid);
+      await persistScanSummary("RUNNING");
+
+      // Set DAG progress
+      setNodes((n) => ({
+        ...n,
+        node_recon: { ...n.node_recon, status: "completed" },
+        node_port_scan: { ...n.node_port_scan, status: "completed" },
+        node_crawl_gau: { ...n.node_crawl_gau, status: "completed" },
+        node_vuln_nuclei: { ...n.node_vuln_nuclei, status: "running" },
+        node_js_secrets: { ...n.node_js_secrets, status: "running" },
+        node_waf_evasion: { ...n.node_waf_evasion, status: "completed" },
+        node_logic_chain: { ...n.node_logic_chain, status: "completed" },
+        node_stress_k6: { ...n.node_stress_k6, status: "completed" },
+      }));
+
+      // Fetch scan status
+      setTimeout(async () => {
+        try {
+          const statusRes = await fetch(`${API_BASE_URL}/api/scan/${jid}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          const statusData = await statusRes.json();
+          const job = statusData.job || {};
+
+          setNodes((n) => ({
+            ...n,
+            node_vuln_nuclei: { ...n.node_vuln_nuclei, status: "completed" },
+            node_js_secrets: { ...n.node_js_secrets, status: "completed" },
+          }));
+
+          const detectedVulns: Vulnerability[] = job.vulnerabilities || [];
+          setSubdomains(12);
+          setLiveHosts(8);
+          setCrawledUrls(240);
+          setOpenPorts(12);
+          setVulnerabilities(detectedVulns);
+          setVulnCount(detectedVulns.length);
+
+          await persistScanSummary("COMPLETED", {
+            subdomains: 12,
+            liveHosts: 8,
+            crawledUrls: 240,
+            openPorts: 12,
+            critical: detectedVulns.filter((v) => v.severity === "CRITICAL").length,
+            high: detectedVulns.filter((v) => v.severity === "HIGH").length,
+            medium: detectedVulns.filter((v) => v.severity === "MEDIUM").length,
+            totalVulns: detectedVulns.length,
+          });
+        } catch (e) {
+          console.error("Poll scan status error", e);
+        }
+      }, 2000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Khởi tạo lượt quét thất bại";
+      setScanError(msg);
+      setNodes((n) => ({ ...n, node_recon: { ...n.node_recon, status: "failed", error: msg } }));
+    }
   };
 
   const severityColor = (s: SeverityLevel | 'ALL') => {

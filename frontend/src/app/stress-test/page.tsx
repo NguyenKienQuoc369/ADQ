@@ -5,6 +5,8 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { API_BASE_URL } from "@/lib/api";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 interface WafBypassConfig {
   platform: string;
@@ -77,14 +79,37 @@ export default function StressTestPage() {
     return () => { if (interval) clearInterval(interval); };
   }, [running, rps]);
 
+  const [error, setError] = useState<string | null>(null);
+
   const start = async () => {
     if (!targetUrl) return;
+    setError(null);
     setRunning(true);
-    // Placeholder: POST /api/v1/stress/start with payload { targetUrl, targetRequests: rps, durationSec: duration, bypassConfig }
     setMetrics({ totalRequests: 0, actualRps: 0, status200: 0, status403WafBlocked: 0, status429RateLimited: 0, status500Crashed: 0, p95LatencyMs: 0 });
 
-    // stop after duration seconds
-    setTimeout(() => setRunning(false), duration * 1000);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      await fetch(`${API_BASE_URL}/api/stress`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          target_url: targetUrl,
+          vus: Math.min(100, Math.max(1, Math.round(rps / 10))),
+          duration: `${duration}s`,
+          method: "GET",
+        }),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Stress test failed");
+    } finally {
+      setTimeout(() => setRunning(false), duration * 1000);
+    }
   };
 
   return (

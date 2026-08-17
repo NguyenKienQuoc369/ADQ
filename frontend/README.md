@@ -27,9 +27,12 @@ Mục tiêu của project này là cung cấp giao diện marketing / dashboard 
 
 - Node.js 20+
 - npm
-- Tài khoản Supabase project
-- Database PostgreSQL (Supabase Postgres hoặc local Postgres)
+- Tài khoản Supabase project (hoặc cấu hình auth phù hợp)
+- Database PostgreSQL (Supabase Postgres hoặc local Postgres) — hoặc nếu bạn dùng backend Python, frontend có thể proxy tới backend đó
 
+Note: Project can be wired two ways:
+- Standalone Next.js backend: Next.js API routes (src/app/api) use Prisma + Supabase for auth and storage. In this mode set DATABASE_URL and Supabase keys in .env.local.
+- Proxy to external backend: set BACKEND_API_URL to your backend server (e.g. http://localhost:8000). Next.js API routes will call BACKEND_API_URL for triggering scans and retrieving long-running job results. Set NEXT_PUBLIC_API_BASE_URL to the public URL of the frontend (usually http://localhost:3000).
 ## Cài đặt
 
 1. Tại thư mục `frontend`:

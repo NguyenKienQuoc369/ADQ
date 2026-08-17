@@ -1,14 +1,26 @@
 "use client";
 
 /**
- * Lưu ý:
- * - File này là “frontend client SDK” gọi vào các Next.js Route Handlers trong `src/app/api`.
- * - Không còn dùng mock localStorage nữa. Dữ liệu thật lấy từ Prisma (Supabase Postgres) + Supabase Auth (cookie).
+ * ADQ Security Platform - Frontend API Client Service
  */
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  "http://localhost:8000";
+
+const APP_VERSION = "2.0.0";
+
+// Dọn rác client: tự động localStorage.clear() nếu phiên bản app thay đổi
+if (typeof window !== "undefined") {
+  const currentVer = localStorage.getItem("adq_app_version");
+  if (currentVer !== APP_VERSION) {
+    localStorage.clear();
+    localStorage.setItem("adq_app_version", APP_VERSION);
+  }
+}
 
 export type UserRole = "USER" | "ADMIN";
 export type PackageTier = "FREE" | "PRO" | "PRO_MAX";
@@ -188,19 +200,51 @@ export interface SystemStats {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  let url = path;
+  try {
+    if (!/^(https?:)?\/\//.test(path)) {
+      url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
+    }
+  } catch (e) {
+    url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
+  }
+
+  // Tự động lấy Bearer Token từ Supabase Auth session
+  let authHeader: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        authHeader["Authorization"] = `Bearer ${data.session.access_token}`;
+      }
+    } catch {
+      // Ignore auth error if Supabase client fails
+    }
+  }
+
+  const res = await fetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...authHeader,
       ...(init?.headers ?? {}),
     },
     credentials: "include",
   });
 
+  if (res.status === 401 && typeof window !== "undefined") {
+    localStorage.clear();
+    window.location.href = "/login?error=session_expired";
+    throw new Error("UNAUTHORIZED: Session expired");
+  }
+
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message =
-      (payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+      (payload && typeof payload === "object" && "detail" in payload && typeof payload.detail === "string"
+        ? payload.detail
+        : payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
         ? payload.error
         : res.statusText) || "Request failed";
     throw new Error(message);
@@ -310,6 +354,45 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
 export async function getScanResults(): Promise<ScanResult[]> {
   const res = await requestJson<{ ok: true; scans: ScanResult[] }>("/api/scans");
   return res.scans;
+}
+
+export async function getProjects(): Promise<any[]> {
+  const res = await requestJson<{ ok: true; projects: any[] }>("/api/projects");
+  return res.projects ?? [];
+}
+
+export async function getProjectById(projectId: string): Promise<any> {
+  const res = await requestJson<{ ok: true; project: any }>(`/api/projects/${encodeURIComponent(projectId)}`);
+  return res.project;
+}
+
+export async function createProject(input: {
+  name: string;
+  domain?: string;
+  description?: string;
+  password?: string;
+  module?: string;
+}): Promise<any> {
+  const res = await requestJson<{ ok: true; project: any }>("/api/projects", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return res.project;
+}
+
+export async function deleteProject(projectId: string): Promise<boolean> {
+  const res = await requestJson<{ ok: true; deleted: boolean }>(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE",
+  });
+  return Boolean(res.deleted);
+}
+
+export async function saveProjectDetail(projectId: string, payload: Record<string, any>) {
+  const res = await requestJson<{ ok: true; detail: any }>(`/api/projects/${encodeURIComponent(projectId)}/details`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return res.detail;
 }
 
 export async function exportReport(scanId: string, format: "json" | "html" | "markdown") {

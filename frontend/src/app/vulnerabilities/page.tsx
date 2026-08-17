@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useMemo, useState } from "react";
 import { Bug, Check, Copy, Download, FileText, Radio, Search, ShieldAlert, Terminal } from "lucide-react";
 
@@ -46,12 +48,24 @@ export default function VulnerabilityTriageAndOAST() {
   const [liveOastPing, setLiveOastPing] = useState<OastCallback | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
 
+  const [projectId, setProjectId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // read projectId from browser URL on client mount to avoid SSR useSearchParams issues
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const pid = sp.get("projectId");
+      setProjectId(pid);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
-        const res = await fetch("/api/vulnerabilities");
+        // fetch vulnerabilities; if projectId present, pass it to the API
+        const res = await fetch(`/api/vulnerabilities${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`);
         const data = await res.json();
         if (mounted && data.ok && data.vulnerabilities) {
           setVulnerabilities(data.vulnerabilities);
@@ -62,7 +76,7 @@ export default function VulnerabilityTriageAndOAST() {
       }
     })();
 
-    const eventSource = new EventSource("/api/oast/stream/sse");
+    const eventSource = new EventSource(`/api/oast/stream/sse`);
 
     eventSource.onopen = () => {
       if (!mounted) return;
@@ -140,6 +154,23 @@ export default function VulnerabilityTriageAndOAST() {
     return matchesSearch && matchesSeverity;
   });
 
+  const [project, setProject] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`);
+        const payload = await res.json();
+        if (payload?.ok && payload.project) {
+          setProject(payload.project);
+        }
+      } catch (e) {
+        console.error("Failed to load project", e);
+      }
+    })();
+  }, [projectId]);
+
   const summary = useMemo(
     () => ({
       findings: vulnerabilities.length,
@@ -163,12 +194,34 @@ export default function VulnerabilityTriageAndOAST() {
           { label: "OAST callbacks", value: String(summary.callbacks), variant: "warning" },
           { label: "Stream", value: summary.stream, variant: sseConnected ? "success" : "warning" },
         ]}
-        links={[
+        links={project ? [
+          { href: `/dashboard/projects/${project.id}`, label: `Mở project: ${project.domain}` },
+          { href: "/dashboard/results", label: "Mở Results & Reports" },
+          { href: "/graph", label: "Mở Knowledge Graph" },
+        ] : [
           { href: "/dashboard/results", label: "Mở Results & Reports" },
           { href: "/ctem", label: "Kiểm tra CTEM Matrix" },
           { href: "/graph", label: "Mở Knowledge Graph" },
         ]}
       >
+        {project ? (
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-[var(--foreground-muted)]">Project</p>
+              <h2 className="text-lg font-semibold text-[var(--foreground)]">{project.domain}</h2>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl border px-3 py-2 text-sm">
+                <p className="text-xs text-[var(--foreground-muted)]">Risk Score</p>
+                <div className="mt-1 text-xl font-semibold text-[var(--foreground)]">{project.projectDetail?.riskScore ?? 0}</div>
+              </div>
+              <div className="rounded-2xl border px-3 py-2 text-sm">
+                <p className="text-xs text-[var(--foreground-muted)]">Last Scan</p>
+                <div className="mt-1 text-sm text-[var(--foreground)]">{project.projectDetail?.lastScanAt ? new Date(project.projectDetail.lastScanAt).toLocaleString() : 'N/A'}</div>
+              </div>
+            </div>
+          </div>
+        ) : null}
         {liveOastPing ? (
           <div className="rounded-3xl border border-cyan-500/25 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
             OAST pingback mới: [{liveOastPing.method}] {liveOastPing.path} từ {liveOastPing.remoteIp}

@@ -1,4 +1,21 @@
 services:
+  # Caddy Reverse Proxy & Automatic SSL Certificate Manager
+  caddy:
+    image: caddy:2-alpine
+    container_name: adq_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api-server
+    networks:
+      - adq_net
+
   # PostgreSQL
   db:
     image: postgres:15-alpine
@@ -48,8 +65,6 @@ services:
     container_name: adq_api
     restart: always
     command: uvicorn api_server:app --host 0.0.0.0 --port 8000
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     depends_on:
@@ -147,3 +162,5 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  caddy_data:
+  caddy_config:

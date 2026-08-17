@@ -13,7 +13,7 @@ type AuthContextValue = {
   lockMessage: string | null;
   login: (email: string, password: string) => Promise<AuthResponse>;
   register: (payload: { name: string; email: string; password: string; company?: string; phone?: string }) => Promise<AuthResponse>;
-  completeGoogleProfile: (payload: { name: string; company?: string; phone?: string }) => Promise<User>;
+  completeGoogleProfile: (payload: { name: string; company?: string; phone?: string; password?: string }) => Promise<User>;
   loginWithGoogle: () => Promise<AuthResponse>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -338,7 +338,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [getSupabaseClient],
   );
-  const completeGoogleProfile = useCallback(async (payload: { name: string; company?: string; phone?: string }) => {
+  const completeGoogleProfile = useCallback(async (payload: { name: string; company?: string; phone?: string; password?: string }) => {
     const supabase = getSupabaseClient();
     const { data: userData, error: userError } = await supabase.auth.getUser();
 
@@ -351,16 +351,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Vui lòng nhập họ và tên.");
     }
 
-    const { data, error } = await supabase.auth.updateUser({
-      data: {
-        name: nextName,
-        company: payload.company?.trim() || null,
-        phone: payload.phone?.trim() || null,
-        role: "USER",
-        packageTier: "FREE",
-        onboarding_complete: true,
-      },
-    });
+    // If caller provided a password, set it on the Supabase auth user so they can use password auth later.
+    let updateArgs: any = { data: {
+      name: nextName,
+      company: payload.company?.trim() || null,
+      phone: payload.phone?.trim() || null,
+      role: "USER",
+      packageTier: "FREE",
+      onboarding_complete: true,
+    } };
+
+    if (payload.password && payload.password.trim().length >= 8) {
+      updateArgs = { ...updateArgs, password: payload.password };
+    }
+
+    const { data, error } = await supabase.auth.updateUser(updateArgs);
 
     if (error) {
       throw new Error(getFriendlyAuthError(error, "Không thể cập nhật hồ sơ Google."));

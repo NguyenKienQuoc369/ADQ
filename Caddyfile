@@ -1,0 +1,3 @@
+api.adq.io.vn {
+    reverse_proxy api-server:8000
+}

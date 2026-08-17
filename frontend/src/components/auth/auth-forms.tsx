@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, ArrowRight, CheckCircle2, KeyRound, LoaderCircle, Lock, Mail, User2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -232,6 +232,8 @@ export function RegisterForm() {
   const isGoogleOnboarding = searchParams.get("oauth") === "google";
   const googleEmail = searchParams.get("email") ?? user?.email ?? "";
 
+  const [adminExists, setAdminExists] = useState<boolean | null>(null);
+
   const form = useForm<any>({
     resolver: zodResolver(isGoogleOnboarding ? googleOnboardingSchema : registerSchema),
     defaultValues: {
@@ -245,15 +247,52 @@ export function RegisterForm() {
   });
   const emailValue = form.watch("email") || googleEmail;
 
+  // When onboarding with Google, check whether the email already maps to an existing admin user.
+  // If admin exists, skip onboarding and send user to dashboard. Otherwise show onboarding and require password.
+  useEffect(() => {
+    if (!isGoogleOnboarding) return;
+    const emailToCheck = googleEmail || form.getValues("email");
+    if (!emailToCheck) return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/check-admin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: emailToCheck }),
+        });
+        const j = await res.json();
+        if (!mounted) return;
+        if (j?.exists) {
+          setAdminExists(true);
+          // Already an admin user in DB — no need to complete profile; route to dashboard
+          window.setTimeout(() => window.location.replace("/dashboard"), 200);
+        } else {
+          setAdminExists(false);
+        }
+      } catch (e) {
+        console.error("check-admin failed", e);
+        setAdminExists(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [isGoogleOnboarding, googleEmail, form]);
+
   const onSubmit = form.handleSubmit(async (values) => {
     setSubmitting(true);
     setMessage(null);
     try {
       if (isGoogleOnboarding) {
+        // Pass password if user set one during onboarding (required for new admin users)
         await completeGoogleProfile({
           name: values.name,
           company: values.company,
           phone: values.phone,
+          password: values.password && values.password.length >= 8 ? values.password : undefined,
         });
         setMessage({ type: "success", text: "Tài khoản Google đã được xác thực và hồ sơ của bạn đã được hoàn tất." });
         window.setTimeout(() => router.push("/dashboard"), 600);
@@ -346,7 +385,8 @@ export function RegisterForm() {
           <FieldError message={form.formState.errors.email?.message} />
         </div>
 
-        {!isGoogleOnboarding ? (
+        {/* If Google onboarding AND admin does not exist yet, require password fields so user can set a password for future logins. */}
+        {(!isGoogleOnboarding || adminExists === false) ? (
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
               <Label htmlFor="register-password">Mật khẩu</Label>

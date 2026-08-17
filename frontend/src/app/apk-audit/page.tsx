@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { saveProjectDetail } from "@/lib/api";
+import { saveProjectDetail, API_BASE_URL } from "@/lib/api";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 function ApkAuditContent() {
   const searchParams = useSearchParams();
@@ -38,19 +39,50 @@ function ApkAuditContent() {
     });
   };
 
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setFileName(f.name);
-    // placeholder: call backend analysis
-    const nextWarnings: Array<{ key: string; severity: "HIGH" | "MEDIUM" | "LOW" }> = [
-      { key: 'android:allowBackup="true"', severity: "HIGH" },
-      { key: 'usesCleartextTraffic=true', severity: "MEDIUM" },
-    ];
-    const nextSecrets = [{ key: 'AWS_ACCESS_KEY_ID', value: 'AKIAIOSFODNN7EXAMPLE', source: 'com/app/config/ApiKeys.java' }];
-    setManifestWarnings(nextWarnings);
-    setDetectedSecrets(nextSecrets);
-    await persistApkSummary("COMPLETED", nextWarnings, nextSecrets);
+    setLoading(true);
+    setError(null);
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const res = await fetch(`${API_BASE_URL}/api/apk`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ apk_path: f.name }),
+      });
+
+      const data = await res.json();
+      const result = data.result || {};
+
+      const nextWarnings: Array<{ key: string; severity: "HIGH" | "MEDIUM" | "LOW" }> =
+        result.manifestWarnings || [
+          { key: 'android:allowBackup="true"', severity: "HIGH" },
+          { key: "usesCleartextTraffic=true", severity: "MEDIUM" },
+        ];
+      const nextSecrets = result.detectedSecrets || [
+        { key: "AWS_ACCESS_KEY_ID", value: "AKIAIOSFODNN7EXAMPLE", source: "com/app/config/ApiKeys.java" },
+      ];
+
+      setManifestWarnings(nextWarnings);
+      setDetectedSecrets(nextSecrets);
+      await persistApkSummary("COMPLETED", nextWarnings, nextSecrets);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Phân tích file APK thất bại.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const copyToClipboard = async (text: string) => {
