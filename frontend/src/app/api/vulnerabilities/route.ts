@@ -1,13 +1,28 @@
 import { NextResponse } from "next/server";
 import { getPrismaClient } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const prisma = getPrismaClient();
+    // support filtering by projectId (Target.id) passed as query param
+    const url = new URL(req.url);
+    const projectId = url.searchParams.get("projectId");
+
+    const whereClause: any = {};
+    if (projectId) {
+      // filter vulnerabilities whose scanJob -> target has id === projectId
+      whereClause.scanJob = { target: { id: projectId } };
+    }
+
     const dbVulns = await prisma.vulnerability.findMany({
+      where: whereClause,
       orderBy: { createdAt: "desc" },
       include: {
-        scanJob: true,
+        scanJob: {
+          include: {
+            target: true,
+          },
+        },
       },
     });
 

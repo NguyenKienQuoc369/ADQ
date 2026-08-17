@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Navigation } from "@/components/Navigation";
+import { AuthProvider } from "@/components/providers/auth-provider";
+import LockBanner from "@/components/ui/lock-banner";
+import { ThemeProvider } from "@/components/providers/theme-provider";
+import { ThemeScript } from "@/components/providers/theme-script";
 import { LanguageProvider } from "@/lib/i18n";
 
 const geistSans = Geist({
@@ -15,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ADQ Enterprise DAST/ASM Security Console",
-  description: "Distributed Security Operations, Attack Surface Management, Knowledge Graph & OAST Triage Platform",
+  title: "ADQ Security",
+  description: "Security operations platform for asset monitoring, vulnerability management and access control.",
 };
 
 export default function RootLayout({
@@ -25,12 +28,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full dark`}>
-      <body className="min-h-full bg-zinc-950 text-zinc-100 font-sans flex flex-col antialiased">
-        <LanguageProvider>
-          <Navigation />
-          <main className="flex-1 bg-zinc-950">{children}</main>
-        </LanguageProvider>
+    <html lang="vi" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full`}>
+      <body className="min-h-full font-sans antialiased">
+        <ThemeProvider>
+          <ThemeScript />
+          <LanguageProvider>
+            <AuthProvider>
+              <LockBanner />
+              <div className="app-background flex min-h-screen flex-col">{children}</div>
+            </AuthProvider>
+          </LanguageProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
