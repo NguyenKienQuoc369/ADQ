@@ -1,0 +1,45 @@
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+import { AuthProvider } from "@/components/providers/auth-provider";
+import LockBanner from "@/components/ui/lock-banner";
+import { ThemeProvider } from "@/components/providers/theme-provider";
+import { ThemeScript } from "@/components/providers/theme-script";
+import { LanguageProvider } from "@/lib/i18n";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "ADQ Security",
+  description: "Security operations platform for asset monitoring, vulnerability management and access control.",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="vi" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full`}>
+      <body className="min-h-full font-sans antialiased">
+        <ThemeProvider>
+          <ThemeScript />
+          <LanguageProvider>
+            <AuthProvider>
+              <LockBanner />
+              <div className="app-background flex min-h-screen flex-col">{children}</div>
+            </AuthProvider>
+          </LanguageProvider>
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}

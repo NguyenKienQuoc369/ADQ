@@ -1,0 +1,30 @@
+# File: web/Dockerfile.web
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Cài đặt dependencies và generate Prisma Client
+RUN npm ci || npm install
+RUN npx prisma generate
+
+# Copy toàn bộ source code web
+COPY . .
+# Build Next.js app
+RUN npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/prisma ./prisma
+
+# Expose port Next.js
+EXPOSE 3000
+
+# Chạy push db và start Next.js server
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm run start"]
