@@ -1,5 +1,5 @@
 # File: web/Dockerfile.web
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 COPY package*.json ./
@@ -11,6 +11,17 @@ RUN npx prisma generate
 
 # Copy toàn bộ source code web
 COPY . .
+
+# Nhận DATABASE_URL từ docker-compose build args để Next.js không lỗi khi collect page data
+ARG DATABASE_URL
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV DATABASE_URL=${DATABASE_URL}
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+
 # Build Next.js app
 RUN npm run build
 

@@ -142,13 +142,17 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.web
+      args:
+        DATABASE_URL: ${DATABASE_URL}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.adq.io.vn}
+        NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_KEY}
     container_name: adq_dashboard
     restart: always
     ports:
       - "3000:3000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:adq_secure_password@db:5432/adq_db?schema=public
-      - DIRECT_URL=postgresql://postgres:adq_secure_password@db:5432/adq_db?schema=public
+    env_file:
+      - .env
     depends_on:
       - db
       - api-server
