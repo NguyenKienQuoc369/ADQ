@@ -44,7 +44,7 @@ export default function C2CommandCenter() {
   const [cliLogs, setCliLogs] = useState<string[]>([
     " [ ADQ CORE - SECURITY ORCHESTRATOR ]",
     "==================================================",
-    " Node: Worker-Elite | Status: ONLINE | AI: READY | Telegram Feed: ACTIVE",
+    " Node: Worker-Elite | Status: ONLINE | AI: READY | Security Feed: ACTIVE",
     "",
     "--- STRESS TEST & RATE LIMIT MODULE (High-Throughput Native Engine) ---",
     "[*] Interactive TUI Web Terminal Connected to Master Grid Engine.",
@@ -52,7 +52,7 @@ export default function C2CommandCenter() {
     "  [1] Khởi động chiến dịch Rà quét (Recon & Scan)",
     "  [2] Phân tích file APK (Mobile Audit)",
     "  [3] Tấn công chịu tải (Stress Test & Rate Limit)",
-    "  [4] Lịch sử Báo cáo Báo động (View Full Telegram Reports)",
+    "  [4] Lịch sử Báo cáo Báo động (View Full Security Reports)",
     "  [0] Thoát / Trợ giúp Lệnh (Menu)",
     "----------------------------------------------------------------",
     "[+] Gõ '1', '2', '3', '4' hoặc đặt câu hỏi cho ADQ Security Copilot..."
@@ -170,7 +170,7 @@ export default function C2CommandCenter() {
               ...vulnsLogs,
               ...secretsLogs,
               `🛡️ STATUS: ${liveResult.vulnerabilities?.length > 0 ? "Phát hiện điểm yếu cấu hình/bảo mật" : "Mục tiêu an toàn tốt"}`,
-              `📊 [BÁO CÁO TELEGRAM] Target Priority Risk Score: ${liveResult.priority_score || 15}/100`
+              `📊 [BÁO CÁO BẢO MẬT] Target Priority Risk Score: ${liveResult.priority_score || 15}/100`
             ]);
           } else {
             setCliLogs((prev) => [
@@ -252,7 +252,7 @@ export default function C2CommandCenter() {
             `⚡ Throughput: ${rps} req/s | Total Requests: ${(metrics.total_requests || reqsCount).toLocaleString()}`,
             `🟢 HTTP 200 OK: ${s200.toLocaleString()} | 🛡️ WAF 403 Block: ${s403} | ⚠️ 429 Rate Limit: ${s429}`,
             `🛡️ Rate Limit Bypass: ${s403 === 0 ? "Lách hoàn toàn Rate Limit & WAF (Tỷ lệ 200 OK: 100.0%)" : "Bị WAF Chặn 403 - Kiểm tra lại Bypass Token"}`,
-            `📊 [BÁO CÁO TELEGRAM] Hoàn tất đợt kiểm thử chịu tải L7!`
+            `📊 [BÁO CÁO BẢO MẬT] Hoàn tất đợt kiểm thử chịu tải L7!`
           ]);
         } else {
           setCliLogs((prev) => [...prev, `❌ Stress Test Error: ${stressData.error || "Execution failed"}`]);
@@ -284,7 +284,7 @@ export default function C2CommandCenter() {
             `⚙️ Method: ${res.decompile_status?.method || "Apktool+JADX"} | Files Scanned: ${res.results?.scanned_files_count || 1240}`,
             `🛡️ AndroidManifest Risks: allowBackup=true, usesCleartextTraffic=true, debuggable=true`,
             `💎 Hardcoded Secrets: Firebase DB URL, AWS Access Key, Firebase API Key in NetworkConfig.java`,
-            `📊 [BÁO CÁO TELEGRAM] Phân tích file APK hoàn tất!`
+            `📊 [BÁO CÁO BẢO MẬT] Phân tích file APK hoàn tất!`
           ]);
         } else {
           setCliLogs((prev) => [...prev, `⚠️ APK Audit Note: ${apkData.error || "File path non-existent, loaded Mobile Audit Sandbox Report"}`]);
@@ -328,7 +328,7 @@ export default function C2CommandCenter() {
           "  [1] Khởi động chiến dịch Rà quét (Recon & Scan)",
           "  [2] Phân tích file APK (Mobile Audit)",
           "  [3] Tấn công chịu tải (Stress Test & Rate Limit)",
-          "  [4] Lịch sử Báo cáo Báo động (View Full Telegram Reports)",
+          "  [4] Lịch sử Báo cáo Báo động (View Full Security Reports)",
           "  [0] Thoát / Trợ giúp Lệnh (Menu)",
           "----------------------------------------------------------------",
           "[+] Gõ '1', '2', '3', '4' hoặc đặt câu hỏi bất kỳ cho ADQ Copilot..."

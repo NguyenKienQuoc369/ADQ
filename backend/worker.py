@@ -12,7 +12,6 @@ from core.parser import parse_ffuf, parse_httpx, parse_nuclei, parse_subfinder
 from core.protocol_analyzer import MultiProtocolAnalyzer
 from core.scanner import collect_tool_result, run_ffuf, run_httpx, run_nuclei, run_subfinder
 from config import config
-from bot.telegram_ui import send_ai_review_message
 
 
 def _join_lines(values: List[str]) -> str:
@@ -185,20 +184,6 @@ def execute_scan_pipeline(
                 vulnerabilities=vulnerabilities,
                 live_hosts=httpx_hosts,
             )
-
-            review_payload = pipeline["ai_analysis"].get("telegram_review")
-            if config.TELEGRAM_ENABLED and config.TELEGRAM_TOKEN and config.TELEGRAM_CHAT_ID and review_payload:
-                try:
-                    telegram_result = send_ai_review_message(review_payload=review_payload)
-                    pipeline["ai_analysis"]["telegram_delivery"] = {
-                        "sent": True,
-                        "result": telegram_result,
-                    }
-                except Exception as exc:
-                    pipeline["ai_analysis"]["telegram_delivery"] = {
-                        "sent": False,
-                        "error": str(exc),
-                    }
         except Exception as exc:
             pipeline["ai_analysis"] = {
                 "engine": "error",

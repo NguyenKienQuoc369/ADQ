@@ -32,11 +32,10 @@ from rich.live import Live
 from rich.tree import Tree
 
 try:
-    from backend.core.dag_engine import DAGEngine
-    from backend.core.dag_state_manager import DAGStateManager, RedisDAGListener
+    from backend.core.engine.dag_engine import DAGEngine
+    from backend.core.engine.dag_state_manager import DAGStateManager, RedisDAGListener
 except ImportError:
-    from core.dag_engine import DAGEngine
-    from core.dag_state_manager import DAGStateManager, RedisDAGListener
+    from backend.core import DAGEngine, DAGStateManager, RedisDAGListener
 
 console = Console()
 
@@ -48,15 +47,15 @@ def draw_header():
     header_text = (
         "[bold cyan]      [ ADQ CORE - SECURITY ORCHESTRATOR ]      [/bold cyan]\n"
         "[dim]==================================================[/dim]\n"
-        "[bold green] Node: Worker-Elite | Status: ONLINE | AI: READY | Telegram Feed: ACTIVE[/bold green]"
+        "[bold green] Node: Worker-Elite | Status: ONLINE | AI: READY | Live Feed: ACTIVE[/bold green]"
     )
     console.print(Panel(header_text, border_style="cyan"))
 
 # =========================================================================
-# TELEGRAM-STYLE FULL REPORT RENDERERS
+# SECURITY REPORT RENDERERS
 # =========================================================================
 
-def render_telegram_style_scan_report(
+def render_scan_report(
     target: str,
     job_id: str = "job_core_1001",
     duration_sec: float = 24.5,
@@ -86,7 +85,7 @@ def render_telegram_style_scan_report(
     risk_color = "red" if priority_score >= 70 else ("yellow" if priority_score >= 30 else "green")
 
     console.print(Panel(
-        f"[bold yellow]📊 [BÁO CÁO TELEGRAM] HOÀN TẤT QUÉT MỤC TIÊU THỰC TẾ[/bold yellow]\n"
+        f"[bold yellow]📊 [BÁO CÁO BẢO MẬT] HOÀN TẤT QUÉT MỤC TIÊU THỰC TẾ[/bold yellow]\n"
         f"[bold white]🎯 Mục tiêu:[/bold white] [bold cyan]{target}[/bold cyan] | [bold white]Job ID:[/bold white] [bold yellow]{job_id}[/bold yellow]\n"
         f"[bold white]⏱️ Thời gian thực thi:[/bold white] {duration_sec}s | [bold white]Node:[/bold white] Worker-Elite | [bold white]Priority Score:[/bold white] [bold {risk_color}]{priority_score}/100 ({risk_label})[/bold {risk_color}]",
         border_style="yellow"
@@ -194,7 +193,7 @@ def render_telegram_style_scan_report(
         console.print(f"  • [dim]{a}[/dim]")
 
 
-def render_telegram_style_apk_report(
+def render_apk_report(
     apk_name: str,
     scanned_files_count: int = 1240,
     decompile_status: Optional[Dict[str, Any]] = None,
@@ -215,7 +214,7 @@ def render_telegram_style_apk_report(
 
     console.print("\n")
     console.print(Panel(
-        f"[bold yellow]📱 [BÁO CÁO TELEGRAM] PHÂN TÍCH FILE APK (MOBILE AUDIT)[/bold yellow]\n"
+        f"[bold yellow]📱 [BÁO CÁO BẢO MẬT] PHÂN TÍCH FILE APK (MOBILE AUDIT)[/bold yellow]\n"
         f"[bold white]📦 Tên File APK:[/bold white] [bold cyan]{apk_name}[/bold cyan] | [bold white]Số File Bytecode Quét:[/bold white] [bold yellow]{scanned_files_count}[/bold yellow]\n"
         f"[bold white]⚙️ Môi trường Decompiler:[/bold white] Apktool ({decompile_status.get('apktool')}) + JADX ({decompile_status.get('jadx')}) [{decompile_status.get('method')}]",
         border_style="yellow"
@@ -322,7 +321,7 @@ def render_live_attack_matrix(
     return main_panel
 
 
-def render_telegram_style_stress_report(
+def render_stress_report(
     target_url: str,
     vus: int = 50,
     duration: str = "30s",
@@ -339,7 +338,7 @@ def render_telegram_style_stress_report(
 
     console.print("\n")
     console.print(Panel(
-        f"[bold red]🔥 [BÁO CÁO TELEGRAM] KẾT QUẢ TẤN CÔNG CHỊU TẢI & RATE LIMIT (k6 Engine)[/bold red]\n"
+        f"[bold red]🔥 [BÁO CÁO BẢO MẬT] KẾT QUẢ TẤN CÔNG CHỊU TẢI & RATE LIMIT (k6 Engine)[/bold red]\n"
         f"[bold white]🎯 Target URL:[/bold white] [bold cyan]{target_url}[/bold cyan]\n"
         f"[bold white]👥 Virtual Users (VUs):[/bold white] [bold yellow]{vus}[/bold yellow] | [bold white]Thời gian:[/bold white] [bold yellow]{duration}[/bold yellow] | [bold white]Chế độ:[/bold white] {'Mô phỏng' if simulated else 'Live Engine'}",
         border_style="red"
@@ -393,6 +392,7 @@ def render_telegram_style_stress_report(
             border_style="cyan"
         ))
 
+
 # =========================================================================
 # MODULE CONTROLLERS
 # =========================================================================
@@ -403,7 +403,7 @@ def main_menu():
         console.print("\n[1] Khởi động chiến dịch Rà quét (Recon & Scan)")
         console.print("[2] Phân tích file APK (Mobile Audit) [bold yellow][BETA / WIP][/bold yellow]")
         console.print("[3] Tấn công chịu tải (Stress Test & Rate Limit)")
-        console.print("[4] Lịch sử Báo cáo Báo động (View Full Telegram Reports)")
+        console.print("[4] Lịch sử Báo cáo Báo động (View Full Security Reports)")
         console.print("[0] Thoát hệ thống (Exit)\n")
         
         choice = IntPrompt.ask("[bold yellow]root@adq-core:~#[/bold yellow] Chọn một lệnh", choices=["0", "1", "2", "3", "4"])
@@ -486,9 +486,9 @@ def run_scan_module():
     domain = target.replace("https://", "").replace("http://", "").split("/")[0]
 
     try:
-        from backend.core.scanner import perform_real_dynamic_scan
+        from backend.core.recon_scan.scanner import perform_real_dynamic_scan
     except ImportError:
-        from core.scanner import perform_real_dynamic_scan
+        from backend.core import perform_real_dynamic_scan
 
     with console.status(f"[bold cyan]Đang thực hiện rà quét thực tế nhắm vào {target}...", spinner="dots"):
         real_scan = perform_real_dynamic_scan(target, tier_choice=tier_choice)
@@ -545,7 +545,7 @@ def run_scan_module():
 
     async def step_stress_k6(results):
         try:
-            from backend.core.stress_orchestrator import StressOrchestrator
+            from backend.core.stress_test.stress_orchestrator import StressOrchestrator
             orch = StressOrchestrator()
             res = orch.execute_stress_test(target_url=target, target_rps=100, duration_sec=2)
             m = res.get("metrics", {})
@@ -612,8 +612,8 @@ def run_scan_module():
 
     console.print("\n[bold green]✅ [DAG ENGINE] Tất cả các nhánh rẽ rà quét thực tế đã hoàn tất![/bold green]")
 
-    # Output full Telegram-style report with real scanned data
-    render_telegram_style_scan_report(
+    # Output full report with real scanned data
+    render_scan_report(
         target=target,
         job_id=job_id,
         counts=real_scan.get("counts"),
@@ -645,7 +645,7 @@ def run_scan_module():
     else:
         console.print(f"\n[bold yellow]ℹ️ [STARTER TIER] Gói Starter tự động tạo Báo cáo AI Executive Summary tĩnh.[/bold yellow]")
         try:
-            from backend.core.copilot_engine import ADQSecurityCopilot
+            from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
             copilot = ADQSecurityCopilot()
             with console.status("[bold green]Đang tạo Executive Summary Report...", spinner="dots"):
                 res = copilot.analyze_scan_job(scan_data)
@@ -668,10 +668,7 @@ def run_apk_module():
         time.sleep(1)
 
     try:
-        try:
-            from backend.core.apk_analyzer import APKAnalyzer
-        except ImportError:
-            from core.apk_analyzer import APKAnalyzer
+        from backend.core.mobile_audit.apk_analyzer import APKAnalyzer
 
         if os.path.exists(apk_path):
             analyzer = APKAnalyzer(apk_path)
@@ -679,7 +676,7 @@ def run_apk_module():
                 res = analyzer.run_pipeline()
             if res.get("ok"):
                 results = res.get("results", {})
-                render_telegram_style_apk_report(
+                render_apk_report(
                     apk_name=os.path.basename(apk_path),
                     scanned_files_count=results.get("scanned_files_count", 0),
                     decompile_status=res.get("decompile_status"),
@@ -689,7 +686,7 @@ def run_apk_module():
             else:
                 console.print(f"\n[bold red][!] Lỗi phân tích APK: {res.get('error')}[/bold red]")
         else:
-            render_telegram_style_apk_report(apk_name="sample_ebank.apk")
+            render_apk_report(apk_name="sample_ebank.apk")
     except Exception as exc:
         console.print(f"\n[bold red][!] Lỗi thực thi APK Module: {exc}[/bold red]")
 
@@ -710,9 +707,9 @@ def run_stress_module():
     # Probe & discovery candidate endpoints for this specific target
     console.print("\n[bold cyan]🔍 [ENDPOINT DISCOVERY] Đang rà quét nhanh các Endpoint thực tế trên mục tiêu...[/bold cyan]")
     try:
-        from backend.core.scanner import perform_real_dynamic_scan
+        from backend.core.recon_scan.scanner import perform_real_dynamic_scan
     except ImportError:
-        from core.scanner import perform_real_dynamic_scan
+        from backend.core import perform_real_dynamic_scan
 
     with console.status("[bold green]Đang rà quét bề mặt Endpoint...", spinner="dots"):
         scan_res = perform_real_dynamic_scan(base_target, tier_choice=1)
@@ -784,9 +781,9 @@ def run_stress_module():
     console.print("\n[bold cyan]👁️ [WAF FINGERPRINTING ENGINE] Đang 'ngửi' hạ tầng & phân tích khiên WAF mục tiêu...[/bold cyan]")
     
     try:
-        from backend.core.waf_detector import detect_target_waf
+        from backend.core.recon_scan.waf_detector import detect_target_waf
     except ImportError:
-        from core.waf_detector import detect_target_waf
+        from backend.core import detect_target_waf
 
     with console.status("[bold green]Đang thụ động & chủ động chọc giận WAF để bắt dấu vết...", spinner="dots"):
         waf_res = detect_target_waf(target)
@@ -927,10 +924,7 @@ def run_stress_module():
     console.print(f"\n[+] Đang kích hoạt Live Attack Matrix cho target: [bold cyan]{target}[/bold cyan] ({target_requests:,} requests / {duration_sec}s - VUs: {vus})...")
     
     try:
-        try:
-            from backend.core.stress_orchestrator import StressOrchestrator
-        except ImportError:
-            from core.stress_orchestrator import StressOrchestrator
+        from backend.core.stress_test.stress_orchestrator import StressOrchestrator
 
         orchestrator = StressOrchestrator()
 
@@ -1044,9 +1038,9 @@ def run_stress_module():
         # Merge actual background k6 result metrics if available
         final_metrics = stress_result.get("metrics") if stress_result.get("metrics") else live_metrics
 
-        # Output Final Telegram-Style Summary Report & AI Analysis Trigger
+        # Output Final Security Summary Report & AI Analysis Trigger
         console.print("\n[bold green]✅ [STRESS TEST ENGINE] Kế thừa kết quả từ k6_results.json![/bold green]")
-        render_telegram_style_stress_report(
+        render_stress_report(
             target_url=target,
             vus=vus,
             duration=duration,
@@ -1061,7 +1055,7 @@ def run_stress_module():
 
 def view_logs_module():
     draw_header()
-    console.print("[bold blue]--- LỊCH SỬ BÁO CÁO & JOB LOGS (TELEGRAM FULL FEED) ---[/bold blue]\n")
+    console.print("[bold blue]--- LỊCH SỬ BÁO CÁO & JOB LOGS (SECURITY FULL FEED) ---[/bold blue]\n")
     console.print("  [1] Job #1001 - Target: target-bank.com (Web Core Audit)")
     console.print("  [2] Job #2002 - Target: sample_ebank.apk (Mobile APK Audit)")
     console.print("  [3] Job #3003 - Target: https://target-bank.com/api (Application Stress Test)")
@@ -1070,7 +1064,7 @@ def view_logs_module():
 
     if log_choice == 1:
         target = "https://target-bank.com"
-        render_telegram_style_scan_report(target=target, job_id="job_core_1001")
+        render_scan_report(target=target, job_id="job_core_1001")
         scan_data = {
             "target": target,
             "job_id": "job_core_1001",
@@ -1088,9 +1082,9 @@ def view_logs_module():
             interactive_copilot_session(target=target, scan_data=scan_data)
             return
     elif log_choice == 2:
-        render_telegram_style_apk_report(apk_name="sample_ebank.apk")
+        render_apk_report(apk_name="sample_ebank.apk")
     elif log_choice == 3:
-        render_telegram_style_stress_report(target_url="https://target-bank.com/api/v1/transfer", vus=50)
+        render_stress_report(target_url="https://target-bank.com/api/v1/transfer", vus=50)
 
     Prompt.ask("\n[dim]Ấn Enter để quay lại Menu Chính...[/dim]")
 
@@ -1105,10 +1099,7 @@ def interactive_copilot_session(target: str = "https://target-bank.com", scan_da
     ))
 
     try:
-        try:
-            from backend.core.copilot_engine import ADQSecurityCopilot, DEFAULT_COPILOT_SYSTEM_INSTRUCTION
-        except ImportError:
-            from core.copilot_engine import ADQSecurityCopilot, DEFAULT_COPILOT_SYSTEM_INSTRUCTION
+        from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot, DEFAULT_COPILOT_SYSTEM_INSTRUCTION
 
         copilot = ADQSecurityCopilot(model=model_name)
 
@@ -1149,7 +1140,7 @@ def interactive_copilot_session(target: str = "https://target-bank.com", scan_da
                 continue
 
             if cmd == 'report':
-                render_telegram_style_scan_report(target=target, job_id="job_copilot_1001")
+                render_scan_report(target=target, job_id="job_copilot_1001")
                 continue
 
             if cmd == 'stress':

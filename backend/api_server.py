@@ -34,10 +34,6 @@ if FRONTEND_EXISTS:
 
 class ScanRequest(BaseModel):
     target: str
-    no_telegram: bool = False
-    disable_telegram: Optional[bool] = False
-    telegram_token: Optional[str] = None
-    telegram_chat_id: Optional[str] = None
     extra_args: List[str] = Field(default_factory=list)
     logic_scan: bool = False
     logic_base_url: Optional[str] = None
@@ -81,10 +77,6 @@ class ApkRequest(BaseModel):
 def _build_command(req: ScanRequest) -> List[str]:
     cmd = [sys.executable, "quoc_omni.py", req.target]
 
-    disable_telegram = req.disable_telegram if req.disable_telegram is not None else req.no_telegram
-    if disable_telegram:
-        cmd.append("--no-telegram")
-
     if req.logic_scan:
         cmd.extend(["--logic-scan"])
     if req.logic_base_url:
@@ -108,16 +100,6 @@ def _build_command(req: ScanRequest) -> List[str]:
 
 def _run_scan(job_id: str, req: ScanRequest):
     env = os.environ.copy()
-    disable_telegram = req.disable_telegram if req.disable_telegram is not None else req.no_telegram
-
-    if disable_telegram:
-        env.pop("TELEGRAM_TOKEN", None)
-        env.pop("TELEGRAM_CHAT_ID", None)
-    else:
-        if req.telegram_token:
-            env["TELEGRAM_TOKEN"] = req.telegram_token
-        if req.telegram_chat_id:
-            env["TELEGRAM_CHAT_ID"] = req.telegram_chat_id
 
     for k, v in req.headers.items():
         env_key = f"SCAN_HEADER_{k.upper().replace('-', '_')}"
@@ -141,7 +123,10 @@ def _run_scan(job_id: str, req: ScanRequest):
 
     # Parse and save scan findings to Database
     try:
-        from core.db import save_live_hosts, save_vulnerabilities, update_scan_status
+        try:
+            from backend.core.engine.db import save_live_hosts, save_vulnerabilities, update_scan_status
+        except ImportError:
+            from core.engine.db import save_live_hosts, save_vulnerabilities, update_scan_status
         target_clean = req.target.replace("http://", "").replace("https://", "").strip("/")
         folder = "".join([c if c.isalnum() or c in (".", "_", "-") else "_" for c in target_clean])
         result_json_path = os.path.join(BASE_DIR, folder, "result.json")
@@ -206,11 +191,14 @@ def start_scan(req: ScanRequest, bg: BackgroundTasks):
 def run_real_scan(req: ScanRequest):
     try:
         try:
-            from core.scanner import perform_real_dynamic_scan
+            from backend.core.recon_scan.scanner import perform_real_dynamic_scan
         except ImportError:
-            from backend.core.scanner import perform_real_dynamic_scan
+            try:
+                from backend.core.scanner import perform_real_dynamic_scan
+            except ImportError:
+                from core.scanner import perform_real_dynamic_scan
 
-        res = perform_real_dynamic_scan(req.target, tier_choice=2 if req.logic_scan else 1)
+        res = perform_real_dynamic_scan(req.target, tier_choice=2 if req.extra_args else 1)
         return {"ok": True, "scan": res}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
@@ -339,7 +327,13 @@ def index_page():
 async def copilot_chat(req: CopilotChatRequest):
     """ADQ Security Copilot - Interactive Chat Endpoint."""
     try:
-        from core.copilot_engine import ADQSecurityCopilot
+        try:
+            from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
+        except ImportError:
+            try:
+                from backend.core.copilot_engine import ADQSecurityCopilot
+            except ImportError:
+                from core.copilot_engine import ADQSecurityCopilot
         copilot = ADQSecurityCopilot()
         system_instruction = (
             "Bạn là ADQ Security Copilot - Trí tuệ Nhân tạo Tự chủ (Agentic AI) chuyên sâu về Pentesting & DevSecOps. "
@@ -355,7 +349,13 @@ async def copilot_chat(req: CopilotChatRequest):
 async def copilot_analyze_job(req: CopilotAnalyzeRequest):
     """ADQ Security Copilot - Execute 4-Phase Agentic Analysis on Scan Job."""
     try:
-        from core.copilot_engine import ADQSecurityCopilot
+        try:
+            from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
+        except ImportError:
+            try:
+                from backend.core.copilot_engine import ADQSecurityCopilot
+            except ImportError:
+                from core.copilot_engine import ADQSecurityCopilot
         copilot = ADQSecurityCopilot()
 
         job_info = JOBS.get(req.job_id)
@@ -382,7 +382,13 @@ async def copilot_analyze_job(req: CopilotAnalyzeRequest):
 async def copilot_generate_patch(req: CopilotPatchRequest):
     """ADQ Security Copilot - One-Click Fix Code Patch Generator."""
     try:
-        from core.copilot_engine import ADQSecurityCopilot
+        try:
+            from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
+        except ImportError:
+            try:
+                from backend.core.copilot_engine import ADQSecurityCopilot
+            except ImportError:
+                from core.copilot_engine import ADQSecurityCopilot
         copilot = ADQSecurityCopilot()
         patch_res = copilot.generate_one_click_fix(
             vulnerability_type=req.vulnerability_type,
@@ -409,7 +415,13 @@ async def copilot_credits_usage():
 async def run_stress_test_api(req: StressRequest):
     """Official Go-k6 High-Throughput Layer 7 Stress Test & Rate Limit Evasion Endpoint."""
     try:
-        from core.stress_orchestrator import StressOrchestrator
+        try:
+            from backend.core.stress_test.stress_orchestrator import StressOrchestrator
+        except ImportError:
+            try:
+                from backend.core.stress_orchestrator import StressOrchestrator
+            except ImportError:
+                from core.stress_orchestrator import StressOrchestrator
 
         orchestrator = StressOrchestrator()
         result = orchestrator.execute_stress_test(
@@ -428,7 +440,13 @@ async def run_stress_test_api(req: StressRequest):
 async def run_apk_analysis_api(req: ApkRequest):
     """Real Mobile APK Decompilation & Static Security Audit Endpoint."""
     try:
-        from core.apk_analyzer import APKAnalyzer
+        try:
+            from backend.core.mobile_audit.apk_analyzer import APKAnalyzer
+        except ImportError:
+            try:
+                from backend.core.apk_analyzer import APKAnalyzer
+            except ImportError:
+                from core.apk_analyzer import APKAnalyzer
         analyzer = APKAnalyzer(req.apk_path)
         result = analyzer.run_pipeline()
         return JSONResponse({"ok": True, "result": result})

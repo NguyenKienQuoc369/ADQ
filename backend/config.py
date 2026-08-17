@@ -6,9 +6,6 @@ load_dotenv()
 
 @dataclass
 class Config:
-    TELEGRAM_TOKEN: str = os.environ.get("TELEGRAM_TOKEN", "")
-    TELEGRAM_CHAT_ID: str = os.environ.get("TELEGRAM_CHAT_ID", "")
-    TELEGRAM_ENABLED: bool = os.environ.get("TELEGRAM_ENABLED", "true").lower() not in ["0", "false", "no"]
     WORDLIST_PATH: str = os.environ.get("WORDLIST_PATH", "/usr/share/seclists/Discovery/Web-Content/common.txt")
     DEFAULT_MAX_URLS: int = int(os.environ.get("DEFAULT_MAX_URLS", 5000))
     DEFAULT_TIMEOUT: int = int(os.environ.get("DEFAULT_TIMEOUT", 900))
@@ -35,11 +32,6 @@ class Config:
     AI_API_KEY: str = os.environ.get("AI_API_KEY", "")
     AI_MODEL: str = os.environ.get("AI_MODEL", "gpt-4o-mini")
     AI_TIMEOUT: int = int(os.environ.get("AI_TIMEOUT", 30))
-    TELEGRAM_API_TIMEOUT: int = int(os.environ.get("TELEGRAM_API_TIMEOUT", 20))
-    TELEGRAM_POLL_TIMEOUT: int = int(os.environ.get("TELEGRAM_POLL_TIMEOUT", 50))
-    TELEGRAM_POLL_INTERVAL: float = float(os.environ.get("TELEGRAM_POLL_INTERVAL", 0.5))
-    TELEGRAM_QUEUE_PATH: str = os.environ.get("TELEGRAM_QUEUE_PATH", "/home/sisiniki123/ADQ/runtime/telegram_approvals.jsonl")
-    TELEGRAM_QUEUE_CURSOR_PATH: str = os.environ.get("TELEGRAM_QUEUE_CURSOR_PATH", "/home/sisiniki123/ADQ/runtime/telegram_approvals.cursor")
 
 
 config = Config()

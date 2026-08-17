@@ -62,7 +62,7 @@ ADQ features a microservice-based **Distributed Master-Worker Grid** with DAG-dr
 ## 💻 User Interfaces
 
 - **Next.js Web Command Center Console (`frontend/src/app/c2/page.tsx`)**: Interactive Web Terminal state machine connected to live REST endpoints (`/api/c2/dispatch`, `/api/stress`, `/api/apk`, `/api/copilot/chat`).
-- **Rich Terminal UI (`adq_cli.py`)**: Interactive TUI CLI powered by `rich` with SaaS tier selection, live Rich Tree DAG execution, and Telegram-style report rendering.
+- **Rich Terminal UI (`adq_cli.py`)**: Interactive TUI CLI powered by `rich` with SaaS tier selection, live Rich Tree DAG execution, and structured security report rendering.
 
 ---
 
@@ -189,7 +189,7 @@ ADQ vận hành trên kiến trúc microservice **Cụm Master-Worker Phân tán
 ## 💻 Giao diện Tương tác
 
 - **Next.js Web Command Center (`frontend/src/app/c2/page.tsx`)**: Terminal giả lập dạng State Machine kết nối trực tiếp các endpoint REST backend real-time (`/api/c2/dispatch`, `/api/stress`, `/api/apk`, `/api/copilot/chat`).
-- **Giao diện Rich Terminal TUI (`adq_cli.py`)**: TUI dòng lệnh tương tác mạnh mẽ với tùy chọn gói dịch vụ SaaS, cây DAG tĩnh/động và xuất báo cáo phong cách Telegram.
+- **Giao diện Rich Terminal TUI (`adq_cli.py`)**: TUI dòng lệnh tương tác mạnh mẽ với tùy chọn gói dịch vụ SaaS, cây DAG tĩnh/động và xuất báo cáo trực quan chuyên nghiệp.
 
 ---
 

@@ -30,9 +30,6 @@ for extra_path in ["/root/go/bin", "/usr/local/bin", "/usr/local/go/bin", os.pat
 # =================================================================
 # CẤU HÌNH HỆ THỐNG & HIỆU SUẤT
 # =================================================================
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-TELEGRAM_ENABLED = True
 WORDLIST_PATH = os.environ.get("WORDLIST_PATH", "/usr/share/seclists/Discovery/Web-Content/common.txt")
 DEFAULT_MAX_URLS = 5000
 DEFAULT_TIMEOUT = 900
@@ -246,44 +243,6 @@ def batch_list(items, batch_size=DEFAULT_BATCH_SIZE):
 def log(msg, color=Colors.W):
     print(f"{color}{msg}{Colors.W}")
 
-def send_telegram(message):
-    token = TELEGRAM_TOKEN or os.environ.get("TELEGRAM_TOKEN", "")
-    chat_id = TELEGRAM_CHAT_ID or os.environ.get("TELEGRAM_CHAT_ID", "")
-    if not TELEGRAM_ENABLED or not token or not chat_id:
-        return
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    MAX_LEN = 4000
-
-    if len(message) > MAX_LEN:
-        text_to_send = message[:MAX_LEN] + "\n\n... (Báo cáo đã bị cắt ngắn do giới hạn của Telegram) ..."
-    else:
-        text_to_send = message
-
-    payload = {
-        "chat_id": chat_id,
-        "text": text_to_send,
-        "parse_mode": "HTML"
-    }
-
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            log("[v] Đã gửi báo cáo Telegram thành công!", Colors.G)
-        else:
-            # Fallback plain text nếu HTML tag bị lỗi parse
-            fallback_payload = {
-                "chat_id": chat_id,
-                "text": text_to_send,
-            }
-            res_fb = requests.post(url, json=fallback_payload, timeout=10)
-            if res_fb.status_code != 200:
-                log(f"[!] Lỗi gửi Telegram: {res_fb.status_code} - {res_fb.text}", Colors.Y)
-            else:
-                log("[v] Đã gửi báo cáo Telegram thành công (Plain Text)!", Colors.G)
-    except Exception as e:
-        log(f"[!] Ngoại lệ khi gửi Telegram: {str(e)}", Colors.Y)
-
 def analyze_js_secrets_deep(js_links_file, folder):
     """Phân tích tĩnh các file JavaScript để tìm secret/credentials hardcoded"""
     if not os.path.exists(js_links_file):
@@ -347,19 +306,6 @@ def run_arjun_idor_scan(combined_urls_file, folder, timeout=300):
         except Exception:
             pass
     return results
-
-def send_telegram_file(file_path, caption=""):
-    if not TELEGRAM_ENABLED or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return
-    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-        return 
-    
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
-    try:
-        with open(file_path, 'rb') as f:
-            requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'caption': caption}, files={'document': f}, timeout=20)
-    except requests.RequestException as e:
-        log(f"[!] Lỗi gửi file {file_path}: {e}", Colors.R)
 
 THROTTLE_STATE = {
     "enabled": DEFAULT_THROTTLE_ENABLED,
@@ -584,7 +530,6 @@ def parse_args():
     parser.add_argument("--throttle-base", type=float, default=DEFAULT_THROTTLE_BASE, help="Delay cơ bản trước mỗi lệnh")
     parser.add_argument("--throttle-step", type=float, default=DEFAULT_THROTTLE_STEP, help="Mức tăng delay khi lỗi")
     parser.add_argument("--throttle-max", type=float, default=DEFAULT_THROTTLE_MAX, help="Delay tối đa")
-    parser.add_argument("--no-telegram", action="store_true", help="Tắt gửi Telegram")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="Batch size cho FFuf/Nuclei")
     parser.add_argument("--max-workers", type=int, default=DEFAULT_THREAD_POOL, help="Max async workers")
     parser.add_argument("--ctf-mode", action="store_true", help="Tối ưu báo cáo cho CTF")
@@ -605,7 +550,6 @@ def parse_args():
     parser.add_argument("--nuclei-ctf-pack", action="store_true", help="Bổ sung tag pack cho CTF (exposures/misconfig/default-login)")
     parser.add_argument("--nuclei-two-pass", action="store_true", help="Chạy 2 lượt Nuclei (tech tags + CTF pack)")
     parser.add_argument("--nuclei-group-by-tech", action="store_true", help="Ưu tiên target theo tech stack (chạy Nuclei theo nhóm tech)")
-    parser.add_argument("--telegram-files", action="store_true", help="Gửi file đính kèm qua Telegram")
     parser.add_argument("--cleanup", action="store_true", help="Dọn dẹp file tạm sau khi hoàn tất quét")
     parser.add_argument("--oast-server", default="", help="Địa chỉ OAST Interaction Server, ví dụ: http://adq_oast:8888")
     parser.add_argument("--auth-token", default="", help="Bearer Token hoặc Cookie dùng để quét sau đăng nhập (Behind-the-login)")
@@ -1204,23 +1148,7 @@ def compute_flag_likelihood(highlights):
 # =================================================================
 
 def main():
-    # ⚠️  CẢNH BÁO BẢO MẬT: Không bao giờ truyền token/secret qua command-line arguments
-    # Luôn đọc từ biến môi trường hoặc file .env để tránh lộ trong process listing
-    if not os.environ.get("TELEGRAM_TOKEN") or not os.environ.get("TELEGRAM_CHAT_ID"):
-        log(
-            "[!] CẢNH BÁO: TELEGRAM_TOKEN và TELEGRAM_CHAT_ID chưa được thiết lập qua biến môi trường.\n"
-            "    Để sử dụng Telegram notifications, hãy thiết lập:\n"
-            "    $ export TELEGRAM_TOKEN=your_token\n"
-            "    $ export TELEGRAM_CHAT_ID=your_chat_id\n"
-            "    ℹ️  Để tắt Telegram, dùng flag --no-telegram\n",
-            Colors.Y,
-        )
-    
     args = parse_args()
-    global TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_ENABLED
-    # TELEGRAM_TOKEN và TELEGRAM_CHAT_ID đã được khởi tạo từ os.environ ở đầu file
-    # Do không có --telegram-token argument nữa, sử dụng trực tiếp biến global
-    TELEGRAM_ENABLED = not args.no_telegram
 
     THROTTLE_STATE["enabled"] = args.auto_throttle
     THROTTLE_STATE["base"] = args.throttle_base
@@ -1248,9 +1176,12 @@ def main():
     start_time = time.time()
 
     # Đột phá 1 & 2: Thiết lập OAST Server, Authenticated Session Manager & Mutation Engine
-    from core.session_manager import AuthenticatedSessionManager
-    from core.payload_mutation import ContextAwarePayloadMutator
-    from core.oast_server import ADQInteractionServer
+    try:
+        from backend.core.engine.session_manager import AuthenticatedSessionManager
+        from backend.core.recon_scan.payload_mutation import ContextAwarePayloadMutator
+        from backend.core.engine.oast_server import ADQInteractionServer
+    except ImportError:
+        from backend.core import AuthenticatedSessionManager, ContextAwarePayloadMutator, ADQInteractionServer
 
     session_mgr = None
     if args.auth_token:
@@ -1262,15 +1193,13 @@ def main():
     if args.waf_bypass:
         log("[🔥 MutationEngine] Đã kích hoạt Dynamic WAF Bypass & Request Mutation Engine", Colors.G)
 
-    send_telegram(f"▶️ <b>[KHỞI ĐỘNG] Mục tiêu:</b> <code>{target}</code>")
-
     tool_list = list(dict.fromkeys(["subfinder", "httpx-toolkit", "gau", "subjs", "nuclei", "ffuf"] + EXTRA_TOOLS))
     missing_tools = [tool for tool in tool_list if not tool_available(tool)]
     if missing_tools:
         log(f"[!] Cảnh báo: Thiếu các công cụ sau ({', '.join(missing_tools)}). Hệ thống sẽ bỏ qua và tiếp tục.", Colors.Y)
 
     # BƯỚC 1: Subdomain
-    send_telegram("⏳ <b>[TIẾN TRÌNH]</b> Quét Subfinder...")
+    log("⏳ [*] Quét Subfinder...", Colors.C)
     sub_file = f"{folder}/subdomains.txt"
     if tool_available("subfinder"):
         run_command("Subfinder", ["subfinder", "-d", target, "-silent"], sub_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
@@ -1299,7 +1228,7 @@ def main():
     ensure_file(ports_file)
 
     # BƯỚC 2: Live Host
-    send_telegram(f"✅ <b>[THÔNG TIN]</b> Tìm thấy {sub_count} Subdomains. Đang chạy HTTPX...")
+    log(f"✅ [*] Tìm thấy {sub_count} Subdomains. Đang chạy HTTPX...", Colors.G)
     live_file = f"{folder}/live_sites.txt"
     if tool_available("httpx-toolkit"):
         run_command("HTTPX", ["httpx-toolkit", "-l", sub_file_for_httpx, "-silent", "-mc", "200,301,302,403"], live_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
@@ -1317,7 +1246,7 @@ def main():
     ensure_file(tech_file)
 
     # BƯỚC 3 & 4: URL Crawling & History
-    send_telegram(f"✅ <b>[THÔNG TIN]</b> Có {live_count} host đang hoạt động. Khởi chạy Crawl & GAU...")
+    log(f"✅ [*] Có {live_count} host đang hoạt động. Khởi chạy Crawl & GAU...", Colors.G)
 
     katana_file = f"{folder}/crawl_urls.txt"
     if tool_available("katana"):
@@ -1353,7 +1282,7 @@ def main():
     arjun_results = run_arjun_idor_scan(combined_urls, folder, timeout=args.timeout)
 
     # BƯỚC 5: Nuclei
-    send_telegram("⏳ <b>[TIẾN TRÌNH]</b> Quét lỗ hổng bằng Nuclei...")
+    log("⏳ [*] Quét lỗ hổng bằng Nuclei...", Colors.C)
     vuln_file = f"{folder}/nuclei_results.txt"
     nuclei_tags = []
     manual_tags = [t.strip() for t in args.nuclei_tags.split(",") if t.strip()] if args.nuclei_tags else []
@@ -1407,7 +1336,7 @@ def main():
     ensure_file(vuln_file)
 
     # BƯỚC 6: FFuf
-    send_telegram("⏳ <b>[TIẾN TRÌNH]</b> Dò tìm thư mục bằng FFuf...")
+    log("⏳ [*] Dò tìm thư mục bằng FFuf...", Colors.C)
     ffuf_out = f"{folder}/ffuf_main.txt"
     if os.path.exists(args.wordlist) and tool_available("ffuf"):
         run_command(
@@ -1424,7 +1353,7 @@ def main():
 
     # ---------------- TỔNG KẾT ----------------
     end_time = time.time()
-    send_telegram("🔄 <b>[TIẾN TRÌNH]</b> Đang xuất báo cáo...")
+    log("🔄 [*] Đang xuất báo cáo...", Colors.C)
 
     critical_alerts = ""
     if os.path.exists(vuln_file):
@@ -1440,12 +1369,11 @@ def main():
     ffuf_msg = f"\n\n📂 <b>[THƯ MỤC/FILE] ĐANG MỞ:</b>\n{juicy_ffuf}" if juicy_ffuf else "\n\n✅ <b>[THƯ MỤC/FILE]</b> An toàn. Không lộ thư mục ẩn."
 
     report = (
-        f"📊 <b>[BÁO CÁO] HOÀN TẤT QUÉT</b>\n"
-        f"🎯 Mục tiêu: <code>{target}</code>\n"
+        f"📊 [BÁO CÁO] HOÀN TẤT QUÉT\n"
+        f"🎯 Mục tiêu: {target}\n"
         f"⏱️ Thời gian: {round(end_time - start_time, 2)}s\n"
         f"{critical_alerts}{secrets_msg}{ffuf_msg}"
     )
-    send_telegram(report)
 
     counts = {
         "subdomains": sub_count,
@@ -1465,7 +1393,6 @@ def main():
     highlights["priority_score"] = priority_score
     highlights["priority_reasons"] = priority_reasons
     plain_report = build_plain_report(target, start_time, end_time, counts, highlights, ctf_mode=args.ctf_mode)
-    send_telegram(plain_report)
 
     samples = {
         "nuclei": summarize_nuclei(vuln_file, limit=5),
@@ -1474,19 +1401,14 @@ def main():
         "tech": summarize_tech(tech_file, limit=5),
     }
     human_summary = build_human_summary(counts, highlights, samples)
-    send_telegram(human_summary)
 
     risk_notes = []
     risk_notes.extend(classify_risks_from_nuclei(vuln_file, limit=5))
     risk_notes.extend(classify_risks_from_paths(samples.get("ffuf", [])))
     risk_notes.extend(classify_risks_from_paths(highlights.get("top_targets", [])))
     risk_notes.extend(classify_risks_from_ports(samples.get("ports", [])))
-    if risk_notes:
-        risk_block = "\n".join(["🛡️ Ảnh hưởng tiềm ẩn (mức khái quát):"] + [f"- {r}" for r in list(dict.fromkeys(risk_notes))[:7]])
-        send_telegram(risk_block)
 
     action_advice = build_action_advice(counts, highlights, samples)
-    send_telegram(action_advice)
 
     logic_results = {}
     if args.logic_scan and args.logic_base_url:
@@ -1537,19 +1459,6 @@ def main():
 
     md_report_path = f"{folder}/report.md"
     build_markdown_report(target, start_time, end_time, counts, highlights, md_report_path)
-
-    if args.telegram_files and TELEGRAM_ENABLED and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-        log("\n📤 [*] Đang tải file kết quả lên Telegram...", Colors.C)
-        send_telegram_file(live_file, "📄 [TỆP] Danh sách trang web đang hoạt động")
-        send_telegram_file(vuln_file, "🐞 [TỆP] Kết quả quét lỗi Nuclei")
-        send_telegram_file(gau_file, "🔗 [TỆP] Lịch sử URL (GAU)")
-        send_telegram_file(wayback_file, "🕰️ [TỆP] Lịch sử URL (WaybackURLs)")
-        send_telegram_file(katana_file, "🕷️ [TỆP] URL crawl (Katana)")
-        send_telegram_file(combined_urls, "🧩 [TỆP] URL tổng hợp")
-        send_telegram_file(ports_file, "🧭 [TỆP] Cổng mở (Naabu)")
-        send_telegram_file(dnsx_file, "🧪 [TỆP] DNS sống (DNSX)")
-        send_telegram_file(tech_file, "🧬 [TỆP] Tech stack (HTTPX)")
-        send_telegram_file(ffuf_out, "📁 [TỆP] Kết quả dò thư mục (FFuf)")
     
     if args.cleanup:
         log("\n🧹 [*] Đang dọn dẹp các file tạm thời...", Colors.C)
@@ -1559,31 +1468,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Đây là phần mềm nhắn mục đích kiểm thử xâm nhập (pentesting).
-# Chương trình không được sử dụng cho mục đích xấu hoặc trái phép.
-# Đang trong quá trình phát triển.
-# Xây dựng bởi Nguyễn Kiến Quốc
-
-# HƯỚNG DẪN SỬ DỤNG AN TOÀN:
-# 1. Thiết lập biến môi trường (KHÔNG bao giờ dùng --telegram-token trong command):
-#    $ export TELEGRAM_TOKEN="your_token_here"
-#    $ export TELEGRAM_CHAT_ID="your_chat_id_here"
-#
-# 2. Chạy tool:
-#    $ python quoc_omni.py anhtukala.id.vn \
-#      --ctf-mode \
-#      --nuclei-auto-tags \
-#      --nuclei-ctf-pack \
-#      --nuclei-two-pass \
-#      --nuclei-group-by-tech \
-#      --retries 2 \
-#      --retry-backoff 2.0
-#
-# 3. Hoặc tắt Telegram nếu không cần:
-#    $ python quoc_omni.py anhtukala.id.vn --no-telegram --ctf-mode
-#
-# LƯỚI HỖ TRỢ:
-#    - Lưu credentials trong file ~/.bashrc, ~/.zshrc, hoặc .env (và thêm .env vào .gitignore)
-#    - Tuyệt đối không commit credentials vào Git
-#    - Kiểm tra qua: $ grep -r "TELEGRAM_TOKEN" .git/ để phát hiện leaks lịch sử

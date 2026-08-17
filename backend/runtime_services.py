@@ -134,13 +134,6 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
 
     cmd = [sys.executable, "quoc_omni.py", target]
 
-    disable_telegram = req_data.get("disable_telegram")
-    if disable_telegram is None:
-        disable_telegram = req_data.get("no_telegram", False)
-
-    if disable_telegram:
-        cmd.append("--no-telegram")
-
     if req_data.get("logic_scan"):
         cmd.append("--logic-scan")
     if req_data.get("logic_base_url"):
@@ -163,14 +156,6 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         cmd.extend(extra_args)
 
     env = os.environ.copy()
-    if disable_telegram:
-        env.pop("TELEGRAM_TOKEN", None)
-        env.pop("TELEGRAM_CHAT_ID", None)
-    else:
-        if req_data.get("telegram_token"):
-            env["TELEGRAM_TOKEN"] = req_data["telegram_token"]
-        if req_data.get("telegram_chat_id"):
-            env["TELEGRAM_CHAT_ID"] = req_data["telegram_chat_id"]
 
     headers = req_data.get("headers", {})
     if isinstance(headers, dict):
@@ -214,7 +199,10 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
     redis_client.set(f"job_result:{job_id}", json.dumps(completed_result))
 
     try:
-        from core.db import save_live_hosts, save_vulnerabilities, update_scan_status
+        try:
+            from backend.core.engine.db import save_live_hosts, save_vulnerabilities, update_scan_status
+        except ImportError:
+            from core.engine.db import save_live_hosts, save_vulnerabilities, update_scan_status
         target_clean = target.replace("http://", "").replace("https://", "").strip("/")
         folder = "".join([c if c.isalnum() or c in (".", "_", "-") else "_" for c in target_clean])
         result_json_path = os.path.join(BASE_DIR, folder, "result.json")

@@ -36,8 +36,6 @@ export async function POST(req: Request) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             target: domain,
-            no_telegram: false,
-            disable_telegram: false,
             logic_scan: profiles?.includes("deep_logic") || false,
           }),
         });
