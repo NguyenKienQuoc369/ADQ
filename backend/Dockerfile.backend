@@ -1,21 +1,16 @@
-# File: Dockerfile.backend
 FROM python:3.11-slim
 
-# Cài đặt các gói hệ thống cơ bản và Golang
 RUN apt-get update && apt-get install -y \
     wget curl git gcc make libpcap-dev golang-go netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
-# Tải wordlist SecLists chất lượng cao cho FFuf
 RUN mkdir -p /usr/share/seclists/Discovery/Web-Content && \
     curl -sSL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt -o /usr/share/seclists/Discovery/Web-Content/common.txt && \
     curl -sSL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/api-endpoints.txt -o /usr/share/seclists/Discovery/Web-Content/api-endpoints.txt
 
-# Cấu hình môi trường Go để cài đặt tool
 ENV GOPATH=/root/go
 ENV PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
 
-# Cài đặt toàn bộ bộ công cụ từ ProjectDiscovery và các tool cần thiết
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
     mv $GOPATH/bin/httpx $GOPATH/bin/httpx-toolkit && \
@@ -29,15 +24,14 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     go install -v github.com/lc/subjs@latest && \
     mv $GOPATH/bin/* /usr/local/bin/
 
-# Thiết lập thư mục làm việc cho Python
 WORKDIR /app
 
-# Copy dependency và cài đặt thư viện Python
+ENV PYTHONPATH="/app"
+RUN ln -s /app /app/backend
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy toàn bộ mã nguồn backend vào container
 COPY . .
 
-# Mặc định (Sẽ bị ghi đè bởi docker-compose)
 CMD ["python3", "api_server.py"]

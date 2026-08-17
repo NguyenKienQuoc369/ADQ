@@ -1,5 +1,4 @@
 services:
-  # Caddy Reverse Proxy & Automatic SSL Certificate Manager
   caddy:
     image: caddy:2-alpine
     container_name: adq_caddy
@@ -16,7 +15,6 @@ services:
     networks:
       - adq_net
 
-  # PostgreSQL
   db:
     image: postgres:15-alpine
     container_name: adq_postgres
@@ -32,7 +30,6 @@ services:
     networks:
       - adq_net
 
-  # Redis
   redis:
     image: redis:7-alpine
     container_name: adq_redis
@@ -44,20 +41,18 @@ services:
     networks:
       - adq_net
 
-  # OAST Server
   oast-server:
     build:
       context: ./backend
       dockerfile: Dockerfile.backend
     container_name: adq_oast
     restart: always
-    command: python3 -c "from core.oast_server import ADQInteractionServer; s = ADQInteractionServer(host='0.0.0.0', port=8888); s.start_server(); import time; time.sleep(86400000)"
+    command: python3 runtime_services.py --role oast --host 0.0.0.0 --port 8888
     ports:
-      - "8888:8888" # Expose ra ngoài để mục tiêu có thể ping về
+      - "8888:8888"
     networks:
       - adq_net
 
-  # FastAPI Backend Server
   api-server:
     build:
       context: ./backend
@@ -73,14 +68,13 @@ services:
     networks:
       - adq_net
 
-  # Master Grid Node 
   master-node:
     build:
       context: ./backend
       dockerfile: Dockerfile.backend
     container_name: adq_master
     restart: always
-    command: python3 -c "from core.grid_master import MasterGridNode; print('ADQ Master Node Grid Active')"
+    command: python3 runtime_services.py --role master
     env_file:
       - .env
     depends_on:
@@ -89,13 +83,12 @@ services:
     networks:
       - adq_net
 
-  # Worker Node (Light Recon)
   worker-light:
     build:
       context: ./backend
       dockerfile: Dockerfile.backend
     restart: always
-    command: python3 worker.py --help
+    command: python3 runtime_services.py --role worker --worker-id worker-light-1 --capability recon_infra,web_mapping
     environment:
       - WORKER_CAPABILITIES=recon_infra,web_mapping
     env_file:
@@ -105,13 +98,12 @@ services:
     networks:
       - adq_net
 
-  # Worker Node (Elite Exploit)
   worker-elite:
     build:
       context: ./backend
       dockerfile: Dockerfile.backend
     restart: always
-    command: python3 worker.py --help
+    command: python3 runtime_services.py --role worker --worker-id worker-elite-1 --capability dast_active,deep_logic
     environment:
       - WORKER_CAPABILITIES=dast_active,deep_logic
     env_file:
@@ -121,13 +113,12 @@ services:
     networks:
       - adq_net
 
-  # Worker Node (Mobile Audit)
   worker-mobile:
     build:
-      context: .
-      dockerfile: Dockerfile.mobile-worker
+      context: ./backend
+      dockerfile: Dockerfile.backend
     restart: always
-    command: python3 backend/worker.py --help
+    command: python3 runtime_services.py --role worker --worker-id worker-mobile-1 --capability mobile_audit,apk_decompile
     environment:
       - WORKER_CAPABILITIES=mobile_audit,apk_decompile
     env_file:
@@ -137,7 +128,6 @@ services:
     networks:
       - adq_net
 
-  # Next.js Dashboard
   web-dashboard:
     build:
       context: ./frontend
