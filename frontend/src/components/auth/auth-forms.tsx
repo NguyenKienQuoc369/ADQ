@@ -329,7 +329,7 @@ export function RegisterForm() {
       await registerAccount({
         name: values.name,
         email: values.email,
-        password: values.password,
+        password: values.password ?? "",
         company: values.company,
         phone: values.phone,
       });
