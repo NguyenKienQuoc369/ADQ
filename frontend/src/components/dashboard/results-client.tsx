@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download, FileJson, FileText, Globe, KeyRound, LoaderCircle, LockKeyholeOpen, ShieldAlert, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, Download, FileJson, FileText, Globe, KeyRound, LoaderCircle, LockKeyholeOpen, ShieldAlert, Sparkles, Bot } from "lucide-react";
 
 import { DashboardShell } from "@/components/dashboard-shell";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -16,6 +17,7 @@ import { formatDateTime, getSeverityColor } from "@/lib/utils";
 type ExportFormat = "json" | "html" | "markdown";
 
 export function ResultsClient() {
+  const router = useRouter();
   const { user } = useAuth();
   const [data, setData] = useState<Awaited<ReturnType<typeof getScanResults>>>([]);
   const [selectedScanId, setSelectedScanId] = useState<string>("");
@@ -80,10 +82,22 @@ export function ResultsClient() {
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Đọc kết quả theo cách đơn giản</CardTitle>
-            <CardDescription>
-              Chọn một lượt quét ở cột bên trái. Sau đó nhìn vào phần tóm tắt, danh sách cảnh báo và tải báo cáo nếu cần gửi cho người khác.
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Báo cáo & Kết quả chi tiết</CardTitle>
+                <CardDescription>
+                  Xem phân tích chi tiết lỗ hổng, danh mục tài sản và hành động gợi ý tự động từ AI.
+                </CardDescription>
+              </div>
+              {selectedScan ? (
+                <Button
+                  onClick={() => router.push(`/copilot?jobId=${selectedScan.id}&target=${encodeURIComponent(selectedScan.target)}`)}
+                  className="bg-cyan-600 hover:bg-cyan-500 text-white"
+                >
+                  <Bot className="mr-2 h-4 w-4" /> Hỏi Copilot về phiên này
+                </Button>
+              ) : null}
+            </div>
           </CardHeader>
         </Card>
 
@@ -91,7 +105,7 @@ export function ResultsClient() {
           <Card>
             <CardHeader>
               <CardTitle>Danh sách lượt quét</CardTitle>
-              <CardDescription>Đây là nơi bạn chọn lần kiểm tra muốn xem lại.</CardDescription>
+              <CardDescription>Chọn phiên quét đã thực hiện để xem phân tích.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {loading ? (
@@ -129,7 +143,7 @@ export function ResultsClient() {
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Badge variant="muted">{scan.planUsed.replace("_", " ")}</Badge>
-                          <Badge variant="muted">{scan.enabledTools.length} bước kiểm tra</Badge>
+                          <Badge variant="muted">{scan.liveSubdomains.length} host live</Badge>
                           <Badge variant="muted">{scan.vulnerabilities.length} cảnh báo</Badge>
                         </div>
                       </button>
@@ -165,9 +179,9 @@ export function ResultsClient() {
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-3">
-                      <SummaryBox label="Tên miền phụ đang hoạt động" value={String(selectedScan.liveSubdomains.length)} icon={Globe} />
+                      <SummaryBox label="Tên miền phụ hoạt động" value={String(selectedScan.liveSubdomains.length)} icon={Globe} />
                       <SummaryBox label="Cổng đang mở" value={String(selectedScan.portScan.length)} icon={ShieldAlert} />
-                      <SummaryBox label="Cảnh báo đã tìm thấy" value={String(selectedScan.vulnerabilities.length)} icon={AlertTriangle} />
+                      <SummaryBox label="Cảnh báo phát hiện" value={String(selectedScan.vulnerabilities.length)} icon={AlertTriangle} />
                     </div>
                   </div>
 
@@ -204,140 +218,98 @@ export function ResultsClient() {
             <Card>
               <CardHeader>
                 <CardTitle>Website và dịch vụ đang hoạt động</CardTitle>
-                <CardDescription>Phần này cho biết hệ thống đang thấy những địa chỉ nào còn mở và có thể truy cập được.</CardDescription>
+                <CardDescription>Danh sách subdomains và cổng dịch vụ đã phát hiện.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-3">
-                  {selectedScan.liveSubdomains.map((item) => (
-                    <div key={item.host} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                  {selectedScan.liveSubdomains.map((item, idx) => (
+                    <div key={idx} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
                       <div className="flex items-center justify-between gap-4">
                         <div>
-                          <p className="font-medium text-slate-100">{item.host}</p>
-                          <p className="text-sm text-slate-400">{item.ip}</p>
+                          <p className="font-medium text-slate-100">{typeof item === 'string' ? item : item.host}</p>
+                          <p className="text-sm text-slate-400">{typeof item === 'string' ? 'Active' : item.ip}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant={item.status === "LIVE" ? "success" : "warning"}>
-                            {item.status === "LIVE" ? "Đang hoạt động" : item.status}
-                          </Badge>
-                          <Badge variant="muted">{item.tech}</Badge>
+                          <Badge variant="success">Đang hoạt động</Badge>
                         </div>
                       </div>
                     </div>
                   ))}
+                  {selectedScan.liveSubdomains.length === 0 ? (
+                    <div className="text-sm text-slate-400">Không có subdomain live nào.</div>
+                  ) : null}
                 </div>
 
                 <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
                   <p className="mb-3 text-sm font-medium text-slate-100">Các cổng đang mở</p>
                   <div className="grid gap-3 md:grid-cols-2">
-                    {selectedScan.portScan.map((item) => (
-                      <div key={`${item.port}-${item.service}`} className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
+                    {selectedScan.portScan.map((item: any, idx) => (
+                      <div key={idx} className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-semibold text-slate-100">{item.port}</span>
-                          <Badge variant="warning">{item.service}</Badge>
+                          <span className="text-sm font-semibold text-slate-100">{typeof item === 'object' ? item.port : item}</span>
+                          <Badge variant="warning">{typeof item === 'object' ? item.service : 'Open'}</Badge>
                         </div>
-                        <p className="mt-2 text-sm text-slate-400">{item.exposure}</p>
                       </div>
                     ))}
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
-                  <p className="mb-3 text-sm font-medium text-slate-100">Các đường dẫn đã ghi nhận</p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedScan.urlHistory.map((url) => (
-                      <span key={url} className="rounded-full border border-slate-800 bg-slate-950 px-3 py-1 text-xs text-slate-300">
-                        {url}
-                      </span>
-                    ))}
+                    {selectedScan.portScan.length === 0 ? <div className="text-xs text-slate-500">Chưa ghi nhận cổng mở.</div> : null}
                   </div>
                 </div>
               </CardContent>
             </Card>
 
             <div className="space-y-6">
+              {/* Action Advice Box */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Chuỗi dữ liệu nhạy cảm đáng chú ý</CardTitle>
-                  <CardDescription>Đây là nơi hệ thống đánh dấu các khóa, token hoặc dữ liệu có vẻ quan trọng để bạn xem lại.</CardDescription>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-emerald-400" /> AI Action Advice & Khuyến nghị
+                  </CardTitle>
+                  <CardDescription>Đánh giá nguyên nhân gốc rễ và hành động khắc phục.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {selectedScan.secretsHunter.length ? (
-                    selectedScan.secretsHunter.map((item) => (
-                      <div key={item.id} className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
-                        <div className="mb-3 flex items-start justify-between gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <KeyRound className="h-4 w-4 text-cyan-300" />
-                              <p className="font-medium text-slate-100">{item.type}</p>
-                            </div>
-                            <p className="mt-2 break-all font-mono text-xs text-slate-300">{item.value}</p>
-                          </div>
-                          <Badge variant={item.encoded ? "warning" : "success"}>{item.confidence}%</Badge>
-                        </div>
-                        <p className="text-sm text-slate-400">Nguồn: {item.source}</p>
-                        {item.encoded ? (
-                          <div className="mt-3">
-                            <Button variant="secondary" size="sm" onClick={() => setDecodedMap((prev) => ({ ...prev, [item.id]: decodeBase64Value(item.value) }))}>
-                              <LockKeyholeOpen className="h-4 w-4" />
-                              Giải mã nhanh Base64
-                            </Button>
-                            {decodedMap[item.id] ? (
-                              <div className="mt-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-                                {decodedMap[item.id]}
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : null}
+                  {selectedScan.actionAdvice && selectedScan.actionAdvice.length > 0 ? (
+                    selectedScan.actionAdvice.map((advice, idx) => (
+                      <div key={idx} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                        <p className="text-sm text-slate-200">{advice.rootCause}</p>
                       </div>
                     ))
-                  ) : (
-                    <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-400">
-                      Gói hiện tại hoặc phiên scan này chưa phát hiện secret nào đáng chú ý.
+                  ) : selectedScan.rawActionAdvice ? (
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-300 whitespace-pre-wrap">
+                      {selectedScan.rawActionAdvice}
                     </div>
+                  ) : (
+                    <div className="text-sm text-slate-400">Không có khuyến nghị cho phiên này.</div>
                   )}
                 </CardContent>
               </Card>
 
+              {/* Vulnerabilities Box */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Cảnh báo và gợi ý xử lý</CardTitle>
-                  <CardDescription>Đọc phần này nếu bạn muốn biết vấn đề nằm ở đâu và nên trao đổi gì với đội kỹ thuật.</CardDescription>
+                  <CardTitle>Cảnh báo lỗ hổng</CardTitle>
+                  <CardDescription>Danh sách phát hiện từ Nuclei engine.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {selectedScan.vulnerabilities.map((item) => {
-                    const advice = selectedScan.actionAdvice.find((entry) => entry.vulnerabilityId === item.id);
-
-                    return (
-                      <div key={item.id} className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
-                        <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                          <div>
-                            <p className="font-medium text-slate-100">{item.title}</p>
-                            <p className="mt-1 text-sm text-slate-400">
-                              {item.asset} · {item.endpoint}
-                            </p>
-                          </div>
-                          <span className={`rounded-full border px-3 py-1 text-xs ${getSeverityColor(item.severity)}`}>
-                            {item.severity} · CVSS {item.cvss}
-                          </span>
-                        </div>
-                        <p className="text-sm leading-6 text-slate-300">{item.description}</p>
-                        <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-                          <p className="mb-2 flex items-center gap-2 text-sm font-medium text-emerald-300">
-                            <Sparkles className="h-4 w-4" />
-                            Nên làm gì tiếp theo
-                          </p>
-                          <p className="text-sm text-slate-400">{advice?.rootCause ?? item.impact}</p>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {(advice?.remediation ?? [item.impact]).map((step) => (
-                              <span key={step} className="rounded-full border border-slate-800 bg-slate-900 px-3 py-1 text-xs text-slate-300">
-                                {step}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
+                  {selectedScan.vulnerabilities.map((item, idx) => (
+                    <div key={idx} className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="font-medium text-slate-100">{item.title}</p>
+                        <Badge variant="destructive">{item.severity || "MEDIUM"}</Badge>
                       </div>
-                    );
-                  })}
+                      <p className="text-xs text-slate-400">{item.endpoint}</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => router.push(`/copilot?vuln=${encodeURIComponent(item.title)}&endpoint=${encodeURIComponent(item.endpoint)}`)}
+                        className="mt-3 border-cyan-500/40 text-cyan-300"
+                      >
+                        Sinh mã vá One-Click
+                      </Button>
+                    </div>
+                  ))}
+                  {selectedScan.vulnerabilities.length === 0 ? (
+                    <div className="text-sm text-slate-400">Không tìm thấy lỗ hổng trực tiếp.</div>
+                  ) : null}
                 </CardContent>
               </Card>
             </div>
@@ -351,7 +323,7 @@ export function ResultsClient() {
 function translateStatus(status: string) {
   if (status === "RUNNING") return "Đang quét";
   if (status === "QUEUED") return "Đang chờ";
-  if (status === "COMPLETED") return "Đã xong";
+  if (status === "COMPLETED" || status === "DONE") return "Đã xong";
   return status;
 }
 

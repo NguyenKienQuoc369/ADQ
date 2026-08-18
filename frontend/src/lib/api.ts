@@ -13,7 +13,6 @@ export const API_BASE_URL =
 
 const APP_VERSION = "2.0.0";
 
-// Dọn rác client: tự động localStorage.clear() nếu phiên bản app thay đổi
 if (typeof window !== "undefined") {
   const currentVer = localStorage.getItem("adq_app_version");
   if (currentVer !== APP_VERSION) {
@@ -25,7 +24,7 @@ if (typeof window !== "undefined") {
 export type UserRole = "USER" | "ADMIN";
 export type PackageTier = "FREE" | "PRO" | "PRO_MAX";
 export type AccountStatus = "ACTIVE" | "PENDING" | "LOCKED";
-export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
 export type FlagLikelihood = "HIGH" | "MEDIUM" | "LOW";
 export type ScanTool = "Subfinder" | "DNSX" | "Naabu" | "Katana" | "GAU" | "Nuclei";
 
@@ -126,8 +125,9 @@ export interface SecretFinding {
 }
 
 export interface ActionAdvice {
+  id?: string;
   vulnerabilityId: string;
-  title: string;
+  title?: string;
   rootCause: string;
   remediation: string[];
 }
@@ -142,6 +142,7 @@ export interface Vulnerability {
   description: string;
   exploitability: number;
   impact: string;
+  cve?: string;
 }
 
 export interface ScanResult {
@@ -156,6 +157,7 @@ export interface ScanResult {
   secretsHunter: SecretFinding[];
   vulnerabilities: Vulnerability[];
   actionAdvice: ActionAdvice[];
+  rawActionAdvice?: string;
   enabledTools: ScanTool[];
   autoThrottle: boolean;
   telegram: {
@@ -205,11 +207,10 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     if (!/^(https?:)?\/\//.test(path)) {
       url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
     }
-  } catch (e) {
+  } catch {
     url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
   }
 
-  // Tự động lấy Bearer Token từ Supabase Auth session
   let authHeader: Record<string, string> = {};
   if (typeof window !== "undefined") {
     try {
@@ -254,92 +255,43 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // ------------------------------------------------------------
-// Auth: đã chuyển sang Supabase trong AuthProvider
+// Copilot AI & Scan API
 // ------------------------------------------------------------
 
-export function getStoredSession() {
-  return null as AuthResponse | null;
-}
-
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  void email;
-  void password;
-  throw new Error("Auth đã chuyển sang Supabase. Vui lòng dùng AuthProvider.");
-}
-
-export async function register(payload: { name: string; email: string; password: string }): Promise<AuthResponse> {
-  void payload;
-  throw new Error("Auth đã chuyển sang Supabase. Vui lòng dùng AuthProvider.");
-}
-
-export async function loginWithGoogle(): Promise<AuthResponse> {
-  throw new Error("Auth đã chuyển sang Supabase. Vui lòng dùng AuthProvider.");
-}
-
-export async function logout() {
-  return;
-}
-
-export async function getCurrentUser() {
-  const supabase = createSupabaseBrowserClient();
-  const { data, error } = await supabase.auth.getUser();
-
-  if (error || !data.user) {
-    return null as User | null;
-  }
-
-  const metadata = data.user.user_metadata ?? {};
-  return {
-    id: data.user.id,
-    name: metadata.name || metadata.full_name || data.user.email?.split("@")[0] || "Người dùng",
-    email: data.user.email ?? "",
-    avatar: metadata.avatar_url || metadata.picture || undefined,
-    role: metadata.role === "ADMIN" ? "ADMIN" : "USER",
-    packageTier: metadata.packageTier === "PRO_MAX" ? "PRO_MAX" : metadata.packageTier === "PRO" ? "PRO" : "FREE",
-    status: "ACTIVE",
-    dailyLimit: metadata.packageTier === "FREE" ? 5 : 999,
-    scansToday: 0,
-    telegramConnected: false,
-    planExpiresAt: null,
-    oauthProvider: metadata.provider === "google" ? "google" : null,
-    lastLoginAt: new Date().toISOString(),
-  } satisfies User;
-}
-
-export async function forgotPassword(email: string) {
-  const supabase = createSupabaseBrowserClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-  redirectTo: `${window.location.origin}/reset-password`,
+export async function startScanJob(target: string, extraArgs: string[] = []): Promise<{ ok: boolean; job_id: string }> {
+  return requestJson<{ ok: boolean; job_id: string }>("/api/scan", {
+    method: "POST",
+    body: JSON.stringify({ target, extra_args: extraArgs }),
   });
-
-  if (error) {
-    throw error;
-  }
-
-  return {
-    ok: true,
-    message: "Nếu email tồn tại, hệ thống đã gửi liên kết đặt lại mật khẩu.",
-  };
 }
 
-export async function resetPassword(token: string, password: string) {
-  const supabase = createSupabaseBrowserClient();
+export async function getScanJobStatus(jobId: string): Promise<any> {
+  return requestJson<any>(`/api/scan/${encodeURIComponent(jobId)}`);
+}
 
-  if (token.trim()) {
-    const url = new URL(window.location.href);
-    url.searchParams.set("token", token);
-    window.history.replaceState({}, "", url.toString());
-  }
+export async function copilotChat(prompt: string): Promise<{ copilot_response: string }> {
+  return requestJson<{ copilot_response: string }>("/api/copilot/chat", {
+    method: "POST",
+    body: JSON.stringify({ prompt }),
+  });
+}
 
-  const { error } = await supabase.auth.updateUser({ password });
-  if (error) {
-    throw error;
-  }
+export async function copilotAnalyze(jobId: string): Promise<{ job_id: string; analysis: string }> {
+  return requestJson<{ job_id: string; analysis: string }>("/api/copilot/analyze", {
+    method: "POST",
+    body: JSON.stringify({ job_id: jobId }),
+  });
+}
 
-  return {
-    ok: true,
-    message: "Mật khẩu đã được cập nhật. Bạn có thể đăng nhập lại ngay.",
-  };
+export async function copilotPatch(payload: {
+  vulnerability_type: string;
+  endpoint: string;
+  framework?: string;
+}): Promise<{ patch_result: string }> {
+  return requestJson<{ patch_result: string }>("/api/copilot/patch", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 // ------------------------------------------------------------
@@ -464,7 +416,6 @@ export async function redeemCode(code: string): Promise<User> {
 
 export async function getSystemStats(): Promise<SystemStats> {
   const res = await requestJson<{ ok: true; overview?: any; adminStats?: any }>("/api/dashboard/overview");
-  // if adminStats present, use it
   if (res?.adminStats) {
     return {
       cpuUsage: Number(res.adminStats.cpuUsage ?? 0),
@@ -476,7 +427,6 @@ export async function getSystemStats(): Promise<SystemStats> {
     };
   }
 
-  // fallback: try to map from overview.realtime and metrics
   if (res?.overview) {
     const realtime = res.overview.realtime ?? {};
     const metrics = res.overview.metrics ?? {};
