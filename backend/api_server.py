@@ -18,6 +18,7 @@ allowed_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://adq.io.vn",
+    "https://www.adq.io.vn",
 ]
 if settings.FRONTEND_URL:
     allowed_origins.append(settings.FRONTEND_URL)
@@ -30,6 +31,7 @@ if hasattr(settings, "CORS_ORIGINS") and settings.CORS_ORIGINS:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*(adq\.io\.vn|vercel\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
