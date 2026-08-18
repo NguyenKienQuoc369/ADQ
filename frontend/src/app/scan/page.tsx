@@ -56,9 +56,6 @@ interface DAGNodeState {
   error?: string;
 }
 
-// -------------------------------------------------------------
-// Bộ giải mã Markdown & Code Snippet chuyên nghiệp cho AI
-// -------------------------------------------------------------
 function FormattedAiMessage({ text }: { text: string }) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -191,9 +188,6 @@ function safeString(val: any): string {
   return String(val);
 }
 
-// -------------------------------------------------------------
-// Component Trang Quét Chính
-// -------------------------------------------------------------
 function ScanLandingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -205,7 +199,6 @@ function ScanLandingContent() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
-  // DAG Flowchart Nodes
   const [nodes, setNodes] = useState<Record<string, DAGNodeState>>({
     node_recon: { step: 1, id: "node_recon", label: "Recon & DNS", sublabel: "Subfinder / DNSX", icon: Globe, status: "pending" },
     node_port: { step: 2, id: "node_port", label: "Port Scan", sublabel: "Naabu Fast Port", icon: Radio, status: "pending" },
@@ -216,21 +209,18 @@ function ScanLandingContent() {
     node_ai: { step: 7, id: "node_ai", label: "AI Advice", sublabel: "Gemini Copilot", icon: Sparkles, status: "pending" },
   });
 
-  // Metrics
   const [subdomains, setSubdomains] = useState(0);
   const [liveHosts, setLiveHosts] = useState(0);
   const [crawledUrls, setCrawledUrls] = useState(0);
   const [openPorts, setOpenPorts] = useState(0);
   const [vulnCount, setVulnCount] = useState(0);
 
-  // Findings
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
   const [actionAdvice, setActionAdvice] = useState<ActionAdvice[]>([]);
   const [rawActionAdvice, setRawActionAdvice] = useState<string>("");
   const [secrets, setSecrets] = useState<SecretItem[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
 
-  // Copilot Chat
   const [copilotMessages, setCopilotMessages] = useState<Array<{ "copilot"; "user" sender: string text: | }>>([
     {
       sender: "copilot",
@@ -244,7 +234,6 @@ function ScanLandingContent() {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages, copilotLoading]);
 
-  // Polling Loop
   useEffect(() => {
     if (!jobId || !isScanning) return;
 
@@ -256,7 +245,6 @@ function ScanLandingContent() {
         const job = res?.job || res || {};
         const currentStatus = String(job.status || "").toLowerCase();
 
-        // Cập nhật tiến trình chạy qua từng node
         if (currentStatus === "running" || currentStatus === "queued") {
           setNodes((prev) => ({
             ...prev,
@@ -315,7 +303,6 @@ function ScanLandingContent() {
             }));
             setActionAdvice(parsedAdvice);
 
-            // Tự động thông báo vào hộp chat Copilot
             setCopilotMessages((prev) => [
               ...prev,
               {
@@ -428,9 +415,7 @@ function ScanLandingContent() {
     <DashboardShell area="dashboard">
       <div className="space-y-6 text-slate-100 font-sans">
         
-        {/* ========================================================= */}
-        {/* 1. KHỐI ĐIỀU KHIỂN QUÉT & NHẬP MỤC TIÊU                   */}
-        {/* ========================================================= */}
+        {/* 1. KHỐI ĐIỀU KHIỂN QUÉT & NHẬP MỤC TIÊU */}
         <Card className="border border-slate-800/80 bg-slate-900/90 shadow-xl backdrop-blur-md">
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -452,7 +437,6 @@ function ScanLandingContent() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-              {/* Input mục tiêu */}
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                   Target Domain / URL / IP
@@ -467,7 +451,6 @@ function ScanLandingContent() {
                 </div>
               </div>
 
-              {/* Lựa chọn gói */}
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Gói SaaS Engine</label>
                 <div className="flex gap-2">
@@ -486,7 +469,6 @@ function ScanLandingContent() {
               </div>
             </div>
 
-            {/* Nút Bắt đầu quét & Thông báo lỗi */}
             <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
               {scanError ? (
                 <div className="flex items-center gap-2 text-sm text-rose-400">
@@ -515,9 +497,7 @@ function ScanLandingContent() {
           </CardContent>
         </Card>
 
-        {/* ========================================================= */}
-        {/* 2. SƠ ĐỒ TIẾN TRÌNH QUÉT ĐA TẦNG VỚI MŨI TÊN (DAG)        */}
-        {/* ========================================================= */}
+        {/* 2. SƠ ĐỒ TIẾN TRÌNH QUÉT ĐA TẦNG VỚI MŨI TÊN (DAG) */}
         <Card className="border border-slate-800/80 bg-slate-900/90 shadow-md">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
@@ -536,7 +516,6 @@ function ScanLandingContent() {
 
                 return (
                   <React.Fragment key="{node.id}">
-                    {/* Node Card */}
                     <div
                       className={`flex flex-col gap-1.5 rounded-xl border p-3 min-w-[135px] flex-1 transition-all ${
                         node.status === "running"
@@ -564,7 +543,6 @@ function ScanLandingContent() {
                       <div className="text-[10px] text-slate-400 truncate">{node.sublabel}</div>
                     </div>
 
-                    {/* Mũi tên liên kết giữa các bước */}
                     {!isLast ? (
                       <div className="hidden lg:flex items-center justify-center px-1">
                         <ArrowRight "completed" "running" "text-cyan-400 "text-emerald-400" "text-slate-700" ${ : ? animate-pulse" className="{`h-4" node.status="==" w-4 }`}/>
@@ -577,14 +555,10 @@ function ScanLandingContent() {
           </CardContent>
         </Card>
 
-        {/* ========================================================= */}
-        {/* 3. BỐ CỤC 2 CỘT: KẾT QUẢ QUÉT (TRÁI) & COPILOT AI (PHẢI)  */}
-        {/* ========================================================= */}
+        {/* 3. BỐ CỤC 2 CỘT: KẾT QUẢ QUÉT (TRÁI) & COPILOT AI (PHẢI) */}
         <div className="grid gap-6 lg:grid-cols-12">
-          
           {/* CỘT TRÁI (7 PHẦN): KẾT QUẢ & ACTION ADVICE */}
           <div className="space-y-6 lg:col-span-7">
-            
             {/* 4 Thẻ Chỉ Số Đo Lường Nhanh */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-center">
@@ -749,12 +723,14 @@ function ScanLandingContent() {
                 {/* Gợi Ý Câu Hỏi Nhanh (Quick Action Pills) */}
                 <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/60">
                   <button
+                    type="button"
                     onClick={() => handleCopilotSend("Hãy hướng dẫn tôi tạo file vercel.json có đầy đủ security headers bảo mật nhất.")}
                     className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-[11px] text-cyan-300 hover:bg-slate-800 hover:text-white transition flex items-center gap-1"
                   >
                     <FileCode2 className="h-3 w-3"/> vercel.json mẫu
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleCopilotSend("Làm thế nào để phòng chống lỗi BOLA và XSS trên ứng dụng này?")}
                     className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-[11px] text-emerald-300 hover:bg-slate-800 hover:text-white transition flex items-center gap-1"
                   >
@@ -769,7 +745,7 @@ function ScanLandingContent() {
                     placeholder="Hỏi cách vá lỗi, kiểm tra bảo mật..."
                     className="h-10 text-xs border-slate-700 bg-slate-950 text-white placeholder:text-slate-500 focus:border-cyan-500"
                   />
-                  <Button onClick="{()"> handleCopilotSend()}
+                  <Button onClick="{()" type="button"> handleCopilotSend()}
                     disabled={copilotLoading || !copilotInput.trim()}
                     className="h-10 px-3.5 bg-cyan-600 hover:bg-cyan-500 text-white shrink-0"
                   >
