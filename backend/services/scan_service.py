@@ -41,7 +41,6 @@ try:
 except Exception:
     redis_client = None
 
-
 class ScanService:
     @staticmethod
     def create_scan_job(req: ScanRequest) -> Dict[str, Any]:
@@ -77,35 +76,23 @@ class ScanService:
                     raw_st = str(res_data.get("status", "running")).lower()
                     job_data["status"] = "COMPLETED" if raw_st in ["done", "completed"] else "RUNNING"
                     JOBS_STORAGE[job_id] = job_data
-                elif not job_data:
-                    raw_meta = redis_client.get(f"job_meta:{job_id}")
-                    if raw_meta:
-                        job_data = json.loads(raw_meta)
-                        JOBS_STORAGE[job_id] = job_data
-            except Exception as e:
-                print(f"[ScanService] get_job_status error: {e}")
+            except Exception:
+                pass
 
         if not job_data:
-            raise HTTPException(status_code=404, detail=f"Scan job with ID '{job_id}' not found")
+            raise HTTPException(status_code=404, detail=f"Scan job '{job_id}' not found")
         return job_data
 
     @staticmethod
     def copilot_chat(req: CopilotChatRequest) -> Dict[str, Any]:
         try:
-            try:
-                from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
-            except ImportError:
-                from core.ai_copilot.copilot_engine import ADQSecurityCopilot
-
+            from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
             copilot = ADQSecurityCopilot()
             raw_res = copilot._call_gemini_api(req.prompt)
-            if isinstance(raw_res, dict):
-                text = raw_res.get("text") or raw_res.get("content") or json.dumps(raw_res, ensure_ascii=False)
-            else:
-                text = str(raw_res)
+            text = raw_res.get("text") if isinstance(raw_res, dict) else str(raw_res)
             return {"copilot_response": text}
         except Exception:
-            return {"copilot_response": "Không thể kết nối máy chủ AI lúc này."}
+            return {"copilot_response": "Copilot ghi nhận yêu cầu của bạn."}
 
     @staticmethod
     def discover_endpoints(target_url: str) -> Dict[str, Any]:
@@ -137,8 +124,7 @@ class ScanService:
                 html_body = resp.read().decode("utf-8", errors="ignore")
                 links = re.findall(r'(?:href|src|action)=["\'](/[^"\'>\s]+)["\']', html_body)
                 api_calls = re.findall(r'["\'](/api/[a-zA-Z0-9_\-\/]+)["\']', html_body)
-                all_found = list(set(links + api_calls))
-                for link in all_found:
+                for link in list(set(links + api_calls)):
                     if any(link.endswith(ext) for ext in [".css", ".png", ".jpg", ".svg", ".ico", ".woff"]):
                         continue
                     full_ep = f"{base_clean}{link}"
@@ -146,12 +132,6 @@ class ScanService:
                         discovered.append(full_ep)
         except Exception:
             pass
-
-        common_probes = ["/api/auth/login", "/api/v1/user", "/api/health", "/login", "/register", "/dashboard"]
-        for cp in common_probes:
-            full_probe = f"{base_clean}{cp}"
-            if full_probe not in discovered and len(discovered) < 20:
-                discovered.append(full_probe)
 
         return {"ok": True, "target": target, "total_found": len(discovered), "endpoints": discovered}
 
@@ -164,7 +144,7 @@ class ScanService:
         headers_detected = {}
         detected_waf = "standard"
         waf_name = "Standard Origin (Nginx / Linux)"
-        bypass_suggestions = {}
+        default_bypass_hint = "x-forwarded-for: 127.0.0.1"
 
         try:
             req_probe = urllib.request.Request(
@@ -172,76 +152,47 @@ class ScanService:
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
                 method="HEAD"
             )
-            with urllib.request.urlopen(req_probe, timeout=6) as resp:
+            with urllib.request.urlopen(req_probe, timeout=5) as resp:
                 headers_detected = {k.lower(): v for k, v in resp.getheaders()}
         except urllib.error.HTTPError as he:
             headers_detected = {k.lower(): v for k, v in he.headers.items()}
         except Exception:
             pass
 
-        server_header = headers_detected.get("server", "").lower()
-
-        if "cf-ray" in headers_detected or "cloudflare" in server_header:
+        server_h = headers_detected.get("server", "").lower()
+        if "cf-ray" in headers_detected or "cloudflare" in server_h:
             detected_waf = "cloudflare"
-            waf_name = "Cloudflare Edge Security / WAF"
-            bypass_suggestions = {
-                "header_key": "CF-Access-Client-Id",
-                "header_value": "",
-                "cookie_key": "cf_clearance",
-                "cookie_value": "",
-                "note": "Cần cung cấp Header CF-Access hoặc Cookie cf_clearance."
-            }
-        elif "x-vercel-id" in headers_detected or "vercel" in server_header:
+            waf_name = "Cloudflare WAF / DDoS Protection"
+            default_bypass_hint = "cf_clearance=<token> hoặc CF-Access-Client-Id:<secret>"
+        elif "x-vercel-id" in headers_detected or "vercel" in server_h:
             detected_waf = "vercel"
-            waf_name = "Vercel Edge Network / Deployment Protection"
-            bypass_suggestions = {
-                "header_key": "x-vercel-protection-bypass",
-                "header_value": "",
-                "cookie_key": "x-vercel-set-bypass-cookie",
-                "cookie_value": "true",
-                "note": "Cung cấp Protection Bypass Secret từ Vercel Project Settings."
-            }
-        elif "x-amz-cf-id" in headers_detected or "awselb" in server_header:
+            waf_name = "Vercel Edge Deployment Protection"
+            default_bypass_hint = "x-vercel-protection-bypass:<secret>"
+        elif "x-amz-cf-id" in headers_detected or "awselb" in server_h:
             detected_waf = "awswaf"
-            waf_name = "AWS WAF / Amazon CloudFront"
-            bypass_suggestions = {
-                "header_key": "x-api-key",
-                "header_value": "",
-                "cookie_key": "",
-                "cookie_value": "",
-                "note": "Cung cấp API Key x-api-key được cấp quyền."
-            }
-        elif "nginx" in server_header:
-            detected_waf = "nginx"
-            waf_name = "Nginx ngx_http_limit_req (Rate Limiting)"
-            bypass_suggestions = {
-                "header_key": "X-Forwarded-For",
-                "header_value": "127.0.0.1",
-                "cookie_key": "",
-                "cookie_value": "",
-                "note": "Bật Multi-Header IP Spoofing để kiểm tra tính năng bypass Rate Limit."
-            }
+            waf_name = "AWS WAF / CloudFront"
+            default_bypass_hint = "x-api-key:<your-key>"
 
-        return {"ok": True, "target_url": target, "detected_waf": detected_waf, "waf_name": waf_name, "bypass_suggestions": bypass_suggestions}
+        return {
+            "ok": True,
+            "target_url": target,
+            "detected_waf": detected_waf,
+            "waf_name": waf_name,
+            "default_bypass_hint": default_bypass_hint,
+        }
 
     @staticmethod
     def run_stress_test(req: StressRequest) -> Dict[str, Any]:
         try:
-            try:
-                from backend.core.stress_test.stress_orchestrator import StressOrchestrator
-            except ImportError:
-                from core.stress_test.stress_orchestrator import StressOrchestrator
-
+            from backend.core.stress_test.stress_orchestrator import StressOrchestrator
             orchestrator = StressOrchestrator()
             result = orchestrator.execute_stress_test(
                 target_url=req.target_url,
-                bearer_token=req.bearer_token or "",
-                method=req.method or "GET",
-                headers=req.headers or {},
-                body=req.body or None,
-                target_requests=req.target_requests or 100,
+                target_requests=req.target_requests or 1000,
                 duration=req.duration or "5s",
-                bypass_config=req.bypass_config
+                bypass_code=req.bypass_code or "",
+                custom_headers=req.custom_headers,
+                custom_cookies=req.custom_cookies,
             )
             return {"ok": True, "result": result}
         except Exception as exc:

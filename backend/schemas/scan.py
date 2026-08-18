@@ -28,13 +28,11 @@ class WafDetectRequest(BaseModel):
 
 class StressRequest(BaseModel):
     target_url: str
-    bearer_token: Optional[str] = ""
-    target_requests: Optional[int] = 100
+    target_requests: Optional[int] = 1000
     duration: str = "5s"
-    method: str = "GET"
-    body: Optional[str] = None
-    headers: Optional[Dict[str, str]] = None
-    bypass_config: Optional[Dict[str, Any]] = None
+    bypass_code: Optional[str] = ""
+    custom_headers: Optional[Dict[str, str]] = None
+    custom_cookies: Optional[Dict[str, str]] = None
     project_id: Optional[str] = None
 
 class ApkRequest(BaseModel):
