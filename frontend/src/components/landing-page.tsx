@@ -1,121 +1,240 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import {
-  ArrowRight,
-  CheckCircle2,
-  LayoutDashboard,
-  Lock,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowRight, Radar, ScanSearch, Sparkles, TerminalSquare, ShieldCheck } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ContainerTextFlip } from "@/components/ui/container-text-flip";
+import { NoiseBackground } from "@/components/ui/noise-background";
+import { TextFlippingBoard } from "@/components/ui/text-flipping-board";
+import { TextHoverEffect } from "@/components/ui/text-hover-effect";
 
-const glossary = [
+const Globe = dynamic(() => import("@/components/ui/globe").then((mod) => mod.Globe), {
+  ssr: false,
+  loading: () => <div className="h-[360px] w-full animate-pulse rounded-3xl border border-cyan-500/20 bg-[#020617]/80" />,
+});
+
+const heroWords = ["bề mặt", "lỗ hổng", "hạ tầng", "luồng dữ liệu"];
+
+const matrixLines = [
+  "POST /api/scan → tạo job quét mới và đưa vào hàng đợi",
+  "GET /api/scans → đồng bộ danh sách job, trạng thái và metadata",
+  "POST /api/copilot/analyze → AI phân tích kết quả scan theo ngữ cảnh",
+  "POST /api/copilot/patch → sinh one-click fix theo loại lỗ hổng",
+  "POST /api/stress → kích hoạt stress test bằng stress orchestrator",
+  "POST /api/apk → chạy pipeline mobile audit và quét secret Android",
+];
+
+const features = [
   {
-    term: "Lượt quét",
-    meaning: "Một lần hệ thống kiểm tra website của bạn để tìm điểm cần chú ý.",
+    icon: ShieldCheck,
+    title: "Điều phối quét DAST theo job",
+    description: "Backend có luồng `POST /api/scan`, `GET /api/scans`, `GET /api/scan/{job_id}` để tạo, theo dõi và truy vết từng phiên quét.",
   },
   {
-    term: "Cảnh báo",
-    meaning: "Một dấu hiệu cho thấy website có thể có vấn đề, cần bạn xem lại.",
+    icon: ScanSearch,
+    title: "Recon & phân tích giao thức",
+    description: "Engine có các module thật như `recon_scan/scanner.py`, `waf_detector.py`, `protocol_analyzer.py`, `param_fuzzer.py` để mở rộng bề mặt kiểm tra.",
   },
   {
-    term: "Tài sản",
-    meaning: "Các phần liên quan tới website như tên miền phụ, trang con hoặc dịch vụ đang mở.",
+    icon: Radar,
+    title: "Copilot phân tích và vá lỗi",
+    description: "Các endpoint `POST /api/copilot/chat|analyze|patch` kết nối AI copilot để diễn giải rủi ro và đề xuất mã vá theo framework.",
   },
   {
-    term: "Báo cáo",
-    meaning: "Bản tóm tắt kết quả kiểm tra để bạn chia sẻ cho đội kỹ thuật hoặc lưu lại.",
+    icon: TerminalSquare,
+    title: "Stress test + Mobile APK audit",
+    description: "`POST /api/stress` gọi stress orchestrator, còn `POST /api/apk` chạy `mobile_audit/apk_analyzer.py` để kiểm tra secret và cấu hình nguy hiểm.",
   },
+];
+
+const terminalLines = [
+  "[21:08:11] POST /api/scan  target=adq.io.vn  status=queued",
+  "[21:08:14] engine.recon_scan.scanner  discovered=18 endpoints",
+  "[21:08:17] GET /api/scan/{job_id}  status=running",
+  "[21:08:18] finding: SQL Injection  severity=CRITICAL",
+  "[21:08:20] POST /api/copilot/patch  framework=Next.js",
+  "[21:08:22] POST /api/projects/{project_id}/details  saved",
 ];
 
 export function LandingPage() {
   const { user } = useAuth();
 
   return (
-    <div className="relative overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.18),_transparent_52%)] dark:bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.24),_transparent_52%)]" />
-      <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px)] [background-size:48px_48px] dark:opacity-40" />
+    <div className="relative overflow-hidden bg-[#020617] text-slate-100">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(6,182,212,0.16),transparent_30%),radial-gradient(circle_at_80%_0%,rgba(56,189,248,0.14),transparent_38%),radial-gradient(circle_at_80%_70%,rgba(16,185,129,0.1),transparent_34%)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(56,189,248,0.11)_1px,transparent_1px),linear-gradient(90deg,rgba(56,189,248,0.1)_1px,transparent_1px)] [background-size:40px_40px]" />
+      <NoiseBackground />
 
-      <section className="relative mx-auto max-w-7xl px-4 pb-8 pt-10 md:px-8 md:pb-12 md:pt-16">
-        <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
-          <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.22em] text-cyan-700 shadow-[0_0_24px_rgba(34,211,238,0.12)] dark:border-cyan-400/30 dark:bg-cyan-500/10 dark:text-cyan-200">
-              ADQ Security
-            </div>
+      <section className="relative mx-auto max-w-7xl px-4 pb-10 pt-16 md:px-8 md:pb-16 md:pt-20">
+        <div className="grid items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="space-y-7">
+            <Badge className="w-fit border-cyan-500/30 bg-cyan-500/10 text-cyan-200 shadow-[0_0_28px_rgba(6,182,212,0.2)]">
+              <span className="mr-2 h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+              ADQ DAST Scanner • Copilot AI đang hoạt động
+            </Badge>
 
-            <div className="space-y-4">
-              <h1 className="max-w-3xl text-4xl font-semibold leading-[0.96] tracking-[-0.04em] text-[var(--foreground)] md:text-6xl">
-                Quản lý bảo mật website một cách rõ ràng, nhanh chóng và an toàn hơn.
-              </h1>
-              <p className="max-w-2xl text-base leading-8 text-[var(--foreground-muted)] md:text-lg">
-                Theo dõi lỗ hổng, quản lý tài sản kỹ thuật và kiểm soát quyền truy cập trong một hệ thống tập trung,
-                dễ vận hành và dễ hiểu.
-              </p>
-            </div>
+            <h1 className="max-w-4xl text-4xl font-semibold leading-[0.95] tracking-[-0.03em] text-slate-100 md:text-6xl">
+              Kiểm soát
+              <br />
+              <ContainerTextFlip words={heroWords} className="ml-2" />
+              <br />
+              trước khi bị khai thác
+            </h1>
+
+            <p className="max-w-2xl text-base leading-8 text-slate-300 md:text-lg">
+              ADQ Security hợp nhất DAST, asset intelligence và AI để đơn giản hóa quá trình kiểm thử bảo mật web
+              
+            </p>
 
             <div className="flex flex-wrap gap-3">
               <Link href={user ? "/dashboard" : "/login"}>
                 <Button
                   size="lg"
-                  className="border-cyan-300/50 bg-gradient-to-r from-cyan-300 via-cyan-400 to-sky-400 text-slate-950 shadow-[0_16px_32px_rgba(34,211,238,0.38)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_38px_rgba(34,211,238,0.46)] dark:border-cyan-200/60 dark:from-cyan-200 dark:via-cyan-300 dark:to-sky-300"
+                  className="border border-cyan-300/70 bg-gradient-to-r from-cyan-300 via-sky-300 to-emerald-300 text-slate-950 shadow-[0_18px_36px_rgba(34,211,238,0.32)] hover:shadow-[0_22px_40px_rgba(34,211,238,0.44)]"
                 >
-                  {user ? "Mở dashboard" : "Đăng nhập"}
+                  Bắt đầu quét miễn phí
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
-              <Link href="#how-it-works">
-                <Button size="lg" variant="outline" className="border-[var(--line)] bg-[var(--background-elevated)] text-[var(--foreground)] hover:bg-[var(--background-muted)]">
+              <Link href="#recon-globe">
+                <Button size="lg" variant="outline" className="border-cyan-500/35 bg-[#0b0f19]/70 text-cyan-100 hover:bg-cyan-500/10">
                   Khám phá
                 </Button>
               </Link>
             </div>
-          </div>
 
-          <Card className="relative overflow-hidden border-[var(--line)] bg-[var(--background-elevated)] shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-sm dark:shadow-[0_24px_80px_rgba(2,6,23,0.55)]">
-            <div className="pointer-events-none absolute inset-x-10 top-0 h-24 bg-cyan-400/10 blur-3xl" />
-            <CardHeader className="relative">
-              <CardTitle className="text-[var(--foreground)]">Hệ thống bảo mật tập trung</CardTitle>
-              <CardDescription className="text-[var(--foreground-muted)]">Quản lý lỗ hổng, phân tích rủi ro và kiểm soát quyền truy cập trong một nơi.</CardDescription>
-            </CardHeader>
-            <CardContent className="relative space-y-4">
+            <div className="grid max-w-xl grid-cols-2 gap-3 text-xs text-slate-300 md:grid-cols-4">
               {[
-                "1. Thêm mục tiêu cần giám sát",
-                "2. Cấu hình quét và kiểm tra bảo mật",
-                "3. Phân tích kết quả và ưu tiên xử lý",
-                "4. Theo dõi thời gian thực và báo cáo trạng thái",
-              ].map((item) => (
-                <div key={item} className="rounded-2xl border border-[var(--line)] bg-[var(--background-muted)] px-4 py-3 text-sm text-[var(--foreground-soft)] transition-transform duration-300 hover:-translate-y-0.5 hover:border-cyan-500/40">
-                  {item}
+                ["/api/scan", "Tạo job quét"],
+                ["/api/copilot/*", "Phân tích và vá"],
+                ["/api/stress", "Kiểm thử tải"],
+                ["/api/apk", "Audit APK"],
+              ].map(([value, label]) => (
+                <div key={label} className="rounded-xl border border-cyan-500/20 bg-[#0b0f19]/70 p-3 text-center backdrop-blur">
+                  <p className="text-lg font-semibold text-cyan-200">{value}</p>
+                  <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
                 </div>
               ))}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="relative overflow-hidden rounded-3xl border border-cyan-500/25 bg-[#030816]/85 p-5 shadow-[0_30px_80px_rgba(2,6,23,0.6)] backdrop-blur-xl"
+          >
+            <div className="pointer-events-none absolute -top-12 left-1/2 h-36 w-36 -translate-x-1/2 rounded-full bg-cyan-400/20 blur-3xl" />
+            <div className="mb-4 flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
+              <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+              <p className="ml-3 text-xs uppercase tracking-[0.2em] text-cyan-200/80">Nhật ký quét</p>
+            </div>
+            <div className="space-y-2 rounded-2xl border border-cyan-500/20 bg-[#020617]/90 p-4 font-mono text-xs text-slate-200">
+              {terminalLines.map((line, idx) => (
+                <div key={line} className="flex items-start gap-2">
+                  <span className="text-cyan-400">{String(idx + 1).padStart(2, "0")}</span>
+                  <span className="text-slate-300">{line}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
         </div>
       </section>
 
-      <section className="relative mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-12">
-        <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="rounded-[28px] border border-[var(--line)] bg-[var(--background-muted)] p-6 md:p-8">
-            <p className="mb-4 text-sm uppercase tracking-[0.28em] text-cyan-700 dark:text-cyan-300">Giải nghĩa nhanh</p>
-            <h3 className="text-4xl font-semibold tracking-[-0.04em] text-[var(--foreground)]">Một vài từ dễ gặp trên website</h3>
+      <section id="matrix" className="relative mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-12">
+        <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-3xl border border-cyan-500/20 bg-[#0b0f19]/80 p-7 backdrop-blur-xl">
+            <p className="text-xs uppercase tracking-[0.25em] text-cyan-300">Luồng điều phối backend</p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.02em] text-slate-100 md:text-4xl">Cập nhật trạng thái quét theo real time
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-slate-300">
+              Dữ liệu hiển thị bám sát thực tế trong: tạo job quét, lấy trạng thái, phân tích AI,
+              sinh bản vá, stress test và mobile audit.
+            </p>
           </div>
+          <TextFlippingBoard lines={matrixLines} className="min-h-[270px]" />
+        </div>
+      </section>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            {glossary.map((item) => (
-              <div key={item.term} className="rounded-[24px] border border-[var(--line)] bg-[var(--background-elevated)] p-5 transition-all duration-300 hover:border-cyan-500/40 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.04)] dark:hover:shadow-[0_10px_24px_rgba(2,6,23,0.24)]">
-                <p className="text-2xl font-semibold text-[var(--foreground)]">{item.term}</p>
-                <p className="mt-3 text-sm leading-7 text-[var(--foreground-muted)]">{item.meaning}</p>
-              </div>
-            ))}
+      <section id="recon-globe" className="relative mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-12">
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-3xl border border-cyan-500/20 bg-[#0b0f19]/80 p-7 backdrop-blur-xl">
+            <p className="text-xs uppercase tracking-[0.25em] text-emerald-300">Recon Engine</p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.02em] text-slate-100 md:text-4xl">Theo dõi trạng thái bảo mật theo module quét</h2>
+            <p className="mt-4 text-sm leading-7 text-slate-300">
+              Hệ thống có sẵn các module `waf_detector`, `protocol_fuzzer`, `raw_socket_prober`, `logic_chain` để mở
+              rộng vùng phát hiện và tăng chiều sâu kiểm thử.
+            </p>
+          </div>
+          <Globe />
+        </div>
+      </section>
+
+      <section id="features" className="relative mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-14">
+        <div className="mb-6">
+          <p className="text-xs uppercase tracking-[0.25em] text-cyan-300">Năng lực thực tế của hệ thống</p>
+          <h2 className="mt-3 text-3xl font-semibold text-slate-100 md:text-4xl">Một dashboard cho toàn bộ vòng đời bảo mật</h2>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {features.map((item) => {
+            const Icon = item.icon;
+            return (
+              <motion.article
+                key={item.title}
+                whileHover={{ y: -4 }}
+                transition={{ duration: 0.2 }}
+                className="group rounded-3xl border border-cyan-500/20 bg-[#0b0f19]/70 p-6 backdrop-blur-xl"
+              >
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-200 transition group-hover:shadow-[0_0_24px_rgba(6,182,212,0.3)]">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-100">{item.title}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-300">{item.description}</p>
+              </motion.article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section id="pricing" className="relative mx-auto max-w-7xl px-4 pb-10 pt-2 md:px-8 md:pb-14">
+        <div className="rounded-3xl border border-cyan-500/20 bg-[#0b0f19]/80 p-8 text-center backdrop-blur-xl">
+          <Sparkles className="mx-auto h-7 w-7 text-cyan-300" />
+          <h2 className="mt-4 text-3xl font-semibold text-slate-100 md:text-4xl">Sẵn sàng quét bảo mật?</h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-300">
+            Bắt đầu với luồng `scan → analyze → patch`, sau đó mở rộng sang stress test và quản trị tài khoản.
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <Link href={user ? "/dashboard" : "/register"}>
+              <Button className="border border-cyan-300/70 bg-gradient-to-r from-cyan-300 via-sky-300 to-emerald-300 text-slate-950">
+                Đăng kí
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+            <Link href="/login">
+              <Button variant="outline" className="border-cyan-500/35 bg-[#020617]/70 text-cyan-100 hover:bg-cyan-500/10">
+                Đăng nhập
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
+
+      <footer className="relative border-t border-cyan-500/20 bg-[#020617]">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-8 text-xs text-slate-400 md:flex-row md:px-8">
+          <TextHoverEffect text="ADQ SECURITY" className="text-sm tracking-[0.3em]" />
+          <div className="flex items-center gap-4">
+            <Link href="/login" className="transition hover:text-cyan-200">Console</Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

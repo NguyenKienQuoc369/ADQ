@@ -29,7 +29,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
 
 type ShellArea = "dashboard" | "admin";
@@ -254,7 +253,6 @@ export function DashboardShell({
               </div>
 
               <div className="flex items-center gap-3">
-                <ThemeToggle compact />
                 <div className="hidden rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 md:block">
                   <div className="flex items-center gap-2 text-sm">
                     <Activity className="h-4 w-4 text-emerald-300" />

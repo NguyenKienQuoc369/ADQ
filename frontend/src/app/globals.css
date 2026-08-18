@@ -1,29 +1,6 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fbff;
-  --background-elevated: #ffffff;
-  --background-muted: #edf5fb;
-  --background-strong: #dfeaf5;
-  --foreground: #0f172a;
-  --foreground-soft: #1f2937;
-  --foreground-muted: #475569;
-  --line: rgba(148, 163, 184, 0.25);
-  --line-strong: rgba(71, 85, 105, 0.22);
-  --accent: #0f9cc7;
-  --accent-soft: rgba(15, 156, 199, 0.12);
-  --accent-strong: #0b6a8b;
-  --success-soft: rgba(5, 150, 105, 0.12);
-  --warning-soft: rgba(217, 119, 6, 0.12);
-  --danger-soft: rgba(225, 29, 72, 0.12);
-  --shadow-lg: 0 20px 60px rgba(15, 23, 42, 0.08);
-  --cyan-glow: rgba(15, 156, 199, 0.14);
-  --green-glow: rgba(5, 150, 105, 0.12);
-}
-
-:root.dark,
-html.dark,
-html[data-theme="dark"] {
   --background: #07111d;
   --background-elevated: #101b2d;
   --background-muted: #122033;
@@ -56,28 +33,17 @@ html[data-theme="dark"] {
 }
 
 html {
-  color-scheme: light;
+  color-scheme: dark;
   scroll-behavior: smooth;
   background: var(--background);
 }
 
-html.dark,
-html[data-theme="dark"] {
-  color-scheme: dark;
-}
-
 body {
-  background:
-    radial-gradient(circle at top, rgba(15, 156, 199, 0.14), transparent 22%),
-    linear-gradient(180deg, #f8fbff 0%, #f4f8fc 100%);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-}
-
-html.dark body {
   background:
     radial-gradient(circle at top, rgba(103, 217, 255, 0.12), transparent 24%),
     linear-gradient(180deg, #07111d 0%, #0a1524 100%);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
 body::selection {

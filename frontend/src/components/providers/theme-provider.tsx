@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-type Theme = "light" | "dark";
+type Theme = "dark";
 
 type ThemeContextValue = {
   theme: Theme;
@@ -12,24 +12,14 @@ type ThemeContextValue = {
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
-const STORAGE_KEY = "adq_theme_preference";
 
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
-  document.documentElement.classList.toggle("dark", theme === "dark");
+  document.documentElement.classList.add("dark");
 }
 
 function getInitialTheme(): Theme {
-  if (typeof window === "undefined") {
-    return "light";
-  }
-
-  const storedTheme = window.localStorage.getItem(STORAGE_KEY);
-  if (storedTheme === "light" || storedTheme === "dark") {
-    return storedTheme;
-  }
-
-  return "light";
+  return "dark";
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -42,8 +32,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [theme]);
 
   const setTheme = useCallback((nextTheme: Theme) => {
-    setThemeState(nextTheme);
-    window.localStorage.setItem(STORAGE_KEY, nextTheme);
+    setThemeState("dark");
   }, []);
 
   const value = useMemo<ThemeContextValue>(
@@ -51,7 +40,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       theme,
       mounted,
       setTheme,
-      toggleTheme: () => setTheme(theme === "dark" ? "light" : "dark"),
+      toggleTheme: () => setTheme("dark"),
     }),
     [mounted, setTheme, theme],
   );
