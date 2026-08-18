@@ -6,28 +6,24 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   BadgeCheck,
-  Bug,
   CreditCard,
   Gauge,
-  GitBranch,
   KeyRound,
-  LayoutDashboard,
   LogOut,
   Menu,
-  Network,
-  PanelsTopLeft,
   Shield,
-  ShieldAlert,
-  Terminal,
+  ShieldCheck,
   Users,
   X,
   Folder,
   Settings,
+  Sparkles,
+  Terminal,
+  Radio,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/providers/auth-provider";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -37,10 +33,9 @@ const workspaceSections = [
   {
     title: "Không gian chính",
     links: [
-      { href: "/dashboard", label: "Dự án", icon: Folder },
-      { href: "/vulnerabilities", label: "Chi tiết lỗ hổng", icon: Bug },
-      { href: "/dashboard/billing", label: "Gói dịch vụ", icon: CreditCard },
-      { href: "/settings", label: "Cài đặt", icon: Settings },
+      { href: "/dashboard", label: "Dự án & Targets", icon: Folder },
+      { href: "/dashboard/billing", label: "Gói dịch vụ & License", icon: CreditCard },
+      { href: "/settings", label: "Cài đặt & API Nodes", icon: Settings },
     ],
   },
 ] as const;
@@ -52,15 +47,15 @@ const adminLinks = [
 ];
 
 const routeMeta: Record<string, { eyebrow: string; title: string }> = {
-  "/dashboard": { eyebrow: "Dự án", title: "Tổng quan dự án" },
-  "/dashboard/results": { eyebrow: "Kết quả", title: "Xem toàn bộ kết quả và tải báo cáo" },
-  "/dashboard/tools": { eyebrow: "Công cụ", title: "Trung tâm công cụ" },
-  "/dashboard/billing": { eyebrow: "Tài khoản", title: "Gói dịch vụ" },
-  "/vulnerabilities": { eyebrow: "Chi tiết", title: "Chi tiết lỗ hổng" },
-  "/settings": { eyebrow: "Cài đặt", title: "Cấu hình dự án" },
-  "/admin": { eyebrow: "Quản trị", title: "Tổng quan hệ thống" },
-  "/admin/users": { eyebrow: "Quản trị", title: "Quản lý tài khoản người dùng" },
-  "/admin/redeem-codes": { eyebrow: "Quản trị", title: "Tạo và theo dõi mã nâng cấp" },
+  "/dashboard": { eyebrow: "Security Assets", title: "Tổng quan dự án & Bề mặt tấn công" },
+  "/dashboard/results": { eyebrow: "Scan Telemetry", title: "Kết quả quét & PoC Exploit" },
+  "/dashboard/tools": { eyebrow: "Attack Mesh", title: "Trung tâm công cụ DAST" },
+  "/dashboard/billing": { eyebrow: "License Key", title: "Quản lý gói & Hạn ngạch Worker" },
+  "/vulnerabilities": { eyebrow: "Vulnerability Intel", title: "Chi tiết lỗ hổng OWASP" },
+  "/settings": { eyebrow: "Engine Configuration", title: "Cấu hình bảo mật & Tác tử AI" },
+  "/admin": { eyebrow: "Root Admin", title: "Tổng quan hệ thống phân tán" },
+  "/admin/users": { eyebrow: "Identity Access", title: "Quản trị danh tính & Phân quyền" },
+  "/admin/redeem-codes": { eyebrow: "License Generator", title: "Tạo và theo dõi mã nâng cấp" },
 };
 
 export function DashboardShell({
@@ -74,24 +69,21 @@ export function DashboardShell({
   const router = useRouter();
   const { user, loading, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [pulse, setPulse] = useState(92);
+  const [pulse, setPulse] = useState(94);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setPulse((prev) => (prev >= 99 ? 92 : prev + 1));
-    }, 3000);
-
+      setPulse((prev) => (prev >= 99 ? 94 : prev + 1));
+    }, 2500);
     return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
     if (loading) return;
-
     if (!user) {
       router.replace("/login");
       return;
     }
-
     if (area === "admin" && user.role !== "ADMIN") {
       router.replace("/dashboard");
     }
@@ -107,104 +99,138 @@ export function DashboardShell({
       .sort((a, b) => b[0].length - a[0].length)
       .find(([route]) => pathname === route || pathname.startsWith(`${route}/`));
 
-    return matched?.[1] ?? (area === "admin"
-      ? { eyebrow: "Quản trị", title: "Tổng quan hệ thống" }
-      : { eyebrow: "Dành cho mọi người", title: "Bảng điều khiển dễ dùng" });
-  }, [area, pathname]);
+    return matched?.[1] ?? { eyebrow: "Security Mesh", title: "Bảng điều khiển trung tâm" };
+  }, [pathname]);
 
   if (loading || !user || (area === "admin" && user.role !== "ADMIN")) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-transparent text-[var(--foreground)]">
-        <div className="rounded-2xl px-6 py-5 shadow-2xl app-panel">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-3 w-3 rounded-full bg-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.9)]" />
-          <p>Đang chuẩn bị giao diện làm việc...</p>
+      <div className="flex min-h-screen items-center justify-center bg-[#020617] text-cyan-400">
+        <div className="relative flex flex-col items-center gap-4 rounded-3xl border border-cyan-500/30 bg-slate-950/80 p-8 backdrop-blur-2xl shadow-[0_0_60px_rgba(6,182,212,0.2)]">
+          <div className="relative flex h-14 w-14 items-center justify-center">
+            <span className="absolute h-full w-full animate-ping rounded-full bg-cyan-400/20" />
+            <ShieldCheck className="h-8 w-8 text-cyan-400 animate-pulse" />
           </div>
+          <p className="font-mono text-xs tracking-widest uppercase">Initialising SOC Console...</p>
         </div>
       </div>
     );
   }
 
   const sidebar = (
-    <div className="flex h-full flex-col justify-between border-r app-border bg-[color:color-mix(in_srgb,var(--background-elevated)_94%,transparent)] p-4 backdrop-blur">
+    <div className="relative flex h-full flex-col justify-between border-r border-cyan-500/20 bg-slate-950/90 p-5 backdrop-blur-2xl shadow-[inset_-10px_0_30px_rgba(0,0,0,0.8)]">
+      
+      {/* Subtle Corner HUD Accent */}
+      <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-cyan-400/60 pointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-cyan-400/60 pointer-events-none" />
+
       <div className="space-y-6">
-        <div className="rounded-2xl border border-[color:color-mix(in_srgb,var(--accent)_18%,transparent)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--accent)_14%,transparent),color-mix(in_srgb,#10b981_10%,transparent),transparent)] p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:color-mix(in_srgb,var(--accent)_20%,transparent)] bg-[color:var(--background-elevated)]">
-              <Shield className="h-5 w-5 text-[color:var(--accent-strong)]" />
+        {/* Brand Banner */}
+        <Link
+          href="/"
+          className="group relative flex items-center gap-3.5 overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 via-slate-950/80 to-transparent p-3.5 shadow-[0_0_20px_rgba(6,182,212,0.15)] transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_30px_rgba(6,182,212,0.3)]"
+        >
+          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-400 p-0.5 shadow-lg shadow-cyan-500/30">
+            <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-slate-950">
+              <Shield className="h-5 w-5 text-cyan-400 transition-transform duration-300 group-hover:scale-110" />
             </div>
-            <div>
-              <p className="text-sm font-semibold text-[var(--foreground)]">ADQ Scanner</p>
-              <p className="text-xs text-[var(--foreground-muted)]">Bảng điều khiển gọn hơn, dễ thao tác hơn</p>
-            </div>
-          </div>
-        </div>
-
-        {navigationGroups.map((group) => (
-          <div key={group.title} className="space-y-2">
-            <p className="px-2 text-xs uppercase tracking-[0.2em] text-[var(--foreground-muted)]">{group.title}</p>
-            {group.links.map((item) => {
-              const Icon = item.icon;
-              const active =
-                pathname === item.href ||
-                (item.href !== `/${area}` && pathname.startsWith(item.href));
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    "flex items-center gap-3 rounded-xl border px-3 py-3 text-sm transition",
-                    active
-                      ? "border-[color:color-mix(in_srgb,var(--accent)_25%,transparent)] bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]"
-                      : "border-transparent text-[var(--foreground-soft)] hover:border-[color:var(--line)] hover:bg-[color:var(--background-muted)] hover:text-[var(--foreground)]",
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        ))}
-
-        {area !== "admin" ? (
-          <div className="rounded-2xl border p-4 app-panel-soft">
-            <div className="mb-3 flex items-center gap-2">
-              <GitBranch className="h-4 w-4 text-[color:var(--accent-strong)]" />
-              <p className="text-sm font-medium text-[var(--foreground)]">Luồng quét chính</p>
-            </div>
-            <p className="text-xs leading-6 text-[var(--foreground-muted)]">
-              Hệ thống quét chính của dự án đang chạy qua điều phối quét nâng cao. Tổng quan chỉ tập trung vào theo dõi, triage và phân tích kết quả.
-            </p>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="rounded-2xl border p-4 app-panel-soft">
-        <div className="mb-3 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]">
-            {user.name.slice(0, 1)}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-[var(--foreground)]">{user.name}</p>
-            <p className="truncate text-xs text-[var(--foreground-muted)]">{user.email}</p>
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-sm tracking-wider text-white">
+                ADQ<span className="text-cyan-400">.SEC</span>
+              </span>
+              <span className="rounded bg-cyan-950 px-1.5 py-0.2 text-[9px] font-mono text-cyan-300 border border-cyan-500/40">
+                PRO
+              </span>
+            </div>
+            <p className="truncate text-[10px] font-mono text-cyan-400/70 tracking-wider">
+              {area === "admin" ? "ROOT ACCESS" : "DAST WORKER MESH"}
+            </p>
+          </div>
+        </Link>
+
+        {/* Navigation Groups */}
+        {navigationGroups.map((group) => (
+          <div key={group.title} className="space-y-1.5">
+            <div className="flex items-center justify-between px-3">
+              <p className="text-[10px] font-mono font-semibold uppercase tracking-[0.2em] text-slate-500">
+                {group.title}
+              </p>
+              <Terminal className="h-3 w-3 text-slate-600" />
+            </div>
+            <div className="space-y-1 pt-1">
+              {group.links.map((item) => {
+                const Icon = item.icon;
+                const active =
+                  pathname === item.href ||
+                  (item.href !== `/${area}` && pathname.startsWith(item.href));
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "group relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-medium transition-all duration-200",
+                      active
+                        ? "border border-cyan-500/40 bg-gradient-to-r from-cyan-950/80 to-slate-900/60 text-cyan-300 shadow-[inset_0_1px_0_0_rgba(6,182,212,0.4),0_0_20px_rgba(6,182,212,0.15)]"
+                        : "border border-transparent text-slate-400 hover:border-slate-800 hover:bg-slate-900/60 hover:text-slate-200",
+                    )}
+                  >
+                    <Icon
+                      className={cn(
+                        "h-4 w-4 shrink-0 transition-colors",
+                        active ? "text-cyan-400 drop-shadow-[0_0_8px_#22d3ee]" : "text-slate-500 group-hover:text-slate-300",
+                      )}
+                    />
+                    <span className="truncate">{item.label}</span>
+
+                    {active && (
+                      <motion.span
+                        layoutId="activeIndicator"
+                        className="absolute right-2.5 h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#22d3ee]"
+                      />
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Profile & Node Telemetry Footer */}
+      <div className="relative overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-slate-900/90 to-slate-950 p-4 backdrop-blur-2xl shadow-xl">
+        <div className="mb-3.5 flex items-center gap-3">
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-500/20 to-emerald-500/20 border border-cyan-500/40 font-mono font-bold text-sm text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.2)]">
+            {user.name.slice(0, 1).toUpperCase()}
+            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-slate-950 bg-emerald-400 shadow-[0_0_6px_#34d399]" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-semibold text-white">{user.name}</p>
+            <p className="truncate text-[11px] font-mono text-slate-500">{user.email}</p>
           </div>
         </div>
-        <div className="mb-4 flex flex-wrap gap-2">
-          <Badge variant="success">{user.role}</Badge>
-          <Badge variant="default">{user.packageTier.replace("_", " ")}</Badge>
+
+        <div className="mb-3.5 flex flex-wrap gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-md border border-cyan-500/30 bg-cyan-950/60 px-2 py-0.5 text-[10px] font-mono text-cyan-300">
+            <Sparkles className="h-2.5 w-2.5 text-cyan-400" />
+            {user.role}
+          </span>
+          <span className="inline-flex items-center rounded-md border border-slate-800 bg-slate-950/60 px-2 py-0.5 text-[10px] font-mono text-slate-400">
+            {user.packageTier.replace("_", " ")}
+          </span>
         </div>
+
         <Button
           variant="secondary"
-          className="w-full justify-center"
+          className="h-8 w-full justify-center gap-2 rounded-xl border border-slate-800 bg-slate-950/90 text-xs font-medium text-slate-400 transition-all hover:border-rose-500/50 hover:bg-rose-950/30 hover:text-rose-300 hover:shadow-[0_0_15px_rgba(244,63,94,0.2)] active:scale-98"
           onClick={async () => {
             await logout();
             router.replace("/login");
           }}
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-3.5 w-3.5" />
           Đăng xuất
         </Button>
       </div>
@@ -212,10 +238,30 @@ export function DashboardShell({
   );
 
   return (
-    <div className="min-h-screen bg-transparent text-[var(--foreground)]">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-80 xl:block">{sidebar}</aside>
+    <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
+      
+      {/* CYBER GRID BACKGROUND MATRIX */}
+      <div 
+        className="fixed inset-0 pointer-events-none opacity-20"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, rgba(6, 182, 212, 0.1) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(6, 182, 212, 0.1) 1px, transparent 1px)
+          `,
+          backgroundSize: '40px 40px',
+        }}
+      />
 
+      {/* AMBIENT MULTI-POINT NEON GLOWS */}
+      <div className="fixed top-0 left-1/4 -translate-x-1/2 w-[700px] h-[350px] bg-cyan-500/10 blur-[140px] pointer-events-none" />
+      <div className="fixed bottom-0 right-1/4 w-[600px] h-[350px] bg-emerald-500/5 blur-[150px] pointer-events-none" />
+
+      <div className="relative flex min-h-screen z-10">
+        
+        {/* Desktop Sidebar */}
+        <aside className="hidden w-72 shrink-0 xl:block">{sidebar}</aside>
+
+        {/* Mobile Sidebar Modal */}
         <AnimatePresence>
           {mobileOpen && (
             <>
@@ -223,15 +269,15 @@ export function DashboardShell({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-40 bg-slate-950/50 xl:hidden dark:bg-slate-950/80"
+                className="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-md xl:hidden"
                 onClick={() => setMobileOpen(false)}
               />
               <motion.aside
-                initial={{ x: -320 }}
+                initial={{ x: -288 }}
                 animate={{ x: 0 }}
-                exit={{ x: -320 }}
-                transition={{ type: "spring", stiffness: 260, damping: 26 }}
-                className="fixed inset-y-0 left-0 z-50 w-80 xl:hidden"
+                exit={{ x: -288 }}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                className="fixed inset-y-0 left-0 z-50 w-72 xl:hidden"
               >
                 {sidebar}
               </motion.aside>
@@ -239,39 +285,59 @@ export function DashboardShell({
           )}
         </AnimatePresence>
 
+        {/* Main Console Viewport */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b app-border bg-[color:color-mix(in_srgb,var(--background-elevated)_88%,transparent)] backdrop-blur">
-            <div className="flex items-center justify-between gap-4 px-4 py-4 md:px-8">
+          
+          {/* Top HUD Header */}
+          <header className="sticky top-0 z-30 border-b border-cyan-500/20 bg-slate-950/80 backdrop-blur-2xl">
+            <div className="flex items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+              
               <div className="flex items-center gap-3">
-                <Button variant="ghost" size="icon" className="xl:hidden" onClick={() => setMobileOpen(true)}>
-                  {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 rounded-xl border border-slate-800 bg-slate-900/80 text-slate-300 hover:border-cyan-500/40 hover:text-white xl:hidden"
+                  onClick={() => setMobileOpen(true)}
+                >
+                  {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
                 </Button>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-[var(--foreground-muted)]">{currentMeta.eyebrow}</p>
-                  <h1 className="text-lg font-semibold text-[var(--foreground)]">{currentMeta.title}</h1>
+                  <div className="flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />
+                    <p className="text-[10px] font-mono uppercase tracking-[0.25em] text-cyan-400">
+                      {currentMeta.eyebrow}
+                    </p>
+                  </div>
+                  <h1 className="text-base font-bold text-white tracking-tight">
+                    {currentMeta.title}
+                  </h1>
                 </div>
               </div>
 
+              {/* Realtime Telemetry Badges */}
               <div className="flex items-center gap-3">
-                <div className="hidden rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 md:block">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Activity className="h-4 w-4 text-emerald-300" />
-                    <span className="text-[var(--foreground)]">Trạng thái hệ thống</span>
-                    <span className="font-semibold text-emerald-300">{pulse}%</span>
-                  </div>
+                <div className="hidden sm:flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-950/40 px-3.5 py-1.5 backdrop-blur-md shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                  <Radio className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                  <span className="text-xs font-mono font-medium text-emerald-300">
+                    Engine Sync: {pulse}%
+                  </span>
                 </div>
-                <div className="rounded-2xl border px-4 py-2 app-panel-soft">
-                  <div className="flex items-center gap-2 text-sm">
-                    <BadgeCheck className="h-4 w-4 text-[color:var(--accent-strong)]" />
-                    <span className="text-[var(--foreground-soft)]">{user.role}</span>
-                  </div>
+
+                <div className="flex items-center gap-1.5 rounded-xl border border-cyan-500/30 bg-slate-900/80 px-3 py-1.5 backdrop-blur-md shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+                  <BadgeCheck className="h-3.5 w-3.5 text-cyan-400" />
+                  <span className="text-xs font-mono font-medium text-slate-300">
+                    {user.role}
+                  </span>
                 </div>
               </div>
+
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
+          {/* Dynamic Content */}
+          <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
         </div>
+
       </div>
     </div>
   );

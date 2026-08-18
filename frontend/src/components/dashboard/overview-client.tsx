@@ -210,60 +210,6 @@ export function OverviewClient() {
           </div>
 
           <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-[2rem] font-bold tracking-[-0.04em] text-[#111827]">Tóm tắt lỗ hổng</CardTitle>
-                <CardDescription className="text-base text-[#4b5563]">Chi tiết mức độ nghiêm trọng</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <p className="text-base text-[#111827]">
-                      Phát hiện <span className="font-semibold">{projectSummary.critical}</span> lỗ hổng nghiêm trọng
-                    </p>
-
-                    {[
-                      { label: "Nghiêm trọng (Critical)", value: projectSummary.critical, color: "#f43f5e" },
-                      { label: "Cao (High)", value: projectSummary.high, color: "#f97316" },
-                      { label: "Trung bình (Medium)", value: projectSummary.medium, color: "#facc15" },
-                    ].map((item) => (
-                      <div key={item.label}>
-                        <div className="mt-4 flex items-center justify-between text-sm text-[#111827]">
-                          <span>{item.label}</span>
-                          <span className="font-semibold" style={{ color: item.color }}>{item.value}</span>
-                        </div>
-                        <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-zinc-100">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${Math.max((item.value / projectSummary.max) * 100, item.value > 0 ? 6 : 0)}%`,
-                              backgroundColor: item.color,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div>
-                    <Button size="sm" className="bg-[#d7edf6] text-[#0f172a] hover:bg-[#c9e8f5]">Khắc phục</Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Cảnh báo bảo mật mới nhất</CardTitle>
-                <CardDescription>Nhận cảnh báo tự động</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm text-[var(--foreground-muted)]">Tự động theo dõi dự án của bạn để phát hiện lỗ hổng và nhận thông báo.</div>
-                <div className="mt-3">
-                  <Button variant="outline">Nâng cấp Pro</Button>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
 

@@ -131,7 +131,7 @@ export function SettingsClient() {
             <Card>
               <CardHeader>
                 <CardTitle>Thông tin tài khoản</CardTitle>
-                <CardDescription>Quick view trạng thái và quyền hạn hiện tại.</CardDescription>
+                <CardDescription>quyền hạn hiện tại</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {accountSummary.map((item) => (
@@ -142,45 +142,8 @@ export function SettingsClient() {
                     </Badge>
                   </div>
                 ))}
-                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-                  <div className="flex items-center justify-between">
-                    <span>Độ tin cậy tài khoản</span>
-                    <span className="font-semibold">94%</span>
-                  </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-emerald-950/40">
-                    <div className="h-full w-[94%] rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Nhịp độ bảo mật</CardTitle>
-                <CardDescription>Thiết lập ưu tiên và cảnh báo hệ thống.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <SettingRow
-                  icon={<ShieldCheck className="h-4 w-4" />}
-                  label="Báo cáo nguy hiểm tức thì"
-                  description="Thông báo khi có lỗ hổng Critical/High ở dự án đang active."
-                  checked={preferences.criticalAlerts}
-                  onChange={(val) => setPreferences((prev) => ({ ...prev, criticalAlerts: val }))}
-                />
-                <SettingRow
-                  icon={<Sparkles className="h-4 w-4" />}
-                  label="Tự động quét dự án mới"
-                  description="Đặt lịch quét nền khi phát hiện thay đổi cấu hình hoặc endpoint."
-                  checked={preferences.autoScan}
-                  onChange={(val) => setPreferences((prev) => ({ ...prev, autoScan: val }))}
-                />
-                <SettingRow
-                  icon={<Bell className="h-4 w-4" />}
-                  label="Báo cáo hàng tuần"
-                  description="Gửi tóm tắt trạng thái dự án, phát hiện mới và khuyến nghị."
-                  checked={preferences.weeklyReports}
-                  onChange={(val) => setPreferences((prev) => ({ ...prev, weeklyReports: val }))}
-                />
+
               </CardContent>
             </Card>
           </div>
@@ -244,49 +207,6 @@ export function SettingsClient() {
                     </div>
                   </div>
                   <Switch checked={security.mfaEnabled} onCheckedChange={(val) => setSecurity((prev) => ({ ...prev, mfaEnabled: val }))} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-[color:var(--accent-soft)] p-2 text-[color:var(--accent-strong)]">
-                  <Palette className="h-4 w-4" />
-                </div>
-                <div>
-                  <CardTitle>Hiển thị & trải nghiệm</CardTitle>
-                  <CardDescription>Tuỳ chỉnh giao diện và cách hệ thống hiển thị.</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <SettingRow
-                icon={<Palette className="h-4 w-4" />}
-                label="Chế độ tối tự động"
-                description="Phù hợp với workspace Security Console và thời gian làm việc ban đêm."
-                checked={preferences.darkMode}
-                onChange={(val) => setPreferences((prev) => ({ ...prev, darkMode: val }))}
-              />
-              <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--background-muted)] p-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="font-medium text-[var(--foreground)]">Múi giờ làm việc</p>
-                    <p className="text-sm text-[var(--foreground-muted)]">UTC+7 · Asia/Ho_Chi_Minh</p>
-                  </div>
-                  <Button variant="secondary" className="gap-2">
-                    Chỉnh sửa <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--background-muted)] p-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="font-medium text-[var(--foreground)]">Thời hạn phiên đăng nhập</p>
-                    <p className="text-sm text-[var(--foreground-muted)]">Tự động khóa sau {security.sessionTimeout}</p>
-                  </div>
-                  <Button variant="secondary">Điều chỉnh</Button>
                 </div>
               </div>
             </CardContent>
