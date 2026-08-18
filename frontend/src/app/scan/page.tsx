@@ -424,7 +424,6 @@ function ScanLandingContent() {
   return (
     <DashboardShell area="dashboard">
       <div className="space-y-6 text-slate-100 font-sans">
-        
         {/* 1. KHỐI ĐIỀU KHIỂN QUÉT & NHẬP MỤC TIÊU */}
         <Card className="border border-slate-800/80 bg-slate-900/90 shadow-xl backdrop-blur-md">
           <CardHeader className="pb-4">
