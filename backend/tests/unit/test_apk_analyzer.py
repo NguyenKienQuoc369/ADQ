@@ -2,7 +2,11 @@ import os
 import zipfile
 import tempfile
 import pytest
-from backend.core.apk_analyzer import APKAnalyzer
+
+try:
+    from backend.core.mobile_audit.apk_analyzer import APKAnalyzer
+except ImportError:
+    from core.mobile_audit.apk_analyzer import APKAnalyzer
 
 def test_apk_analyzer_invalid_file():
     analyzer = APKAnalyzer("/non/existent/path.apk")
