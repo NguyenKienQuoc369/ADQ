@@ -87,12 +87,12 @@ function FormattedAiMessage({ text }: { text: string }) {
                 >
                   {copiedCode === code ? (
                     <>
-                      <Check className="h-3 w-3 text-emerald-400"/>
+                      <Check className="h-3 w-3 text-emerald-400" />
                       <span className="text-emerald-400">Đã chép</span>
                     </>
                   ) : (
                     <>
-                      <Copy className="h-3 w-3"/>
+                      <Copy className="h-3 w-3" />
                       <span>Sao chép</span>
                     </>
                   )}
@@ -115,7 +115,7 @@ function FormattedAiMessage({ text }: { text: string }) {
               if (trimmed.startsWith("### ")) {
                 return (
                   <h4 key={lIdx} className="mt-3 mb-1 font-bold text-sm text-cyan-300 flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5"/>
+                    <Sparkles className="h-3.5 w-3.5" />
                     {renderInline(trimmed.replace(/^###\s+/, ""))}
                   </h4>
                 );
@@ -508,15 +508,17 @@ function ScanLandingContent() {
                   <span>Target Mục Tiêu (Cố định theo phiên)</span>
                   {projectId ? (
                     <span className="text-[11px] text-cyan-400 flex items-center gap-1">
-                      <Lock className="h-3 w-3"/> Đã khóa mục tiêu
+                      <Lock className="h-3 w-3" /> Đã khóa mục tiêu
                     </span>
                   ) : null}
                 </label>
                 <div className="relative">
-                  <Globe className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"/>
-                  <Input onChange="{(e)" value="{target}"> setTarget(e.target.value)}
+                  <Globe className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value)}
                     readOnly={Boolean(projectId && target)}
-                    placeholder="[https://example.com](https://example.com) hoặc domain.vn"
+                    placeholder="https://example.com hoặc domain.vn"
                     disabled={isScanning}
                     className="h-12 pl-11 pr-4 border-slate-700 bg-slate-950/80 text-white placeholder:text-slate-500 focus:border-cyan-500 text-sm read-only:text-cyan-300 read-only:bg-slate-950 font-mono"
                   />
@@ -527,7 +529,12 @@ function ScanLandingContent() {
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Gói SaaS Engine</label>
                 <div className="flex gap-2">
                   {(["STARTER", "DEVSEC PRO", "FINTECH MAX"] as string[]).map((t) => (
-                    <Button "default" "outline"} : ? disabled="{isScanning}" key="{t}" onClick="{()" t type="button" variant="{tier"> setTier(t)}
+                    <Button
+                      key={t}
+                      type="button"
+                      variant={tier === t ? "default" : "outline"}
+                      disabled={isScanning}
+                      onClick={() => setTier(t)}
                       className={
                         tier === t
                           ? "h-12 border border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium hover:bg-cyan-500/30"
@@ -544,23 +551,28 @@ function ScanLandingContent() {
             <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
               {scanError ? (
                 <div className="flex items-center gap-2 text-sm text-rose-400">
-                  <AlertCircle className="h-4 w-4"/> {scanError}
+                  <AlertCircle className="h-4 w-4" /> {scanError}
                 </div>
               ) : (
                 <div className="text-xs text-slate-500 flex items-center gap-1.5">
-                  <ShieldCheck className="h-4 w-4 text-emerald-400"/> Sẵn sàng quét mục tiêu đã liên kết
+                  <ShieldCheck className="h-4 w-4 text-emerald-400" /> Sẵn sàng quét mục tiêu đã liên kết
                 </div>
               )}
 
-              <Button !target.trim()} className="h-11 px-6 rounded-xl font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled="{isScanning" onClick="{startScan}" type="button" ||>
+              <Button
+                type="button"
+                onClick={startScan}
+                disabled={isScanning || !target.trim()}
+                className="h-11 px-6 rounded-xl font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
                 {isScanning ? (
                   <span className="flex items-center gap-2">
-                    <LoaderCircle className="h-4 w-4 animate-spin text-white"/>
+                    <LoaderCircle className="h-4 w-4 animate-spin text-white" />
                     Đang quét pipeline...
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 fill-white"/>
+                    <Zap className="h-4 w-4 fill-white" />
                     Bắt đầu quét
                   </span>
                 )}
@@ -572,7 +584,7 @@ function ScanLandingContent() {
         <Card className="border border-slate-800/80 bg-slate-900/90 shadow-md">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
-              <Layers className="h-5 w-5 text-cyan-400"/>
+              <Layers className="h-5 w-5 text-cyan-400" />
               Live DAG Execution Visualizer (Tiến trình quét liên hoàn)
             </CardTitle>
             <CardDescription className="text-xs text-slate-400">
@@ -586,7 +598,7 @@ function ScanLandingContent() {
                 const isLast = index === nodeArray.length - 1;
 
                 return (
-                  <React.Fragment key="{node.id}">
+                  <React.Fragment key={node.id}>
                     <div
                       className={`flex flex-col gap-1.5 rounded-xl border p-3 min-w-[135px] flex-1 transition-all ${
                         node.status === "running"
@@ -603,11 +615,11 @@ function ScanLandingContent() {
                           {node.step}
                         </span>
                         {node.status === "running" ? (
-                          <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400"/>
+                          <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400" />
                         ) : node.status === "completed" ? (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-400"/>
+                          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                         ) : (
-                          <IconComponent className="h-4 w-4 text-slate-500"/>
+                          <IconComponent className="h-4 w-4 text-slate-500" />
                         )}
                       </div>
                       <div className="mt-1 text-xs font-bold text-white truncate">{node.label}</div>
@@ -616,7 +628,15 @@ function ScanLandingContent() {
 
                     {!isLast ? (
                       <div className="hidden lg:flex items-center justify-center px-1">
-                        <ArrowRight "completed" "running" "text-cyan-400 "text-emerald-400" "text-slate-700" ${ : ? animate-pulse" className="{`h-4" node.status="==" w-4 }`}/>
+                        <ArrowRight
+                          className={`h-4 w-4 ${
+                            node.status === "completed"
+                              ? "text-emerald-400"
+                              : node.status === "running"
+                              ? "text-cyan-400 animate-pulse"
+                              : "text-slate-700"
+                          }`}
+                        />
                       </div>
                     ) : null}
                   </React.Fragment>
@@ -652,7 +672,7 @@ function ScanLandingContent() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-emerald-400"/>
+                      <Sparkles className="h-4 w-4 text-emerald-400" />
                       AI Action Advice (Nguyên nhân & Hành động gợi ý)
                     </CardTitle>
                     <CardDescription className="text-xs text-slate-400">
@@ -680,7 +700,8 @@ function ScanLandingContent() {
                         <div className="flex-1 text-xs text-slate-200 leading-5">
                           {adv.rootCause}
                         </div>
-                        <Button onClick="{()">
+                        <Button
+                          onClick={() =>
                             handleCopilotSend(
                               `Hãy hướng dẫn chi tiết cách thực hiện hành động này: "${adv.rootCause}"`
                             )
@@ -690,7 +711,7 @@ function ScanLandingContent() {
                           variant="ghost"
                           className="shrink-0 h-7 text-[11px] text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10"
                         >
-                          Hỏi AI <ArrowRight className="ml-1 h-3 w-3"/>
+                          Hỏi AI <ArrowRight className="ml-1 h-3 w-3" />
                         </Button>
                       </div>
                     ))}
@@ -710,7 +731,7 @@ function ScanLandingContent() {
             <Card className="border border-slate-800 bg-slate-900/90 shadow-md">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-rose-400"/>
+                  <ShieldAlert className="h-4 w-4 text-rose-400" />
                   Lỗ hổng bảo mật & Phát hiện CVE
                 </CardTitle>
               </CardHeader>
@@ -742,7 +763,7 @@ function ScanLandingContent() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                      <Bot className="h-4 w-4"/>
+                      <Bot className="h-4 w-4" />
                     </div>
                     <div>
                       <CardTitle className="text-sm font-bold text-white">ADQ Security Copilot</CardTitle>
@@ -752,13 +773,14 @@ function ScanLandingContent() {
                       </div>
                     </div>
                   </div>
-                  <Button onClick="{()"> setIsChatExpanded(true)}
+                  <Button
+                    onClick={() => setIsChatExpanded(true)}
                     size="sm"
                     type="button"
                     variant="outline"
                     className="h-7 text-[11px] border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white"
                   >
-                    <Maximize2 className="mr-1 h-3 w-3"/> Mở rộng
+                    <Maximize2 className="mr-1 h-3 w-3" /> Mở rộng
                   </Button>
                 </div>
               </CardHeader>
@@ -775,7 +797,7 @@ function ScanLandingContent() {
                         }`}
                       >
                         {m.sender === "copilot" ? (
-                          <FormattedAiMessage text="{m.text}"/>
+                          <FormattedAiMessage text={m.text} />
                         ) : (
                           <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
                         )}
@@ -786,7 +808,7 @@ function ScanLandingContent() {
                   {copilotLoading ? (
                     <div className="flex justify-start">
                       <div className="rounded-2xl rounded-bl-none border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-400 flex items-center gap-2">
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-400"/>
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-400" />
                         Copilot đang suy nghĩ...
                       </div>
                     </div>
@@ -800,29 +822,32 @@ function ScanLandingContent() {
                     onClick={() => handleCopilotSend("Hãy hướng dẫn tôi tạo file vercel.json có đầy đủ security headers bảo mật nhất.")}
                     className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-[11px] text-cyan-300 hover:bg-slate-800 hover:text-white transition flex items-center gap-1"
                   >
-                    <FileCode2 className="h-3 w-3"/> vercel.json mẫu
+                    <FileCode2 className="h-3 w-3" /> vercel.json mẫu
                   </button>
                   <button
                     type="button"
                     onClick={() => handleCopilotSend("Làm thế nào để phòng chống lỗi BOLA và XSS trên ứng dụng này?")}
                     className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-[11px] text-emerald-300 hover:bg-slate-800 hover:text-white transition flex items-center gap-1"
                   >
-                    <ShieldCheck className="h-3 w-3"/> Vá BOLA & XSS
+                    <ShieldCheck className="h-3 w-3" /> Vá BOLA & XSS
                   </button>
                 </div>
 
                 <div className="flex gap-2 pt-1">
-                  <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
+                  <Input
+                    value={copilotInput}
+                    onChange={(e) => setCopilotInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
                     placeholder="Hỏi cách vá lỗi, kiểm tra bảo mật..."
                     className="h-10 text-xs border-slate-700 bg-slate-950 text-white placeholder:text-slate-500 focus:border-cyan-500"
                   />
-                  <Button onClick="{()"> handleCopilotSend()}
+                  <Button
+                    onClick={() => handleCopilotSend()}
                     type="button"
                     disabled={copilotLoading || !copilotInput.trim()}
                     className="h-10 px-3.5 bg-cyan-600 hover:bg-cyan-500 text-white shrink-0"
                   >
-                    <Send className="h-3.5 w-3.5"/>
+                    <Send className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </CardContent>
@@ -837,20 +862,21 @@ function ScanLandingContent() {
               <div className="flex items-center justify-between border-b border-slate-800 p-4 bg-slate-950">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                    <Bot className="h-5 w-5"/>
+                    <Bot className="h-5 w-5" />
                   </div>
                   <div>
                     <h3 className="font-bold text-white text-base">ADQ Security Copilot — Full Workspace</h3>
                     <p className="text-xs font-mono text-cyan-400">Target: {target || "Chưa có"} | Phiên: {projectId || "Tạm thời"}</p>
                   </div>
                 </div>
-                <Button onClick="{()"> setIsChatExpanded(false)}
+                <Button
+                  onClick={() => setIsChatExpanded(false)}
                   size="sm"
                   type="button"
                   variant="outline"
                   className="border-slate-800 text-slate-300"
                 >
-                  <Minimize2 className="mr-1.5 h-4 w-4"/> Thu nhỏ
+                  <Minimize2 className="mr-1.5 h-4 w-4" /> Thu nhỏ
                 </Button>
               </div>
 
@@ -865,7 +891,7 @@ function ScanLandingContent() {
                       }`}
                     >
                       {m.sender === "copilot" ? (
-                        <FormattedAiMessage text="{m.text}"/>
+                        <FormattedAiMessage text={m.text} />
                       ) : (
                         <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
                       )}
@@ -875,7 +901,7 @@ function ScanLandingContent() {
                 {copilotLoading ? (
                   <div className="flex justify-start">
                     <div className="rounded-2xl rounded-bl-none border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400 flex items-center gap-2">
-                      <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400"/>
+                      <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400" />
                       Copilot đang suy nghĩ...
                     </div>
                   </div>
@@ -883,17 +909,20 @@ function ScanLandingContent() {
               </div>
 
               <div className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
-                <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
+                <Input
+                  value={copilotInput}
+                  onChange={(e) => setCopilotInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
                   placeholder="Nhập câu hỏi hoặc yêu cầu sinh mã khắc phục..."
                   className="h-12 border-slate-800 bg-slate-900 text-white"
                 />
-                <Button onClick="{()"> handleCopilotSend()}
+                <Button
+                  onClick={() => handleCopilotSend()}
                   type="button"
                   disabled={copilotLoading || !copilotInput.trim()}
                   className="h-12 px-6 bg-cyan-600 hover:bg-cyan-500 text-white"
                 >
-                  <Send className="h-4 w-4"/>
+                  <Send className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -906,12 +935,14 @@ function ScanLandingContent() {
 
 export default function ScanLandingPage() {
   return (
-    <Suspense <div className="flex min-h-screen items-center justify-center text-slate-400" fallback="{">
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center text-slate-400">
           Loading scan pipeline...
         </div>
       }
     >
-      <ScanLandingContent/>
+      <ScanLandingContent />
     </Suspense>
   );
 }
