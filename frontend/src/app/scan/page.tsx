@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useMemo, useState, useRef } from "react";
+import React, { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -51,9 +51,14 @@ interface DAGNodeState {
   step: number;
   label: string;
   sublabel: string;
-  icon: any;
+  icon: React.ComponentType<{ className?: string }>;
   status: "pending" | "running" | "completed" | "failed";
   error?: string;
+}
+
+interface ChatMessage {
+  sender: "user" | "copilot";
+  text: string;
 }
 
 function FormattedAiMessage({ text }: { text: string }) {
@@ -222,7 +227,7 @@ function ScanLandingContent() {
   const [secrets, setSecrets] = useState<SecretItem[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
 
-  const [copilotMessages, setCopilotMessages] = useState<Array<{ "copilot"; "user" sender: string text: | }>>([
+  const [copilotMessages, setCopilotMessages] = useState<ChatMessage[]>([
     {
       sender: "copilot",
       text: "Xin chào! Tôi là **ADQ Security Copilot**. Sau khi khởi chạy quét mục tiêu, tôi sẽ phân tích các phát hiện và hỗ trợ bạn tạo bản vá hoặc cấu hình bảo mật trực tiếp.",
@@ -558,9 +563,9 @@ function ScanLandingContent() {
 
         {/* 3. BỐ CỤC 2 CỘT: KẾT QUẢ QUÉT (TRÁI) & COPILOT AI (PHẢI) */}
         <div className="grid gap-6 lg:grid-cols-12">
-          {/* CỘT TRÁI (7 PHẦN): KẾT QUẢ & ACTION ADVICE */}
+          {/* CỘT TRÁI: KẾT QUẢ & ACTION ADVICE */}
           <div className="space-y-6 lg:col-span-7">
-            {/* 4 Thẻ Chỉ Số Đo Lường Nhanh */}
+            {/* 4 Thẻ Đo Lường Nhanh */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-center">
                 <div className="text-xs text-slate-400">Subdomains</div>
@@ -580,7 +585,7 @@ function ScanLandingContent() {
               </div>
             </div>
 
-            {/* Khối AI Action Advice & Khắc Phục */}
+            {/* Khối AI Action Advice */}
             <Card className="border border-slate-800 bg-slate-900/90 shadow-md">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -634,7 +639,7 @@ function ScanLandingContent() {
               </CardContent>
             </Card>
 
-            {/* Danh sách Lỗ hổng phát hiện */}
+            {/* Danh sách Lỗ hổng */}
             <Card className="border border-slate-800 bg-slate-900/90 shadow-md">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
@@ -664,7 +669,7 @@ function ScanLandingContent() {
             </Card>
           </div>
 
-          {/* CỘT PHẢI (5 PHẦN): TRỢ LÝ COPILOT CHAT THÔNG MINH */}
+          {/* CỘT PHẢI: TRỢ LÝ COPILOT CHAT */}
           <div className="lg:col-span-5">
             <Card className="flex flex-col h-full border border-slate-800/80 bg-slate-900/90 shadow-xl">
               <CardHeader className="pb-3 border-b border-slate-800/80">
@@ -689,7 +694,6 @@ function ScanLandingContent() {
                 </div>
               </CardHeader>
 
-              {/* Hộp Tin Nhắn Hội Thoại */}
               <CardContent className="flex-1 flex flex-col justify-between p-4 space-y-3">
                 <div className="h-[430px] overflow-y-auto space-y-3.5 pr-1.5">
                   {copilotMessages.map((m, idx) => (
@@ -721,7 +725,7 @@ function ScanLandingContent() {
                   <div ref={chatBottomRef} />
                 </div>
 
-                {/* Gợi Ý Câu Hỏi Nhanh (Quick Action Pills) */}
+                {/* Gợi Ý Nhanh */}
                 <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/60">
                   <button
                     type="button"
@@ -739,7 +743,7 @@ function ScanLandingContent() {
                   </button>
                 </div>
 
-                {/* Khung Nhập Tin Nhắn Chat */}
+                {/* Ô Nhập Tin Nhắn */}
                 <div className="flex gap-2 pt-1">
                   <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
