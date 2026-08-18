@@ -620,3 +620,17 @@ export async function createRedeemCode(input: {
   });
   return res.code;
 }
+
+export async function detectWaf(targetUrl: string) {
+  return requestJson<any>("/api/stress/detect-waf", {
+    method: "POST",
+    body: JSON.stringify({ target_url: targetUrl }),
+  });
+}
+
+export async function runStressTest(payload: any) {
+  return requestJson<any>("/api/stress", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
