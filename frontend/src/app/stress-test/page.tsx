@@ -40,16 +40,13 @@ function StressTestContent() {
   const [selectedEndpoint, setSelectedEndpoint] = useState("");
   const [scanningEndpoints, setScanningEndpoints] = useState(false);
 
-  // Tốc độ: Tổng request trong N giây
   const [targetRequests, setTargetRequests] = useState<number>(2000);
   const [duration, setDuration] = useState<number>(5);
 
-  // WAF & Bypass Code
   const [detectingWaf, setDetectingWaf] = useState(false);
   const [detectedWafName, setDetectedWafName] = useState<string | null>(null);
   const [bypassCode, setBypassCode] = useState<string>("");
 
-  // Execution state
   const [running, setRunning] = useState(false);
   const [metrics, setMetrics] = useState<StressMetrics | null>(null);
   const [liveLogs, setLiveLogs] = useState<Array<{ time: string; ip: string; status: number; latency: number }>>([]);
@@ -57,7 +54,6 @@ function StressTestContent() {
 
   const calculatedRps = Math.round(targetRequests / Math.max(1, duration));
 
-  // 1. Tự động nạp Target từ phiên làm việc
   useEffect(() => {
     if (!projectId) return;
 
@@ -75,7 +71,6 @@ function StressTestContent() {
       .catch((e) => console.warn("Load project error:", e));
   }, [projectId]);
 
-  // 2. Quét Endpoint tự động
   const handleScanEndpoints = async () => {
     if (!baseDomain) return;
     setScanningEndpoints(true);
@@ -94,7 +89,6 @@ function StressTestContent() {
     }
   };
 
-  // 3. Quét & Nhận diện WAF
   const handleDetectWaf = async () => {
     const target = selectedEndpoint || baseDomain;
     if (!target) return;
@@ -114,7 +108,6 @@ function StressTestContent() {
     }
   };
 
-  // 4. Kích hoạt Stress Test
   const handleStartStress = async () => {
     const finalUrl = selectedEndpoint || baseDomain;
     if (!finalUrl || running) return;
@@ -131,34 +124,23 @@ function StressTestContent() {
       bypass_code: bypassCode.trim(),
     };
 
-    const intervalMs = Math.max(30, Math.min(100, Math.round(1000 / Math.max(1, calculatedRps))));
-    const logInterval = setInterval(() => {
-      const randomIp = `${Math.floor(Math.random() * 200) + 10}.${Math.floor(Math.random() * 254) + 1}.${Math.floor(Math.random() * 254) + 1}.${Math.floor(Math.random() * 254) + 1}`;
-      const statusList = [200, 200, 200, 200, 200, 429, 403, 502];
-      const randomStatus = statusList[Math.floor(Math.random() * statusList.length)];
-      const randLatency = Math.floor(Math.random() * 40) + 8;
-
-      setLiveLogs((prev) => [
-        { time: new Date().toLocaleTimeString(), ip: randomIp, status: randomStatus, latency: randLatency },
-        ...prev.slice(0, 50),
-      ]);
-    }, intervalMs);
-
     try {
       const response = await runStressTest(payload);
       const resData = response.result?.metrics || response.metrics || {};
+      const realSampleLogs = response.result?.sample_logs || response.sample_logs || [];
 
       const computedMetrics: StressMetrics = {
-        totalRequests: resData.total_requests || targetRequests,
-        actualRps: resData.rps || calculatedRps,
+        totalRequests: resData.total_requests || 0,
+        actualRps: resData.rps || 0,
         status200: resData.status_200 || 0,
         status403WafBlocked: resData.status_403_waf_blocked || 0,
         status429RateLimited: resData.status_429_rate_limited || 0,
         status500Crashed: resData.status_500_crashed || 0,
-        p95LatencyMs: resData.p95_latency || "18ms",
+        p95LatencyMs: resData.p95_latency || "0ms",
       };
 
       setMetrics(computedMetrics);
+      setLiveLogs(realSampleLogs);
 
       if (projectId) {
         await saveProjectDetail(projectId, {
@@ -174,7 +156,6 @@ function StressTestContent() {
     } catch (err: any) {
       setErrorMsg(err.message || "Kiểm thử tải thất bại.");
     } finally {
-      clearInterval(logInterval);
       setRunning(false);
     }
   };
@@ -189,7 +170,7 @@ function StressTestContent() {
               <h2 className="text-2xl font-bold tracking-tight text-white">L7 Stress Test & WAF Assessment</h2>
             </div>
             <p className="mt-1 text-sm text-slate-400">
-              Kiểm thử tải tốc độ cao, kiểm định ngưỡng Rate Limit và hiệu quả mã Bypass.
+              Kiểm thử tải thực tế, đo lường chính xác mã phản hồi HTTP và hiệu quả của mã Bypass.
             </p>
           </div>
           {projectId ? (
@@ -264,10 +245,10 @@ function StressTestContent() {
                 </select>
               </div>
 
-              {/* TÍNH TOÁN TỐC ĐỘ: REQUESTS / DURATION */}
+              {/* CẤU HÌNH TỐC ĐỘ: REQUESTS / DURATION */}
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase text-slate-300">Tốc độ Bắn Tải</span>
+                  <span className="text-xs font-semibold uppercase text-slate-300">Tốc độ Bắn Tải Mục Tiêu</span>
                   <Badge className="border-rose-500/40 bg-rose-500/15 text-rose-300 font-mono text-xs font-bold" variant="muted">
                     {calculatedRps.toLocaleString()} req/sec
                   </Badge>
@@ -343,7 +324,7 @@ function StressTestContent() {
                 </div>
               ) : null}
 
-              {/* Ô NHẬP MÃ BYPASS */}
+              {/* Ô NHẬP MÃ BYPASS ĐA NĂNG */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase text-slate-400 flex items-center justify-between">
                   <span>Mã Bypass / Header / Cookie Token</span>
@@ -391,7 +372,7 @@ function StressTestContent() {
                   {running ? (
                     <span className="flex items-center gap-2">
                       <LoaderCircle className="h-4 w-4 animate-spin text-white" />
-                      Đang thực thi ({targetRequests} reqs / {duration}s = {calculatedRps} req/s)...
+                      Đang thực thi bắn tải thực tế...
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
@@ -405,7 +386,7 @@ function StressTestContent() {
           </Card>
         </div>
 
-        {/* 3. BẢNG ĐO LƯỜNG & STREAM LOGS */}
+        {/* 3. BẢNG ĐO LƯỜNG & STREAM LOGS THỰC TẾ */}
         <div className="grid gap-6 lg:grid-cols-12">
           <div className="space-y-4 lg:col-span-5">
             <div className="grid grid-cols-2 gap-3">
@@ -427,12 +408,12 @@ function StressTestContent() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
                   <Activity className="h-4 w-4 text-rose-400" />
-                  Phân bố mã phản hồi HTTP
+                  Mã phản hồi HTTP Thực tế từ Server
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2.5 text-xs">
                 <div className="flex justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-                  <span className="text-emerald-400 font-medium">200 OK (Thành công)</span>
+                  <span className="text-emerald-400 font-medium">200 OK (Thành công / Bypass hợp lệ)</span>
                   <span className="font-bold text-white font-mono">{metrics ? metrics.status200 : 0}</span>
                 </div>
                 <div className="flex justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
@@ -440,7 +421,7 @@ function StressTestContent() {
                   <span className="font-bold text-white font-mono">{metrics ? metrics.status403WafBlocked : 0}</span>
                 </div>
                 <div className="flex justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-                  <span className="text-amber-400 font-medium">429 Rate Limited (Giới hạn)</span>
+                  <span className="text-amber-400 font-medium">429 Rate Limited (Bị chặn tốc độ)</span>
                   <span className="font-bold text-white font-mono">{metrics ? metrics.status429RateLimited : 0}</span>
                 </div>
                 <div className="flex justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
@@ -456,22 +437,22 @@ function StressTestContent() {
               <CardHeader className="pb-3 border-b border-slate-800">
                 <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
                   <Terminal className="h-4 w-4 text-cyan-400" />
-                  Live War Room Stream Log
+                  Live War Room Stream Log (Thực tế từ máy chủ)
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0 flex-1">
                 <div className="h-[280px] overflow-y-auto font-mono text-xs">
                   {liveLogs.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-slate-500">
-                      Chưa có luồng dữ liệu. Bấm "Bắt đầu Stress Test" để kích hoạt.
+                      Chưa có dữ liệu. Bấm "Bắt đầu Stress Test" để ghi nhận phản hồi từ server.
                     </div>
                   ) : (
                     <table className="w-full text-left">
                       <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 sticky top-0">
                         <tr>
                           <th className="p-2.5">Thời gian</th>
-                          <th className="p-2.5">IP Nguồn</th>
-                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5">IP Nguồn (X-Forwarded)</th>
+                          <th className="p-2.5">Mã HTTP Thực</th>
                           <th className="p-2.5 text-right">Độ trễ</th>
                         </tr>
                       </thead>
@@ -479,8 +460,8 @@ function StressTestContent() {
                         {liveLogs.map((log, i) => (
                           <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/20">
                             <td className="p-2 text-slate-400">{log.time}</td>
-                            <td className="p-2 text-slate-300">{log.ip}</td>
-                            <td className="p-2 font-bold">
+                            <td className="p-2 text-slate-300 font-mono">{log.ip}</td>
+                            <td className="p-2 font-bold font-mono">
                               <span
                                 className={
                                   log.status === 200
@@ -495,7 +476,7 @@ function StressTestContent() {
                                 {log.status}
                               </span>
                             </td>
-                            <td className="p-2 text-right text-slate-400">{log.latency}ms</td>
+                            <td className="p-2 text-right text-slate-400 font-mono">{log.latency}ms</td>
                           </tr>
                         ))}
                       </tbody>

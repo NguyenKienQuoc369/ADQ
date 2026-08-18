@@ -104,7 +104,6 @@ class ScanService:
 
     @staticmethod
     def discover_endpoints(target_url: str) -> Dict[str, Any]:
-        """Tự động cào và bóc tách toàn bộ API Routes & Endpoints của mục tiêu"""
         target = target_url.strip()
         if not target.startswith("http"):
             target = f"https://{target}"
@@ -116,7 +115,7 @@ class ScanService:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
 
-        # 1. Quét robots.txt & sitemap.xml
+        # 1. Bóc tách robots.txt & sitemap.xml
         for path in ["/robots.txt", "/sitemap.xml"]:
             try:
                 req = urllib.request.Request(f"{base_clean}{path}", headers=headers)
@@ -138,7 +137,6 @@ class ScanService:
             with urllib.request.urlopen(req, timeout=5, context=ssl_unverified_context) as resp:
                 html_body = resp.read().decode("utf-8", errors="ignore")
                 
-                # Tìm Next.js build manifest script
                 manifest_matches = re.findall(r'src=["\'](/_next/static/[^"\']+/_buildManifest\.js)["\']', html_body)
                 for mf in manifest_matches:
                     try:
@@ -155,7 +153,6 @@ class ScanService:
                     except Exception:
                         pass
 
-                # Trích xuất link & API paths từ HTML
                 links = re.findall(r'(?:href|src|action)=["\'](/[^"\'>\s]+)["\']', html_body)
                 api_calls = re.findall(r'["\'](/api/[a-zA-Z0-9_\-\/]+)["\']', html_body)
                 for link in list(set(links + api_calls)):
