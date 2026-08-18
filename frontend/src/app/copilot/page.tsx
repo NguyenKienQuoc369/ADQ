@@ -147,7 +147,7 @@ function CopilotContent() {
                   AI Agentic Security: Phân tích báo cáo scan, truy vấn kỹ thuật và sinh mã sửa lỗi tự động.
                 </CardDescription>
               </div>
-              {target ? <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">Target: {target}</Badge> : null}
+              {target ? <Badge variant="muted" className="border-cyan-500/40 text-cyan-300">Target: {target}</Badge> : null}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">

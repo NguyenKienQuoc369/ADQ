@@ -267,7 +267,7 @@ function ScanLandingContent() {
                 <CardDescription className="mt-1 text-sm text-[var(--foreground-muted)]">Hệ thống quét an toàn thông tin toàn diện và tạo khuyến nghị AI.</CardDescription>
               </div>
               {jobId ? (
-                <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                <Badge variant="muted" className="border-cyan-500/40 text-cyan-300">
                   Job ID: {jobId.slice(0, 8)}...
                 </Badge>
               ) : null}

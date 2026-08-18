@@ -294,7 +294,7 @@ export function ResultsClient() {
                     <div key={idx} className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
                       <div className="mb-2 flex items-center justify-between">
                         <p className="font-medium text-slate-100">{item.title}</p>
-                        <Badge variant="destructive">{item.severity || "MEDIUM"}</Badge>
+                        <Badge variant="danger">{item.severity || "MEDIUM"}</Badge>
                       </div>
                       <p className="text-xs text-slate-400">{item.endpoint}</p>
                       <Button

@@ -255,6 +255,95 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // ------------------------------------------------------------
+// Auth Functions
+// ------------------------------------------------------------
+
+export function getStoredSession() {
+  return null as AuthResponse | null;
+}
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  void email;
+  void password;
+  throw new Error("Auth đã chuyển sang Supabase. Vui lòng dùng AuthProvider.");
+}
+
+export async function register(payload: { name: string; email: string; password: string }): Promise<AuthResponse> {
+  void payload;
+  throw new Error("Auth đã chuyển sang Supabase. Vui lòng dùng AuthProvider.");
+}
+
+export async function loginWithGoogle(): Promise<AuthResponse> {
+  throw new Error("Auth đã chuyển sang Supabase. Vui lòng dùng AuthProvider.");
+}
+
+export async function logout() {
+  return;
+}
+
+export async function getCurrentUser() {
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase.auth.getUser();
+
+  if (error || !data.user) {
+    return null as User | null;
+  }
+
+  const metadata = data.user.user_metadata ?? {};
+  return {
+    id: data.user.id,
+    name: metadata.name || metadata.full_name || data.user.email?.split("@")[0] || "Người dùng",
+    email: data.user.email ?? "",
+    avatar: metadata.avatar_url || metadata.picture || undefined,
+    role: metadata.role === "ADMIN" ? "ADMIN" : "USER",
+    packageTier: metadata.packageTier === "PRO_MAX" ? "PRO_MAX" : metadata.packageTier === "PRO" ? "PRO" : "FREE",
+    status: "ACTIVE",
+    dailyLimit: metadata.packageTier === "FREE" ? 5 : 999,
+    scansToday: 0,
+    telegramConnected: false,
+    planExpiresAt: null,
+    oauthProvider: metadata.provider === "google" ? "google" : null,
+    lastLoginAt: new Date().toISOString(),
+  } satisfies User;
+}
+
+export async function forgotPassword(email: string) {
+  const supabase = createSupabaseBrowserClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    ok: true,
+    message: "Nếu email tồn tại, hệ thống đã gửi liên kết đặt lại mật khẩu.",
+  };
+}
+
+export async function resetPassword(token: string, password: string) {
+  const supabase = createSupabaseBrowserClient();
+
+  if (token.trim()) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("token", token);
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    throw error;
+  }
+
+  return {
+    ok: true,
+    message: "Mật khẩu đã được cập nhật. Bạn có thể đăng nhập lại ngay.",
+  };
+}
+
+// ------------------------------------------------------------
 // Copilot AI & Scan API
 // ------------------------------------------------------------
 
@@ -295,7 +384,7 @@ export async function copilotPatch(payload: {
 }
 
 // ------------------------------------------------------------
-// Dashboard + Scan
+// Dashboard + Scan Projects
 // ------------------------------------------------------------
 
 export async function getDashboardOverview(): Promise<DashboardOverview> {
