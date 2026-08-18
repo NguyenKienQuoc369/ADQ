@@ -1,26 +1,23 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Boxes, Globe, Target, Trash2, X } from "lucide-react";
+import { AlertTriangle, Trash2, X, Play, Shield, Smartphone, Zap, Plus } from "lucide-react";
 
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getDashboardOverview, getScanResults, getProjects, createProject, deleteProject, type ScanResult } from "@/lib/api";
-import { useAuth } from "@/components/providers/auth-provider";
-
+import { getDashboardOverview, getProjects, createProject, deleteProject } from "@/lib/api";
 
 export function OverviewClient() {
-  const { user, updateUser } = useAuth();
-  const [data, setData] = useState<Awaited<ReturnType<typeof getDashboardOverview>> | null>(null);
-  const [scans, setScans] = useState<ScanResult[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  const [projects, setProjects] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectStep, setNewProjectStep] = useState<"setup" | "module">("setup");
   const [newProjectDraft, setNewProjectDraft] = useState({
@@ -29,20 +26,20 @@ export function OverviewClient() {
     password: "",
     domain: "",
   });
+
   const [projectToDelete, setProjectToDelete] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
     let active = true;
 
-    Promise.all([getDashboardOverview(), getScanResults()])
-      .then(([overviewResponse, scanResponse]) => {
+    Promise.all([getDashboardOverview(), getProjects()])
+      .then(([overviewRes, projectsRes]) => {
         if (!active) return;
-        setData(overviewResponse);
-        setScans(scanResponse);
+        setProjects(projectsRes || []);
       })
       .catch((err) => {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : "Không thể tải dashboard.");
+        console.error("Dashboard load error:", err);
       })
       .finally(() => {
         if (!active) return;
@@ -54,51 +51,6 @@ export function OverviewClient() {
     };
   }, []);
 
-  const cards = useMemo(() => {
-    if (!data) return [];
-    return [
-      { icon: Target, title: data.metrics.totalTargets.label, value: data.metrics.totalTargets.value, change: data.metrics.totalTargets.change },
-      { icon: AlertTriangle, title: data.metrics.totalVulnerabilities.label, value: data.metrics.totalVulnerabilities.value, change: data.metrics.totalVulnerabilities.change },
-      { icon: Boxes, title: data.metrics.totalAssets.label, value: data.metrics.totalAssets.value, change: data.metrics.totalAssets.change },
-      { icon: Globe, title: data.metrics.subdomains.label, value: data.metrics.subdomains.value, change: data.metrics.subdomains.change },
-    ];
-  }, [data]);
-
-  const latestScan = scans[0] ?? null;
-
-  const [projects, setProjects] = useState<any[] | null>(null);
-  const router = useRouter();
-
-  useEffect(() => {
-    let active = true;
-    getProjects().then((rows) => {
-      if (!active) return;
-      setProjects(rows);
-    }).catch(() => setProjects([]));
-
-    return () => { active = false };
-  }, []);
-
-  const projectList = loading ? [] : (projects ?? (scans.length ? scans : []));
-
-  const projectSummary = useMemo(() => {
-    const totals = (projects ?? []).reduce(
-      (acc, project) => {
-        const summary = project?.projectDetail?.summary ?? {};
-        acc.critical += Number(summary.critical ?? 0);
-        acc.high += Number(summary.high ?? 0);
-        acc.medium += Number(summary.medium ?? 0);
-        return acc;
-      },
-      { critical: 0, high: 0, medium: 0 },
-    );
-
-    return {
-      ...totals,
-      max: Math.max(totals.critical, totals.high, totals.medium, 1),
-    };
-  }, [projects]);
-
   const handleDeleteProject = async () => {
     if (!projectToDelete?.id) return;
     setDeleting(true);
@@ -106,6 +58,8 @@ export function OverviewClient() {
       await deleteProject(projectToDelete.id);
       setProjects((prev) => (prev ? prev.filter((item) => item.id !== projectToDelete.id) : prev));
       setProjectToDelete(null);
+    } catch (err) {
+      alert("Không thể xóa phiên làm việc.");
     } finally {
       setDeleting(false);
     }
@@ -113,7 +67,7 @@ export function OverviewClient() {
 
   const handleCreateNewProject = async (module: "scan" | "apk-audit" | "stress-test") => {
     const payload = {
-      name: newProjectDraft.name.trim() || "Unnamed Project",
+      name: newProjectDraft.name.trim() || "Phiên quét mới",
       domain: newProjectDraft.domain.trim() || undefined,
       description: newProjectDraft.projectInfo.trim(),
       password: newProjectDraft.password.trim(),
@@ -125,129 +79,183 @@ export function OverviewClient() {
       setShowNewProject(false);
       setNewProjectStep("setup");
       setNewProjectDraft({ name: "", projectInfo: "", password: "", domain: "" });
-      router.push(`/${module === "scan" ? "scan" : module === "apk-audit" ? "apk-audit" : "stress-test"}?projectId=${encodeURIComponent(project.id || project.domain)}`);
+      
+      const targetRoute = module === "scan" ? "/scan" : module === "apk-audit" ? "/apk-audit" : "/stress-test";
+      router.push(`${targetRoute}?projectId=${encodeURIComponent(project.id)}`);
     } catch (err) {
       console.error(err);
-      alert("Không thể tạo project mới.");
+      alert("Không thể tạo phiên quét mới.");
     }
   };
 
+  const openProjectSession = (p: any) => {
+    const mod = p.module || p.projectDetail?.module || "scan";
+    const route = mod === "apk-audit" ? "/apk-audit" : mod === "stress-test" ? "/stress-test" : "/scan";
+    router.push(`${route}?projectId=${encodeURIComponent(p.id)}`);
+  };
+
+  const filteredProjects = useMemo(() => {
+    if (!projects) return [];
+    if (!searchTerm.trim()) return projects;
+    const term = searchTerm.toLowerCase();
+    return projects.filter(
+      (p) =>
+        (p.name && p.name.toLowerCase().includes(term)) ||
+        (p.domain && p.domain.toLowerCase().includes(term)) ||
+        (p.id && p.id.toLowerCase().includes(term))
+    );
+  }, [projects, searchTerm]);
+
   return (
     <DashboardShell area="dashboard">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-6 text-slate-100 font-sans">
+        {/* Header bar */}
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold">Quét bảo mật dự án</h2>
-            <p className="text-sm text-[var(--foreground-muted)]">Quản lý và theo dõi các lỗ hổng bảo mật trong dự án của bạn.</p>
+            <h2 className="text-2xl font-bold tracking-tight text-white">Quản lý Phiên Quét & Dự Án</h2>
+            <p className="text-sm text-slate-400">
+              Tất cả kết quả phân tích, lỗ hổng và lịch sử hội thoại AI được lưu trữ theo từng phiên làm việc.
+            </p>
           </div>
           <div className="flex items-center gap-3">
-            <Input placeholder="Tìm kiếm dự án, domain..." className="w-[480px]" />
-            <Button variant="outline">Filter</Button>
-            <Button onClick={() => setShowNewProject(true)}>New Project</Button>
+            <Input
+              placeholder="Tìm kiếm phiên quét, domain, target..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-72 md:w-96 border-slate-800 bg-slate-950 text-white placeholder:text-slate-500"
+            />
+            <Button
+              onClick={() => setShowNewProject(true)}
+              className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold flex items-center gap-2 shadow-lg shadow-cyan-900/30"
+            >
+              <Plus className="h-4 w-4" /> Tạo phiên mới
+            </Button>
           </div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
-          <div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {projectList.length === 0 && loading
-                ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)
-                : projectList.map((p: any) => (
-                    <Card key={p.id} className="overflow-hidden">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="h-9 w-9 rounded-lg bg-sky-50 flex items-center justify-center text-sky-600 font-semibold">{(() => { const nm = (p.name ?? p.domain ?? p.id ?? ""); const seg = nm.split("_")[0] || nm; return ((seg && seg[0]) ? seg[0].toUpperCase() : "?"); })()}</div>
-                                <div>
-                                  <p className="font-medium line-clamp-1">{p.name ?? p.domain ?? p.id}</p>
-                                  <p className="text-xs text-[var(--foreground-muted)]">{p.url ?? p.domain ?? ""}</p>
-                                </div>
-                              </div>
-                              <div className="text-xs text-[var(--foreground-muted)]">{p.lastScan ?? "Chưa quét"}</div>
-                            </div>
+        {/* Danh sách phiên làm việc */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {loading ? (
+            Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-2xl bg-slate-900/80" />)
+          ) : filteredProjects.length === 0 ? (
+            <div className="col-span-full rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 p-12 text-center">
+              <Shield className="mx-auto h-12 w-12 text-slate-600" />
+              <h3 className="mt-3 text-lg font-semibold text-slate-300">Chưa có phiên làm việc nào</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Bấm nút "Tạo phiên mới" để bắt đầu quét bảo mật web, kiểm toán APK hoặc kiểm thử chịu tải.
+              </p>
+              <Button onClick={() => setShowNewProject(true)} className="mt-5 bg-cyan-600 hover:bg-cyan-500 text-white">
+                Bắt đầu phiên đầu tiên
+              </Button>
+            </div>
+          ) : (
+            filteredProjects.map((p: any) => {
+              const detail = p.projectDetail || {};
+              const summary = detail.summary || {};
+              const moduleType = p.module || detail.module || "scan";
 
-                            <div className="mt-3 flex items-center justify-between">
-                              <div className="flex items-center gap-2 text-xs">
-                                <span className="text-rose-500">{p.critical ?? 0} Cr</span>
-                                <span className="text-orange-500">{p.high ?? 0} Hi</span>
-                                <span className="text-yellow-500">{p.medium ?? 0} Med</span>
-                              </div>
-                              <div>
-                                {p.status === 'running' ? (
-                                  <Badge variant="warning">Đang quét...</Badge>
-                                ) : p.status === 'ok' ? (
-                                  <Badge variant="success">Đã quét thành công</Badge>
-                                ) : p.status === 'risk' ? (
-                                  <Badge variant="danger">Phát hiện rủi ro</Badge>
-                                ) : (
-                                  <Badge variant="muted">Trạng thái</Badge>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="mt-4 flex items-center justify-end gap-2">
-                              <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/projects/${encodeURIComponent(p.id)}`)}>
-                                Xem chi tiết
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => setProjectToDelete(p)}
-                                className="gap-1.5"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Xóa
-                              </Button>
-                            </div>
+              return (
+                <Card
+                  key={p.id}
+                  className="group relative overflow-hidden border border-slate-800 bg-slate-900/90 shadow-md hover:border-cyan-500/50 transition duration-200"
+                >
+                  <CardContent className="p-5 flex flex-col justify-between h-full space-y-4">
+                    <div>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                            {moduleType === "apk-audit" ? (
+                              <Smartphone className="h-5 w-5" />
+                            ) : moduleType === "stress-test" ? (
+                              <Zap className="h-5 w-5 text-rose-400" />
+                            ) : (
+                              <Shield className="h-5 w-5" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-bold text-white line-clamp-1">{p.name || p.domain || p.id}</p>
+                            <p className="text-xs text-slate-400 line-clamp-1">{p.domain || detail.title || "Chưa gắn target"}</p>
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-            </div>
-          </div>
 
-          <div className="space-y-4">
-          </div>
+                        <Badge
+                          variant="muted"
+                          className="border-slate-700 bg-slate-950 text-[10px] uppercase font-mono tracking-wider text-slate-400"
+                        >
+                          {moduleType}
+                        </Badge>
+                      </div>
+
+                      {/* Chỉ số tóm tắt */}
+                      <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-950/80 p-2.5 text-center border border-slate-800/80">
+                        <div>
+                          <div className="text-[10px] text-slate-500">Critical</div>
+                          <div className="text-sm font-bold text-rose-400">{summary.critical ?? 0}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-slate-500">High/Med</div>
+                          <div className="text-sm font-bold text-amber-400">
+                            {(summary.high ?? 0) + (summary.medium ?? 0)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-slate-500">Risk Score</div>
+                          <div className="text-sm font-bold text-cyan-300">{detail.riskScore ?? 0}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                      <span className="text-[11px] text-slate-500">
+                        {detail.lastScanAt ? new Date(detail.lastScanAt).toLocaleDateString("vi-VN") : "Mới tạo"}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setProjectToDelete(p)}
+                          className="h-8 border-slate-800 text-slate-400 hover:text-rose-400 hover:bg-rose-950/20"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => openProjectSession(p)}
+                          className="h-8 bg-cyan-600/90 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-1"
+                        >
+                          <Play className="h-3 w-3 fill-white" /> Tiếp tục phiên
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
         </div>
 
-        {/* placeholders removed */}
-        
-        {/* Priority list, current status, and recent activity removed per request */}
+        {/* Modal xác nhận xóa phiên */}
         {projectToDelete && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
-            <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px]" onClick={() => setProjectToDelete(null)} />
-            <div className="relative z-[70] w-full max-w-xl rounded-[28px] border border-[color:var(--line)] bg-[color:var(--background-elevated)] p-6 shadow-[0_25px_80px_rgba(2,6,23,0.9)]">
-              <div className="flex items-center justify-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-rose-400/30 bg-rose-500/10 text-rose-400 shadow-[0_0_25px_rgba(251,113,133,0.15)]">
-                  <AlertTriangle className="h-7 w-7" />
-                </div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setProjectToDelete(null)} />
+            <div className="relative z-10 w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 mx-auto">
+                <AlertTriangle className="h-6 w-6" />
               </div>
-
-              <div className="mt-5 text-center">
-                <h3 className="text-3xl font-semibold tracking-[-0.05em] text-[var(--foreground)]">Xóa dự án?</h3>
-                <p className="mt-3 text-base leading-7 text-[var(--foreground-muted)]">
-                  Bạn đang xóa dự án <span className="font-semibold text-[var(--foreground)]">{projectToDelete.name ?? projectToDelete.domain ?? projectToDelete.id}</span>.
-                  <span className="mt-1 block">Hành động này sẽ xoá dữ liệu dự án khỏi database và không thể hoàn tác.</span>
-                </p>
-              </div>
-
-              <div className="mt-7 flex items-center justify-center gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setProjectToDelete(null)}
-                  disabled={deleting}
-                  className="h-12 min-w-[120px] rounded-xl border border-[color:var(--line)] bg-[color:var(--background-muted)] text-[var(--foreground)] hover:bg-[color:var(--background-elevated)]"
-                >
+              <h3 className="mt-4 text-center text-lg font-bold text-white">Xóa phiên làm việc này?</h3>
+              <p className="mt-2 text-center text-xs text-slate-400">
+                Toàn bộ dữ liệu phân tích, lỗ hổng và lịch sử hội thoại AI của phiên{" "}
+                <span className="font-semibold text-slate-200">
+                  {projectToDelete.name || projectToDelete.domain || projectToDelete.id}
+                </span>{" "}
+                sẽ bị xóa vĩnh viễn khỏi Database.
+              </p>
+              <div className="mt-6 flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setProjectToDelete(null)} disabled={deleting}>
                   Hủy
                 </Button>
-                <Button
-                  onClick={handleDeleteProject}
-                  disabled={deleting}
-                  className="h-12 min-w-[170px] rounded-xl border border-rose-400/30 bg-rose-500/15 text-rose-300 shadow-[0_0_20px_rgba(251,113,133,0.12)] hover:bg-rose-500/20"
-                >
+                <Button onClick={handleDeleteProject} disabled={deleting} className="bg-rose-600 hover:bg-rose-500 text-white">
                   {deleting ? "Đang xóa..." : "Xác nhận xóa"}
                 </Button>
               </div>
@@ -255,121 +263,126 @@ export function OverviewClient() {
           </div>
         )}
 
+        {/* Modal Tạo Phiên Làm Việc Mới (2 Bước) */}
         {showNewProject && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setShowNewProject(false)} />
-            <div className="relative z-50 w-full max-w-5xl rounded-2xl border border-[color:var(--line)] bg-[color:var(--background-elevated)] p-6 text-[var(--foreground)] shadow-[0_20px_60px_rgba(2,6,23,0.8)]">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-2xl font-bold tracking-[-0.04em] text-[var(--foreground)]">{newProjectStep === "setup" ? "Project setup" : "Select Project Type"}</h3>
-                  <p className="mt-1 text-sm text-[var(--foreground-muted)]">
-                    {newProjectStep === "setup"
-                      ? "Điền thông tin dự án trước, sau đó chọn module phù hợp để bắt đầu."
-                      : "Choose a scanning module to initiate your security assessment."}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
-                  onClick={() => {
-                    setShowNewProject(false);
-                    setNewProjectStep("setup");
-                    setNewProjectDraft({ name: "", projectInfo: "", password: "", domain: "" });
-                  }}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setShowNewProject(false)} />
+            <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 className="text-lg font-bold text-white">
+                  {newProjectStep === "setup" ? "Bước 1: Thông tin phiên làm việc" : "Bước 2: Chọn tính năng quét"}
+                </h3>
+                <button
+                  onClick={() => setShowNewProject(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:text-white"
                 >
-                  <X className="h-4 w-4" />
-                </Button>
+                  <X className="h-5 w-5" />
+                </button>
               </div>
 
               {newProjectStep === "setup" ? (
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <div className="space-y-4 md:col-span-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Project name</label>
-                      <Input
-                        value={newProjectDraft.name}
-                        onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, name: e.target.value }))}
-                        placeholder="e.g. Stress Test Project"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Project info</label>
-                      <Input
-                        value={newProjectDraft.projectInfo}
-                        onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, projectInfo: e.target.value }))}
-                        placeholder="Mô tả ngắn gọn về dự án, mục đích hoặc hợp đồng kiểm thử..."
-                      />
-                    </div>
-                  </div>
-
+                <div className="mt-4 space-y-4">
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Domain / Target</label>
+                    <label className="text-xs font-semibold uppercase text-slate-400">Tên phiên làm việc / Dự án</label>
+                    <Input
+                      value={newProjectDraft.name}
+                      onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="VD: Kiểm thử Web Portal Quý 3"
+                      className="mt-1.5 border-slate-800 bg-slate-950 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase text-slate-400">Target / Domain mặc định</label>
                     <Input
                       value={newProjectDraft.domain}
                       onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, domain: e.target.value }))}
-                      placeholder="app.example.com"
+                      placeholder="https://example.com"
+                      className="mt-1.5 border-slate-800 bg-slate-950 text-white"
                     />
                   </div>
-
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Project password (optional)</label>
+                    <label className="text-xs font-semibold uppercase text-slate-400">Ghi chú / Mô tả ngắn</label>
                     <Input
-                      type="password"
-                      value={newProjectDraft.password}
-                      onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, password: e.target.value }))}
-                      placeholder="Nếu dự án yêu cầu mật khẩu truy cập"
+                      value={newProjectDraft.projectInfo}
+                      onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, projectInfo: e.target.value }))}
+                      placeholder="Mục tiêu kiểm thử, phạm vi IP..."
+                      className="mt-1.5 border-slate-800 bg-slate-950 text-white"
                     />
                   </div>
 
-                  <div className="md:col-span-2 flex justify-end">
-                    <Button onClick={() => setNewProjectStep("module")} disabled={!newProjectDraft.name.trim()}>
-                      Tiếp tục →
+                  <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
+                    <Button variant="outline" onClick={() => setShowNewProject(false)}>
+                      Hủy
+                    </Button>
+                    <Button
+                      onClick={() => setNewProjectStep("module")}
+                      disabled={!newProjectDraft.name.trim()}
+                      className="bg-cyan-600 hover:bg-cyan-500 text-white"
+                    >
+                      Tiếp tục chọn module →
                     </Button>
                   </div>
                 </div>
               ) : (
-                <div className="mt-6 grid gap-4 grid-cols-1 md:grid-cols-3">
-                  <Card>
-                    <CardContent className="flex flex-col gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-sky-50 flex items-center justify-center text-sky-600">🔎</div>
-                      <h4 className="font-semibold">Web & Network Scan</h4>
-                      <p className="text-sm text-[var(--foreground-muted)]">Quét lỗ hổng, Recon và phân tích chuỗi tấn công toàn diện trên bề mặt mạng và ứng dụng web.</p>
-                      <div className="mt-4">
-                        <Button onClick={() => handleCreateNewProject("scan")}>Bắt đầu →</Button>
+                <div className="mt-4 space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {/* Module 1 */}
+                    <div
+                      onClick={() => handleCreateNewProject("scan")}
+                      className="cursor-pointer rounded-xl border border-slate-800 bg-slate-950/80 p-4 hover:border-cyan-500 hover:bg-cyan-950/20 transition group"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 group-hover:scale-105 transition">
+                        <Shield className="h-5 w-5" />
                       </div>
-                    </CardContent>
-                  </Card>
+                      <h4 className="mt-3 font-bold text-sm text-white">Web & Network Scan</h4>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Recon, quét lỗ hổng Nuclei, trích xuất Secrets và AI tư vấn khắc phục.
+                      </p>
+                    </div>
 
-                  <Card>
-                    <CardContent className="flex flex-col gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">📱</div>
-                      <h4 className="font-semibold">Mobile APK Audit</h4>
-                      <p className="text-sm text-[var(--foreground-muted)]">Kiểm toán mã nguồn APK, phát hiện Hardcoded Secrets và phân tích cấu hình Manifest Android.</p>
-                      <div className="mt-4">
-                        <Button variant="outline" onClick={() => handleCreateNewProject("apk-audit")}>Bắt đầu →</Button>
+                    {/* Module 2 */}
+                    <div
+                      onClick={() => handleCreateNewProject("apk-audit")}
+                      className="cursor-pointer rounded-xl border border-slate-800 bg-slate-950/80 p-4 hover:border-emerald-500 hover:bg-emerald-950/20 transition group"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 group-hover:scale-105 transition">
+                        <Smartphone className="h-5 w-5" />
                       </div>
-                    </CardContent>
-                  </Card>
+                      <h4 className="mt-3 font-bold text-sm text-white">Mobile APK Audit</h4>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Dò mã độc, bóc tách Manifest Android và tìm API keys lộ lọt trong APK.
+                      </p>
+                    </div>
 
-                  <Card>
-                    <CardContent className="flex flex-col gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600">⚡</div>
-                      <h4 className="font-semibold">L7 Stress Test</h4>
-                      <p className="text-sm text-[var(--foreground-muted)]">Kiểm thử khả năng chịu tải, phân tích Rate Limit và đánh giá cấu hình WAF Bypass.</p>
-                      <div className="mt-4">
-                        <Button variant="destructive" onClick={() => handleCreateNewProject("stress-test")}>Bắt đầu →</Button>
+                    {/* Module 3 */}
+                    <div
+                      onClick={() => handleCreateNewProject("stress-test")}
+                      className="cursor-pointer rounded-xl border border-slate-800 bg-slate-950/80 p-4 hover:border-rose-500 hover:bg-rose-950/20 transition group"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/30 group-hover:scale-105 transition">
+                        <Zap className="h-5 w-5" />
                       </div>
-                    </CardContent>
-                  </Card>
+                      <h4 className="mt-3 font-bold text-sm text-white">L7 Stress Test</h4>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Kiểm thử khả năng chịu tải, phân tích Rate Limit và đánh giá cấu hình WAF.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between pt-4 border-t border-slate-800">
+                    <Button variant="ghost" onClick={() => setNewProjectStep("setup")}>
+                      ← Quay lại
+                    </Button>
+                    <Button variant="outline" onClick={() => setShowNewProject(false)}>
+                      Đóng
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
         )}
-
       </div>
     </DashboardShell>
   );
 }
-

@@ -26,8 +26,10 @@ import {
   Layers,
   Radio,
   FileCode2,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
-import { saveProjectDetail, startScanJob, getScanJobStatus, copilotChat, ActionAdvice } from "@/lib/api";
+import { getProjectById, saveProjectDetail, startScanJob, getScanJobStatus, copilotChat, ActionAdvice } from "@/lib/api";
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
 
@@ -38,12 +40,6 @@ interface Vulnerability {
   endpoint: string;
   cve?: string;
   description?: string;
-}
-
-interface SecretItem {
-  type: string;
-  value: string;
-  source: string;
 }
 
 interface DAGNodeState {
@@ -204,6 +200,7 @@ function ScanLandingContent() {
   const [tier, setTier] = useState("DEVSEC PRO");
   const [jobId, setJobId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isChatExpanded, setIsChatExpanded] = useState(false);
 
   const [nodes, setNodes] = useState<Record<string, DAGNodeState>>({
     node_recon: { step: 1, id: "node_recon", label: "Recon & DNS", sublabel: "Subfinder / DNSX", icon: Globe, status: "pending" },
@@ -224,7 +221,6 @@ function ScanLandingContent() {
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
   const [actionAdvice, setActionAdvice] = useState<ActionAdvice[]>([]);
   const [rawActionAdvice, setRawActionAdvice] = useState<string>("");
-  const [secrets, setSecrets] = useState<SecretItem[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
 
   const [copilotMessages, setCopilotMessages] = useState<ChatMessage[]>([
@@ -236,10 +232,64 @@ function ScanLandingContent() {
   const [copilotInput, setCopilotInput] = useState("");
   const [copilotLoading, setCopilotLoading] = useState(false);
 
+  // 1. TỰ ĐỘNG TẢI DỮ LIỆU CŨ TỪ PROJECT ID
+  useEffect(() => {
+    if (!projectId) return;
+
+    let cancelled = false;
+
+    getProjectById(projectId)
+      .then((p) => {
+        if (cancelled) return;
+        if (!p) return;
+        const detail = p.projectDetail || {};
+        if (p.domain) setTarget(p.domain);
+        else if (detail.title && detail.title.startsWith("http")) setTarget(detail.title);
+
+        if (detail.summary) {
+          const s = detail.summary;
+          setSubdomains(s.subdomains ?? 0);
+          setLiveHosts(s.liveHosts ?? 0);
+          setCrawledUrls(s.crawledUrls ?? 0);
+          setOpenPorts(s.openPorts ?? 0);
+          setVulnCount(s.totalVulns ?? s.critical ?? 0);
+        }
+
+        if (detail.findings?.vulnerabilities) {
+          setVulnerabilities(detail.findings.vulnerabilities);
+        }
+        if (detail.findings?.actionAdvice) {
+          setActionAdvice(detail.findings.actionAdvice);
+        }
+        if (detail.findings?.rawActionAdvice) {
+          setRawActionAdvice(detail.findings.rawActionAdvice);
+        }
+        if (detail.findings?.chatHistory && Array.isArray(detail.findings.chatHistory) && detail.findings.chatHistory.length > 0) {
+          setCopilotMessages(detail.findings.chatHistory);
+        }
+
+        if (detail.status === "COMPLETED") {
+          setNodes((prev) => {
+            const updated = { ...prev };
+            Object.keys(updated).forEach((k) => {
+              updated[k] = { ...updated[k], status: "completed" };
+            });
+            return updated;
+          });
+        }
+      })
+      .catch((e) => console.warn("Load project detail error:", e));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages, copilotLoading]);
 
+  // 2. POLLING QUÉT
   useEffect(() => {
     if (!jobId || !isScanning) return;
 
@@ -276,12 +326,11 @@ function ScanLandingContent() {
             return updated;
           });
 
-          const httpLive = job.subdomains?.http_live || [];
-          const allSubs = job.subdomains?.all || [];
-          const ports = job.highlights?.ports || [];
-          const urls = job.urls?.combined || [];
-          const nuclei = job.vulnerabilities?.nuclei || [];
-          const secList = job.highlights?.secrets_found || [];
+          const httpLive = Array.isArray(job.subdomains?.http_live) ? job.subdomains.http_live : [];
+          const allSubs = Array.isArray(job.subdomains?.all) ? job.subdomains.all : [];
+          const ports = Array.isArray(job.highlights?.ports) ? job.highlights.ports : [];
+          const urls = Array.isArray(job.urls?.combined) ? job.urls.combined : [];
+          const nuclei = Array.isArray(job.vulnerabilities?.nuclei) ? job.vulnerabilities.nuclei : [];
 
           setSubdomains(allSubs.length || (target ? 1 : 0));
           setLiveHosts(httpLive.length || (target ? 1 : 0));
@@ -290,20 +339,14 @@ function ScanLandingContent() {
           setVulnCount(nuclei.length);
           setVulnerabilities(nuclei);
 
-          setSecrets(
-            secList.map((s: any) => ({
-              type: safeString(s.type || "Hardcoded Credential"),
-              value: safeString(s.value || s.token || "HIDDEN_SECRET"),
-              source: safeString(s.source || target),
-            }))
-          );
 
           const rawAdv = safeString(job.action_advice || job.actionAdvice || "");
           setRawActionAdvice(rawAdv);
 
+          let parsedAdvice: ActionAdvice[] = [];
           if (rawAdv.trim()) {
             const lines = rawAdv.split("\n").filter((l) => l.trim() && !l.startsWith("🧭"));
-            const parsedAdvice = lines.map((l, idx) => ({
+            parsedAdvice = lines.map((l, idx) => ({
               vulnerabilityId: `vuln-${idx}`,
               title: `Khuyến nghị #${idx + 1}`,
               rootCause: l.replace(/^- (Nguyên nhân:\s*)?/, ""),
@@ -329,6 +372,9 @@ function ScanLandingContent() {
             high: nuclei.filter((v: any) => v.severity === "HIGH").length,
             medium: nuclei.filter((v: any) => v.severity === "MEDIUM").length,
             totalVulns: nuclei.length,
+            vulnerabilities: nuclei,
+            actionAdvice: parsedAdvice,
+            rawActionAdvice: rawAdv,
           });
         }
       } catch (err) {
@@ -339,27 +385,34 @@ function ScanLandingContent() {
     return () => clearInterval(interval);
   }, [jobId, isScanning, target]);
 
-  const persistScanSummary = async (status: string, summaryOverrides?: any) => {
+  // 3. LƯU TIẾN TRÌNH VÀ LỊCH SỬ CHAT VÀO DATABASE
+  const persistScanSummary = async (status: string, overrides?: any) => {
     if (!projectId) return;
     try {
       const summary = {
-        subdomains: Number(summaryOverrides?.subdomains ?? subdomains),
-        liveHosts: Number(summaryOverrides?.liveHosts ?? liveHosts),
-        crawledUrls: Number(summaryOverrides?.crawledUrls ?? crawledUrls),
-        openPorts: Number(summaryOverrides?.openPorts ?? openPorts),
-        critical: Number(summaryOverrides?.critical ?? vulnerabilities.filter((v) => v.severity === "CRITICAL").length),
-        high: Number(summaryOverrides?.high ?? vulnerabilities.filter((v) => v.severity === "HIGH").length),
-        medium: Number(summaryOverrides?.medium ?? vulnerabilities.filter((v) => v.severity === "MEDIUM").length),
-        totalVulns: Number(summaryOverrides?.totalVulns ?? vulnCount),
+        subdomains: Number(overrides?.subdomains ?? subdomains),
+        liveHosts: Number(overrides?.liveHosts ?? liveHosts),
+        crawledUrls: Number(overrides?.crawledUrls ?? crawledUrls),
+        openPorts: Number(overrides?.openPorts ?? openPorts),
+        critical: Number(overrides?.critical ?? vulnerabilities.filter((v) => v.severity === "CRITICAL").length),
+        high: Number(overrides?.high ?? vulnerabilities.filter((v) => v.severity === "HIGH").length),
+        medium: Number(overrides?.medium ?? vulnerabilities.filter((v) => v.severity === "MEDIUM").length),
+        totalVulns: Number(overrides?.totalVulns ?? vulnCount),
       };
 
       await saveProjectDetail(projectId, {
-        title: target || "Scan project",
-        description: `Scan summary for ${target || "target"}`,
+        title: target || "Scan session",
+        description: `Scan session for ${target || "target"}`,
         module: "scan",
         status,
         riskScore: Math.min(100, summary.critical * 26 + summary.high * 12 + summary.medium * 6),
         summary,
+        findings: {
+          vulnerabilities: overrides?.vulnerabilities ?? vulnerabilities,
+          actionAdvice: overrides?.actionAdvice ?? actionAdvice,
+          rawActionAdvice: overrides?.rawActionAdvice ?? rawActionAdvice,
+          chatHistory: overrides?.chatHistory ?? copilotMessages,
+        },
         lastScanAt: new Date().toISOString(),
       });
     } catch (e) {
@@ -400,15 +453,20 @@ function ScanLandingContent() {
     const query = (customPrompt || copilotInput).trim();
     if (!query || copilotLoading) return;
 
-    setCopilotMessages((prev) => [...prev, { sender: "user", text: query }]);
+    const nextMessages: ChatMessage[] = [...copilotMessages, { sender: "user", text: query }];
+    setCopilotMessages(nextMessages);
     if (!customPrompt) setCopilotInput("");
     setCopilotLoading(true);
 
     try {
-      const promptContext = `Target hiện tại: ${target || "findproject.vercel.app"}. Context kết quả scan: ${rawActionAdvice || "Chưa có khuyến nghị."}. Câu hỏi của tôi: ${query}`;
+      const promptContext = `Target: ${target || "findproject.vercel.app"}. Context kết quả scan: ${rawActionAdvice || "Chưa có khuyến nghị."}. Câu hỏi của tôi: ${query}`;
       const res = await copilotChat(promptContext);
       const answerText = safeString(res.copilot_response);
-      setCopilotMessages((prev) => [...prev, { sender: "copilot", text: answerText }]);
+      const finalMessages: ChatMessage[] = [...nextMessages, { sender: "copilot", text: answerText }];
+      setCopilotMessages(finalMessages);
+
+      // Lưu lịch sử chat vào session
+      await persistScanSummary("COMPLETED", { chatHistory: finalMessages });
     } catch (err) {
       setCopilotMessages((prev) => [
         ...prev,
@@ -437,9 +495,9 @@ function ScanLandingContent() {
                   Hệ thống quét an ninh tự động hóa đa tầng và trợ lý ảo AI bảo vệ ứng dụng.
                 </CardDescription>
               </div>
-              {jobId ? (
+              {projectId ? (
                 <Badge className="border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 font-mono" variant="muted">
-                  Job ID: {jobId.slice(0, 8)}...
+                  Phiên: {projectId.slice(0, 12)}...
                 </Badge>
               ) : null}
             </div>
@@ -453,9 +511,9 @@ function ScanLandingContent() {
                 <div className="relative">
                   <Globe className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"/>
                   <Input
-                    onChange={(e) => setTarget(e.target.value)}
                     value={target}
-                    placeholder="[https://example.com](https://example.com) hoặc domain.vn"
+                    onChange={(e) => setTarget(e.target.value)}
+                    placeholder="https://example.com hoặc domain.vn"
                     disabled={isScanning}
                     className="h-12 pl-11 pr-4 border-slate-700 bg-slate-950/80 text-white placeholder:text-slate-500 focus:border-cyan-500 text-sm"
                   />
@@ -472,7 +530,6 @@ function ScanLandingContent() {
                       variant={tier === t ? "default" : "outline"}
                       disabled={isScanning}
                       onClick={() => setTier(t)}
-
                       className={
                         tier === t
                           ? "h-12 border border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium hover:bg-cyan-500/30"
@@ -646,7 +703,7 @@ function ScanLandingContent() {
                         <Button
                           onClick={() =>
                             handleCopilotSend(
-                              `Hãy hướng dẫn chi tiết cách thực hiện hành động này: "${adv.rootCause}"`,
+                              `Hãy hướng dẫn chi tiết cách thực hiện hành động này: "${adv.rootCause}"`
                             )
                           }
                           size="sm"
@@ -719,14 +776,13 @@ function ScanLandingContent() {
                     </div>
                   </div>
                   <Button
-                    onClick={() => router.push(`/copilot?target=${encodeURIComponent(target)}`)}
+                    onClick={() => setIsChatExpanded(true)}
                     size="sm"
                     type="button"
                     variant="outline"
-
                     className="h-7 text-[11px] border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white"
                   >
-                    Mở rộng <ArrowRight className="ml-1 h-3 w-3"/>
+                    <Maximize2 className="mr-1 h-3 w-3"/> Mở rộng
                   </Button>
                 </div>
               </CardHeader>
@@ -783,9 +839,8 @@ function ScanLandingContent() {
                 {/* Ô Nhập Tin Nhắn */}
                 <div className="flex gap-2 pt-1">
                   <Input
-                    onChange={(e) => setCopilotInput(e.target.value)}
                     value={copilotInput}
-
+                    onChange={(e) => setCopilotInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
                     placeholder="Hỏi cách vá lỗi, kiểm tra bảo mật..."
                     className="h-10 text-xs border-slate-700 bg-slate-950 text-white placeholder:text-slate-500 focus:border-cyan-500"
@@ -803,6 +858,81 @@ function ScanLandingContent() {
             </Card>
           </div>
         </div>
+
+        {/* 4. MODAL CHAT FULLSCREEN MỞ RỘNG (GIỮ NGUYÊN 100% NGỮ CẢNH VÀ DỮ LIỆU) */}
+        {isChatExpanded && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
+            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setIsChatExpanded(false)} />
+            <div className="relative z-10 flex flex-col h-full max-h-[90vh] w-full max-w-5xl rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-800 p-4 bg-slate-950">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                    <Bot className="h-5 w-5"/>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-base">ADQ Security Copilot — Full Workspace</h3>
+                    <p className="text-xs text-slate-400">Target: {target || "Chưa có"} | Phiên: {projectId || "Tạm thời"}</p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setIsChatExpanded(false)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                  className="border-slate-800 text-slate-300"
+                >
+                  <Minimize2 className="mr-1.5 h-4 w-4"/> Thu nhỏ
+                </Button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-950/60">
+                {copilotMessages.map((m, idx) => (
+                  <div key={idx} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-[85%] rounded-2xl p-4 text-sm ${
+                        m.sender === "user"
+                          ? "bg-cyan-600 text-white rounded-br-none shadow-md"
+                          : "bg-slate-900 border border-slate-800 rounded-bl-none shadow-md"
+                      }`}
+                    >
+                      {m.sender === "copilot" ? (
+                        <FormattedAiMessage text={m.text} />
+                      ) : (
+                        <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {copilotLoading ? (
+                  <div className="flex justify-start">
+                    <div className="rounded-2xl rounded-bl-none border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400 flex items-center gap-2">
+                      <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400"/>
+                      Copilot đang suy nghĩ...
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
+                <Input
+                  value={copilotInput}
+                  onChange={(e) => setCopilotInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
+                  placeholder="Nhập câu hỏi hoặc yêu cầu sinh mã khắc phục..."
+                  className="h-12 border-slate-800 bg-slate-900 text-white"
+                />
+                <Button
+                  onClick={() => handleCopilotSend()}
+                  type="button"
+                  disabled={copilotLoading || !copilotInput.trim()}
+                  className="h-12 px-6 bg-cyan-600 hover:bg-cyan-500 text-white"
+                >
+                  <Send className="h-4 w-4"/>
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardShell>
   );
