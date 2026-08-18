@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import uuid
@@ -56,14 +57,12 @@ class ScanService:
             "status": "QUEUED",
         }
         JOBS_STORAGE[job_id] = job_data
-
         if redis_client:
             try:
                 redis_client.rpush("scan_queue", json.dumps(job_data))
                 redis_client.set(f"job_meta:{job_id}", json.dumps(job_data), ex=86400)
             except Exception as exc:
                 print(f"[ScanService] Redis queue push error: {exc}")
-
         return job_data
 
     @staticmethod
@@ -91,10 +90,6 @@ class ScanService:
         return job_data
 
     @staticmethod
-    def list_scans() -> List[Dict[str, Any]]:
-        return []
-
-    @staticmethod
     def copilot_chat(req: CopilotChatRequest) -> Dict[str, Any]:
         try:
             try:
@@ -110,15 +105,68 @@ class ScanService:
                 text = str(raw_res)
             return {"copilot_response": text}
         except Exception:
-            return {"copilot_response": "Không thể kết nối máy chủ AI. Khuyến nghị kiểm tra SSL/TLS và giới hạn tốc độ yêu cầu."}
+            return {"copilot_response": "Không thể kết nối máy chủ AI lúc này."}
 
     @staticmethod
-    def copilot_analyze(req: CopilotAnalyzeRequest) -> Dict[str, Any]:
-        return {"job_id": req.job_id, "analysis": "Hệ thống đang phân tích chi tiết phiên quét."}
+    def discover_endpoints(target_url: str) -> Dict[str, Any]:
+        """Tự động cào và bóc tách toàn bộ API Routes & Endpoints của mục tiêu"""
+        target = target_url.strip()
+        if not target.startswith("http"):
+            target = f"https://{target}"
 
-    @staticmethod
-    def copilot_patch(req: CopilotPatchRequest) -> Dict[str, Any]:
-        return {"patch_result": "// Patch snippet\napp.use(rateLimit({ windowMs: 60 * 1000, max: 100 }));"}
+        discovered: List[str] = [target]
+        base_clean = target.rstrip("/")
+
+        # 1. Quét robots.txt & sitemap.xml
+        for path in ["/robots.txt", "/sitemap.xml"]:
+            try:
+                req = urllib.request.Request(f"{base_clean}{path}", headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    content = resp.read().decode("utf-8", errors="ignore")
+                    for line in content.splitlines():
+                        if "Disallow:" in line or "Allow:" in line:
+                            p = line.split(":", 1)[1].strip()
+                            if p and p != "/" and not p.startswith("*"):
+                                full_p = f"{base_clean}{p}"
+                                if full_p not in discovered:
+                                    discovered.append(full_p)
+            except Exception:
+                pass
+
+        # 2. Quét mã nguồn HTML trang chủ & trích xuất API routes
+        try:
+            req = urllib.request.Request(base_clean, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                html_body = resp.read().decode("utf-8", errors="ignore")
+                
+                # Tìm các href & src
+                links = re.findall(r'(?:href|src|action)=["\'](/[^"\'>\s]+)["\']', html_body)
+                # Tìm các endpoint API dạng /api/... trong JS scripts
+                api_calls = re.findall(r'["\'](/api/[a-zA-Z0-9_\-\/]+)["\']', html_body)
+                
+                all_found = list(set(links + api_calls))
+                for link in all_found:
+                    if any(link.endswith(ext) for ext in [".css", ".png", ".jpg", ".svg", ".ico", ".woff", ".woff2"]):
+                        continue
+                    full_endpoint = f"{base_clean}{link}"
+                    if full_endpoint not in discovered and len(discovered) < 25:
+                        discovered.append(full_endpoint)
+        except Exception:
+            pass
+
+        # 3. Dự đoán các endpoint bảo mật phổ biến
+        common_probes = ["/api/auth/login", "/api/v1/user", "/api/health", "/login", "/register", "/dashboard"]
+        for cp in common_probes:
+            full_probe = f"{base_clean}{cp}"
+            if full_probe not in discovered and len(discovered) < 20:
+                discovered.append(full_probe)
+
+        return {
+            "ok": True,
+            "target": target,
+            "total_found": len(discovered),
+            "endpoints": discovered
+        }
 
     @staticmethod
     def detect_waf(req: WafDetectRequest) -> Dict[str, Any]:
@@ -128,7 +176,7 @@ class ScanService:
 
         headers_detected = {}
         detected_waf = "standard"
-        waf_name = "Không phát hiện WAF biên (Standard Nginx/Apache)"
+        waf_name = "Standard Origin (Nginx / Cloud Linux)"
         bypass_suggestions = {}
 
         try:
@@ -144,39 +192,47 @@ class ScanService:
         except Exception:
             pass
 
-        # Phân tích chữ ký WAF
-        h_str = json.dumps(headers_detected)
-        if "cf-ray" in headers_detected or "cloudflare" in headers_detected.get("server", "").lower():
+        server_header = headers_detected.get("server", "").lower()
+
+        if "cf-ray" in headers_detected or "cloudflare" in server_header:
             detected_waf = "cloudflare"
             waf_name = "Cloudflare Edge Security / WAF"
             bypass_suggestions = {
-                "headers": {"CF-Access-Client-Id": "", "CF-Access-Client-Secret": ""},
-                "cookies": {"cf_clearance": ""},
+                "header_key": "CF-Access-Client-Id",
+                "header_value": "",
+                "cookie_key": "cf_clearance",
+                "cookie_value": "",
                 "note": "Cần cấu hình Service Token hoặc Cookie cf_clearance nếu có quyền truy cập Staging."
             }
-        elif "x-vercel-id" in headers_detected or "vercel" in headers_detected.get("server", "").lower():
+        elif "x-vercel-id" in headers_detected or "vercel" in server_header:
             detected_waf = "vercel"
             waf_name = "Vercel Edge Network / Deployment Protection"
             bypass_suggestions = {
-                "headers": {"x-vercel-protection-bypass": "", "x-vercel-set-bypass-cookie": "true"},
-                "cookies": {},
-                "note": "Sử dụng Vercel Protection Bypass Secret được cấp trong Project Settings > Deployment Protection."
+                "header_key": "x-vercel-protection-bypass",
+                "header_value": "",
+                "cookie_key": "x-vercel-set-bypass-cookie",
+                "cookie_value": "true",
+                "note": "Sử dụng Bypass Secret cấp trong Project Settings > Deployment Protection trên Vercel."
             }
-        elif "x-amz-cf-id" in headers_detected or "awselb" in headers_detected.get("server", "").lower():
+        elif "x-amz-cf-id" in headers_detected or "awselb" in server_header:
             detected_waf = "awswaf"
-            waf_name = "AWS WAF / CloudFront"
+            waf_name = "AWS WAF / Amazon CloudFront"
             bypass_suggestions = {
-                "headers": {"x-api-key": "", "X-Forwarded-For": "127.0.0.1"},
-                "cookies": {},
-                "note": "Sử dụng API Key hoặc Whitelisted Header cho môi trường staging AWS."
+                "header_key": "x-api-key",
+                "header_value": "",
+                "cookie_key": "",
+                "cookie_value": "",
+                "note": "Cung cấp Header x-api-key hoặc token xác thực môi trường nội bộ."
             }
-        elif "nginx" in headers_detected.get("server", "").lower():
+        elif "nginx" in server_header:
             detected_waf = "nginx"
-            waf_name = "Nginx ngx_http_limit_req / Rate Limiter"
+            waf_name = "Nginx ngx_http_limit_req (Rate Limiting)"
             bypass_suggestions = {
-                "headers": {"X-Forwarded-For": "192.168.1.1", "X-Real-IP": "192.168.1.1"},
-                "cookies": {},
-                "note": "Kiểm tra xem Nginx có tin cậy header X-Forwarded-For để tính toán Rate Limit hay không."
+                "header_key": "X-Forwarded-For",
+                "header_value": "127.0.0.1",
+                "cookie_key": "",
+                "cookie_value": "",
+                "note": "Kích hoạt chế độ xoay tua IP Multi-Header Spoofing để kiểm thử vượt Rate Limit."
             }
 
         return {
@@ -184,7 +240,6 @@ class ScanService:
             "target_url": target,
             "detected_waf": detected_waf,
             "waf_name": waf_name,
-            "headers_snippet": {k: headers_detected[k] for k in list(headers_detected.keys())[:8]},
             "bypass_suggestions": bypass_suggestions,
         }
 
@@ -210,7 +265,3 @@ class ScanService:
             return {"ok": True, "result": result}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Stress test execution failed: {str(exc)}")
-
-    @staticmethod
-    def run_apk_audit(req: ApkRequest) -> Dict[str, Any]:
-        return {"result": {"ok": True}}

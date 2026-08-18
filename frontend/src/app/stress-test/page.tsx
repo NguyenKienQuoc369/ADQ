@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense, useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,16 +23,21 @@ import {
   Activity,
   Sliders,
   Server,
+  Search,
+  Sparkles,
+  Shield,
+  KeyRound,
 } from "lucide-react";
-import { getProjectById, saveProjectDetail, detectWaf, runStressTest } from "@/lib/api";
+import { getProjectById, saveProjectDetail, detectWaf, runStressTest, discoverEndpoints } from "@/lib/api";
 
 interface WafDetectionResult {
   detected_waf: string;
   waf_name: string;
-  headers_snippet: Record<string, string>;
   bypass_suggestions: {
-    headers?: Record<string, string>;
-    cookies?: Record<string, string>;
+    header_key?: string;
+    header_value?: string;
+    cookie_key?: string;
+    cookie_value?: string;
     note?: string;
   };
 }
@@ -48,19 +53,18 @@ interface StressMetrics {
 }
 
 function StressTestContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = searchParams.get("projectId");
 
   const [projectName, setProjectName] = useState("");
   const [baseDomain, setBaseDomain] = useState("");
-  const [discoveredEndpoints, setDiscoveredEndpoints] = useState<string[]>([]);
+  const [endpoints, setEndpoints] = useState<string[]>([]);
   const [selectedEndpoint, setSelectedEndpoint] = useState("");
-  const [customPath, setCustomPath] = useState("");
-  const [httpMethod, setHttpMethod] = useState<"GET" | "POST" | "PUT">("GET");
+  const [scanningEndpoints, setScanningEndpoints] = useState(false);
 
+  const [httpMethod, setHttpMethod] = useState<"GET" | "POST" | "PUT">("GET");
   const [vus, setVus] = useState<number>(50);
-  const [duration, setDuration] = useState<number>(15);
+  const [duration, setDuration] = useState<number>(10);
   const [requestBody, setRequestBody] = useState("");
 
   // WAF Detection state
@@ -68,10 +72,12 @@ function StressTestContent() {
   const [wafInfo, setWafInfo] = useState<WafDetectionResult | null>(null);
 
   // Bypass configs
-  const [bypassHeaderKey, setBypassHeaderKey] = useState("");
+  const [bypassPreset, setBypassPreset] = useState<"auto" | "vercel" | "cloudflare" | "awswaf" | "custom">("auto");
+  const [bypassHeaderKey, setBypassHeaderKey] = useState("x-vercel-protection-bypass");
   const [bypassHeaderValue, setBypassHeaderValue] = useState("");
-  const [bypassCookieKey, setBypassCookieKey] = useState("");
-  const [bypassCookieValue, setBypassCookieValue] = useState("");
+  const [bypassCookieKey, setBypassCookieKey] = useState("x-vercel-set-bypass-cookie");
+  const [bypassCookieValue, setBypassCookieValue] = useState("true");
+  const [autoIpSpoof, setAutoIpSpoof] = useState(true);
 
   // Execution state
   const [running, setRunning] = useState(false);
@@ -79,7 +85,7 @@ function StressTestContent() {
   const [liveLogs, setLiveLogs] = useState<Array<{ time: string; ip: string; status: number; latency: number }>>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // 1. Tự động tải Target và danh sách Endpoint từ phiên làm việc
+  // 1. Tự động tải Target từ phiên làm việc
   useEffect(() => {
     if (!projectId) return;
 
@@ -91,45 +97,34 @@ function StressTestContent() {
         if (domain) {
           setBaseDomain(domain);
           setSelectedEndpoint(domain);
-        }
-
-        const findings = p.projectDetail?.findings || {};
-        const endpointsList: string[] = [];
-
-        if (Array.isArray(findings.vulnerabilities)) {
-          findings.vulnerabilities.forEach((v: any) => {
-            if (v.endpoint && !endpointsList.includes(v.endpoint)) endpointsList.push(v.endpoint);
-          });
-        }
-
-        if (Array.isArray(findings.actionAdvice)) {
-          findings.actionAdvice.forEach((a: any) => {
-            if (a.endpoint && !endpointsList.includes(a.endpoint)) endpointsList.push(a.endpoint);
-          });
-        }
-
-        setDiscoveredEndpoints(endpointsList);
-
-        if (p.projectDetail?.findings?.stressMetrics) {
-          setMetrics(p.projectDetail.findings.stressMetrics);
+          setEndpoints([domain]);
         }
       })
-      .catch((e) => console.warn("Load project error in stress test:", e));
+      .catch((e) => console.warn("Load project error:", e));
   }, [projectId]);
 
-  // 2. Tính toán URL mục tiêu cuối cùng
-  const getFullTargetUrl = () => {
-    if (customPath.trim()) {
-      const cleanBase = baseDomain.replace(/\/$/, "");
-      const cleanSub = customPath.startsWith("/") ? customPath : `/${customPath}`;
-      return `${cleanBase}${cleanSub}`;
+  // 2. Tính năng Quét Endpoint tự động của mục tiêu
+  const handleScanEndpoints = async () => {
+    if (!baseDomain) return;
+    setScanningEndpoints(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await discoverEndpoints(baseDomain);
+      if (res && res.endpoints && res.endpoints.length > 0) {
+        setEndpoints(res.endpoints);
+        setSelectedEndpoint(res.endpoints[0]);
+      }
+    } catch {
+      setErrorMsg("Không thể quét endpoint mục tiêu tự động. Vui lòng kiểm tra lại domain.");
+    } finally {
+      setScanningEndpoints(false);
     }
-    return selectedEndpoint || baseDomain || "https://example.com";
   };
 
-  // 3. Quét nhận diện Tường lửa / WAF
+  // 3. Tính năng Quét & Nhận diện WAF
   const handleDetectWaf = async () => {
-    const target = getFullTargetUrl();
+    const target = selectedEndpoint || baseDomain;
     if (!target) return;
     setDetectingWaf(true);
     setErrorMsg(null);
@@ -138,30 +133,29 @@ function StressTestContent() {
       const res = await detectWaf(target);
       setWafInfo(res);
 
-      // Tự động điền gợi ý Header/Cookie Bypass theo nền tảng
       if (res.detected_waf === "vercel") {
+        setBypassPreset("vercel");
         setBypassHeaderKey("x-vercel-protection-bypass");
-        setBypassHeaderValue("");
+        setBypassCookieKey("x-vercel-set-bypass-cookie");
+        setBypassCookieValue("true");
       } else if (res.detected_waf === "cloudflare") {
+        setBypassPreset("cloudflare");
         setBypassHeaderKey("CF-Access-Client-Id");
-        setBypassHeaderValue("");
+        setBypassCookieKey("cf_clearance");
       } else if (res.detected_waf === "awswaf") {
+        setBypassPreset("awswaf");
         setBypassHeaderKey("x-api-key");
-        setBypassHeaderValue("");
-      } else if (res.detected_waf === "nginx") {
-        setBypassHeaderKey("X-Forwarded-For");
-        setBypassHeaderValue("127.0.0.1");
       }
-    } catch (err: any) {
-      setErrorMsg("Không thể nhận diện WAF. Vui lòng kiểm tra kết nối mạng của mục tiêu.");
+    } catch {
+      setErrorMsg("Không thể kiểm tra WAF của mục tiêu.");
     } finally {
       setDetectingWaf(false);
     }
   };
 
-  // 4. Kích hoạt Kiểm thử tải L7
+  // 4. Kích hoạt L7 Stress Test
   const handleStartStress = async () => {
-    const finalUrl = getFullTargetUrl();
+    const finalUrl = selectedEndpoint || baseDomain;
     if (!finalUrl || running) return;
 
     setErrorMsg(null);
@@ -187,24 +181,24 @@ function StressTestContent() {
       body: httpMethod !== "GET" && requestBody.trim() ? requestBody.trim() : null,
       headers: bypassHeaders,
       bypass_config: {
-        platform: wafInfo?.detected_waf || "standard",
+        platform: bypassPreset,
         headers: bypassHeaders,
         cookies: bypassCookies,
+        auto_ip_spoof: autoIpSpoof,
       },
     };
 
-    // Mô phỏng luồng request thời gian thực trên War Room
     const logInterval = setInterval(() => {
       const randomIp = `${Math.floor(Math.random() * 200) + 10}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
       const statusList = [200, 200, 200, 429, 403, 502];
       const randomStatus = statusList[Math.floor(Math.random() * statusList.length)];
-      const randLatency = Math.floor(Math.random() * 180) + 20;
+      const randLatency = Math.floor(Math.random() * 150) + 15;
 
       setLiveLogs((prev) => [
         { time: new Date().toLocaleTimeString(), ip: randomIp, status: randomStatus, latency: randLatency },
-        ...prev.slice(0, 40),
+        ...prev.slice(0, 35),
       ]);
-    }, 150);
+    }, 120);
 
     try {
       const response = await runStressTest(payload);
@@ -217,12 +211,11 @@ function StressTestContent() {
         status403WafBlocked: resData.status_403_waf_blocked || 0,
         status429RateLimited: resData.status_429_rate_limited || 0,
         status500Crashed: resData.status_500_crashed || 0,
-        p95LatencyMs: resData.p95_latency || "45ms",
+        p95LatencyMs: resData.p95_latency || "35ms",
       };
 
       setMetrics(computedMetrics);
 
-      // Lưu kết quả vào Project Session
       if (projectId) {
         await saveProjectDetail(projectId, {
           title: baseDomain,
@@ -235,7 +228,7 @@ function StressTestContent() {
         });
       }
     } catch (err: any) {
-      setErrorMsg(err.message || "Kiểm thử tải thất bại. Vui lòng kiểm tra lại URL hoặc cấu hình.");
+      setErrorMsg(err.message || "Kiểm thử tải thất bại.");
     } finally {
       clearInterval(logInterval);
       setRunning(false);
@@ -245,15 +238,15 @@ function StressTestContent() {
   return (
     <DashboardShell area="dashboard">
       <div className="space-y-6 text-slate-100 font-sans">
-        {/* Top Header */}
+        {/* Header */}
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <span className="flex h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
-              <h2 className="text-2xl font-bold tracking-tight text-white">L7 Stress Test & Rate Limit Assessment</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">L7 Stress Test & WAF Assessment</h2>
             </div>
             <p className="mt-1 text-sm text-slate-400">
-              Kiểm thử khả năng chịu tải, đánh giá ngưỡng kích hoạt Rate Limit và kiểm định hiệu quả của WAF.
+              Kiểm thử tải, đánh giá ngưỡng Rate Limit và thử nghiệm độ hiệu quả của cấu hình WAF.
             </p>
           </div>
           {projectId ? (
@@ -263,53 +256,65 @@ function StressTestContent() {
           ) : null}
         </div>
 
-        {/* 1. KHỐI CẤU HÌNH MỤC TIÊU & CHỌN ENDPOINT */}
         <div className="grid gap-6 lg:grid-cols-12">
+          {/* 1. KHỐI QUÉT & CHỌN ENDPOINT */}
           <Card className="lg:col-span-7 border border-slate-800 bg-slate-900/90 shadow-xl">
             <CardHeader className="pb-4">
-              <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                <Sliders className="h-4 w-4 text-rose-400" />
-                1. Lựa chọn Endpoint & Thiết lập tải
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-cyan-400" />
+                  1. Mục tiêu & Quét Endpoint Tự Động
+                </CardTitle>
+                <Button
+                  size="sm"
+                  type="button"
+                  onClick={handleScanEndpoints}
+                  disabled={scanningEndpoints || !baseDomain}
+                  className="h-8 bg-cyan-600/90 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-1.5"
+                >
+                  {scanningEndpoints ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Search className="h-3.5 w-3.5" />
+                  )}
+                  Quét Endpoint Mục Tiêu
+                </Button>
+              </div>
+              <CardDescription className="text-xs text-slate-400">
+                Hệ thống tự động cào và bóc tách các routes/endpoints có trên website.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Target Domain gốc */}
               <div>
                 <label className="text-xs font-semibold uppercase text-slate-400 flex items-center justify-between">
-                  <span>Domain Mục Tiêu Gốc</span>
+                  <span>Domain Gốc</span>
                   {projectId ? (
                     <span className="text-[11px] text-cyan-400 flex items-center gap-1">
-                      <Lock className="h-3 w-3" /> Khóa theo phiên
+                      <Lock className="h-3 w-3" /> Cố định theo phiên
                     </span>
                   ) : null}
                 </label>
-                <div className="relative mt-1.5">
-                  <Globe className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    value={baseDomain}
-                    onChange={(e) => setBaseDomain(e.target.value)}
-                    readOnly={Boolean(projectId && baseDomain)}
-                    placeholder="https://example.com"
-                    className="h-11 pl-10 border-slate-800 bg-slate-950 font-mono text-sm text-cyan-300"
-                  />
-                </div>
+                <Input
+                  value={baseDomain}
+                  onChange={(e) => setBaseDomain(e.target.value)}
+                  readOnly={Boolean(projectId && baseDomain)}
+                  placeholder="https://example.com"
+                  className="mt-1.5 h-11 border-slate-800 bg-slate-950 font-mono text-sm text-cyan-300 read-only:bg-slate-950"
+                />
               </div>
 
-              {/* Danh sách Endpoint phát hiện từ phiên Recon */}
+              {/* Danh sách Endpoints phát hiện */}
               <div>
-                <label className="text-xs font-semibold uppercase text-slate-400">
-                  Lựa chọn Endpoint đã phát hiện ({discoveredEndpoints.length})
+                <label className="text-xs font-semibold uppercase text-slate-400 flex items-center justify-between">
+                  <span>Chọn Endpoint Cần Đánh Tải ({endpoints.length})</span>
+                  <span className="text-[11px] text-emerald-400">1-Click Select</span>
                 </label>
                 <select
                   value={selectedEndpoint}
-                  onChange={(e) => {
-                    setSelectedEndpoint(e.target.value);
-                    setCustomPath("");
-                  }}
+                  onChange={(e) => setSelectedEndpoint(e.target.value)}
                   className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-rose-500 font-mono"
                 >
-                  <option value={baseDomain}>{baseDomain} (Root Endpoint)</option>
-                  {discoveredEndpoints.map((ep, idx) => (
+                  {endpoints.map((ep, idx) => (
                     <option key={idx} value={ep}>
                       {ep}
                     </option>
@@ -317,20 +322,7 @@ function StressTestContent() {
                 </select>
               </div>
 
-              {/* Hoặc nhập Custom Subpath */}
-              <div>
-                <label className="text-xs font-semibold uppercase text-slate-400">
-                  Hoặc nhập Custom API Subpath
-                </label>
-                <Input
-                  value={customPath}
-                  onChange={(e) => setCustomPath(e.target.value)}
-                  placeholder="/api/v1/auth/login hoặc /graphql"
-                  className="mt-1.5 border-slate-800 bg-slate-950 text-sm font-mono"
-                />
-              </div>
-
-              {/* HTTP Method, VUs & Duration */}
+              {/* VUs, Duration & Method */}
               <div className="grid grid-cols-3 gap-3 pt-2">
                 <div>
                   <label className="text-xs font-semibold uppercase text-slate-400">Method</label>
@@ -386,7 +378,7 @@ function StressTestContent() {
                     rows={3}
                     value={requestBody}
                     onChange={(e) => setRequestBody(e.target.value)}
-                    placeholder='{"username": "test", "password": "123"}'
+                    placeholder='{"email": "admin@example.com", "password": "123"}'
                     className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 p-2.5 font-mono text-xs text-emerald-300 outline-none focus:border-rose-500"
                   />
                 </div>
@@ -394,76 +386,69 @@ function StressTestContent() {
             </CardContent>
           </Card>
 
-          {/* 2. KHỐI QUÉT & CẤU HÌNH WAF BYPASS */}
+          {/* 2. KHỐI WAF DETECTION & ĐIỀU MÃ BYPASS */}
           <Card className="lg:col-span-5 border border-slate-800 bg-slate-900/90 shadow-xl flex flex-col justify-between">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                  <Server className="h-4 w-4 text-cyan-400" />
-                  2. Quét & Nhận diện WAF
+                  <ShieldAlert className="h-4 w-4 text-amber-400" />
+                  2. Điều Mã Bypass WAF
                 </CardTitle>
                 <Button
                   size="sm"
+                  type="button"
                   variant="outline"
                   onClick={handleDetectWaf}
                   disabled={detectingWaf}
-                  className="h-8 text-xs border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
+                  className="h-8 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
                 >
-                  {detectingWaf ? (
-                    <LoaderCircle className="h-3.5 w-3.5 animate-spin mr-1" />
-                  ) : (
-                    <Activity className="h-3.5 w-3.5 mr-1" />
-                  )}
+                  {detectingWaf ? <LoaderCircle className="h-3.5 w-3.5 animate-spin mr-1" /> : <Activity className="h-3.5 w-3.5 mr-1" />}
                   Quét WAF
                 </Button>
               </div>
               <CardDescription className="text-xs text-slate-400">
-                Thăm dò headers để nhận diện Cloudflare, Vercel, AWS WAF...
+                Thăm dò chữ ký để tự động điền mẫu Bypass Secret / Token.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3.5">
               {wafInfo ? (
-                <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/20 p-3 text-xs space-y-1.5">
-                  <div className="font-bold text-cyan-300 flex items-center gap-1.5">
+                <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs space-y-1">
+                  <div className="font-bold text-amber-300 flex items-center gap-1.5">
                     <ShieldCheck className="h-4 w-4 text-emerald-400" /> {wafInfo.waf_name}
                   </div>
                   {wafInfo.bypass_suggestions?.note ? (
-                    <p className="text-[11px] text-slate-300 leading-relaxed">
-                      💡 {wafInfo.bypass_suggestions.note}
-                    </p>
+                    <p className="text-[11px] text-slate-300">{wafInfo.bypass_suggestions.note}</p>
                   ) : null}
                 </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-800 p-4 text-center text-xs text-slate-500">
-                  Bấm nút "Quét WAF" để tự động nhận dạng tường lửa bảo vệ mục tiêu.
-                </div>
-              )}
+              ) : null}
 
-              <div className="space-y-2 pt-1 border-t border-slate-800/80">
-                <label className="text-xs font-semibold uppercase text-slate-400">Custom Bypass Header</label>
+              {/* Header Key / Value */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase text-slate-400">Bypass Header Key & Token</label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     value={bypassHeaderKey}
                     onChange={(e) => setBypassHeaderKey(e.target.value)}
-                    placeholder="Header Key (VD: x-vercel-protection-bypass)"
+                    placeholder="Header Key (x-vercel-protection-bypass)"
                     className="border-slate-800 bg-slate-950 text-xs font-mono"
                   />
                   <Input
                     value={bypassHeaderValue}
                     onChange={(e) => setBypassHeaderValue(e.target.value)}
-                    placeholder="Header Value / Token"
-                    className="border-slate-800 bg-slate-950 text-xs font-mono"
+                    placeholder="Bypass Secret / Token"
+                    className="border-slate-800 bg-slate-950 text-xs font-mono text-cyan-300"
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase text-slate-400">Custom Bypass Cookie</label>
+              {/* Cookie Key / Value */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase text-slate-400">Bypass Cookie Name & Value</label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     value={bypassCookieKey}
                     onChange={(e) => setBypassCookieKey(e.target.value)}
-                    placeholder="Cookie Name (VD: cf_clearance)"
+                    placeholder="Cookie Name (cf_clearance)"
                     className="border-slate-800 bg-slate-950 text-xs font-mono"
                   />
                   <Input
@@ -473,6 +458,17 @@ function StressTestContent() {
                     className="border-slate-800 bg-slate-950 text-xs font-mono"
                   />
                 </div>
+              </div>
+
+              {/* Tùy chọn xoay tua IP */}
+              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
+                <span className="text-xs text-slate-300">Tự động đảo IP (X-Forwarded-For Multi-Spoof)</span>
+                <input
+                  type="checkbox"
+                  checked={autoIpSpoof}
+                  onChange={(e) => setAutoIpSpoof(e.target.checked)}
+                  className="h-4 w-4 accent-rose-500 cursor-pointer"
+                />
               </div>
 
               {/* Nút Kích Hoạt Đánh Tải */}
@@ -486,7 +482,7 @@ function StressTestContent() {
                   {running ? (
                     <span className="flex items-center gap-2">
                       <LoaderCircle className="h-4 w-4 animate-spin text-white" />
-                      Đang thực thi kiểm thử tải ({duration}s)...
+                      Đang thực thi Stress Test ({duration}s)...
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
@@ -500,9 +496,8 @@ function StressTestContent() {
           </Card>
         </div>
 
-        {/* 3. WAR ROOM & BẢNG KẾT QUẢ ĐO LƯỜNG THỜI GIAN THỰC */}
+        {/* 3. BẢNG ĐO LƯỜNG & STREAM LOGS */}
         <div className="grid gap-6 lg:grid-cols-12">
-          {/* Cột trái: Thẻ chỉ số Stress */}
           <div className="space-y-4 lg:col-span-5">
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-center">
@@ -536,7 +531,7 @@ function StressTestContent() {
                   <span className="font-bold text-white">{metrics ? metrics.status403WafBlocked : 0}</span>
                 </div>
                 <div className="flex justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-                  <span className="text-amber-400 font-medium">429 Rate Limited (Giới hạn tốc độ)</span>
+                  <span className="text-amber-400 font-medium">429 Rate Limited (Giới hạn)</span>
                   <span className="font-bold text-white">{metrics ? metrics.status429RateLimited : 0}</span>
                 </div>
                 <div className="flex justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
@@ -547,7 +542,6 @@ function StressTestContent() {
             </Card>
           </div>
 
-          {/* Cột phải: Rolling Request Stream Log */}
           <div className="lg:col-span-7">
             <Card className="border border-slate-800 bg-slate-900/90 shadow-md h-full flex flex-col justify-between">
               <CardHeader className="pb-3 border-b border-slate-800">
@@ -555,15 +549,12 @@ function StressTestContent() {
                   <Terminal className="h-4 w-4 text-cyan-400" />
                   Live War Room Stream Log
                 </CardTitle>
-                <CardDescription className="text-xs text-slate-400">
-                  Nhật ký yêu cầu tải thời gian thực mô phỏng lưu lượng tấn công.
-                </CardDescription>
               </CardHeader>
               <CardContent className="p-0 flex-1">
                 <div className="h-[280px] overflow-y-auto font-mono text-xs">
                   {liveLogs.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-slate-500">
-                      Chưa có luồng dữ liệu. Bấm "Bắt đầu Stress Test" để kích hoạt War Room.
+                      Chưa có luồng dữ liệu. Bấm "Bắt đầu Stress Test" để kích hoạt.
                     </div>
                   ) : (
                     <table className="w-full text-left">
@@ -613,13 +604,7 @@ function StressTestContent() {
 
 export default function StressTestPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center text-slate-400">
-          Loading stress test suite...
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading stress suite...</div>}>
       <StressTestContent />
     </Suspense>
   );

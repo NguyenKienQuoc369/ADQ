@@ -634,3 +634,10 @@ export async function runStressTest(payload: any) {
     body: JSON.stringify(payload),
   });
 }
+
+export async function discoverEndpoints(targetUrl: string) {
+  return requestJson<{ ok: boolean; target: string; total_found: number; endpoints: string[] }>("/api/stress/discover-endpoints", {
+    method: "POST",
+    body: JSON.stringify({ target_url: targetUrl }),
+  });
+}
