@@ -79,6 +79,7 @@ function FormattedAiMessage({ text }: { text: string }) {
               <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/90 px-3 py-1.5 text-xs text-slate-400">
                 <span className="font-mono font-medium text-cyan-400">{lang || "snippet"}</span>
                 <button
+                  type="button"
                   onClick={() => copyToClipboard(code)}
                   className="flex items-center gap-1 rounded bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300 hover:bg-slate-700 hover:text-white transition"
                 >
@@ -480,7 +481,7 @@ function ScanLandingContent() {
                 </div>
               )}
 
-              <Button className="h-11 px-6 rounded-xl font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled="{!target.trim()" isScanning} onClick="{startScan}" ||>
+              <Button className="h-11 px-6 rounded-xl font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled="{!target.trim()" isScanning} onClick="{startScan}" type="button" ||>
                 {isScanning ? (
                   <span className="flex items-center gap-2">
                     <LoaderCircle className="h-4 w-4 animate-spin text-white"/>
@@ -613,7 +614,7 @@ function ScanLandingContent() {
                         <div className="flex-1 text-xs text-slate-200 leading-5">
                           {adv.rootCause}
                         </div>
-                        <Button onClick="{()" size="sm" variant="ghost"> handleCopilotSend(`Hãy hướng dẫn chi tiết cách thực hiện hành động này: "${adv.rootCause}"`)}
+                        <Button onClick="{()" size="sm" type="button" variant="ghost"> handleCopilotSend(`Hãy hướng dẫn chi tiết cách thực hiện hành động này: "${adv.rootCause}"`)}
                           className="shrink-0 h-7 text-[11px] text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10"
                         >
                           Hỏi AI <ArrowRight className="ml-1 h-3 w-3"/>
@@ -680,7 +681,7 @@ function ScanLandingContent() {
                       </div>
                     </div>
                   </div>
-                  <Button onClick="{()" size="sm" variant="outline"> router.push(`/copilot?target=${encodeURIComponent(target)}`)}
+                  <Button onClick="{()" size="sm" type="button" variant="outline"> router.push(`/copilot?target=${encodeURIComponent(target)}`)}
                     className="h-7 text-[11px] border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white"
                   >
                     Mở rộng <ArrowRight className="ml-1 h-3 w-3"/>
@@ -763,7 +764,11 @@ function ScanLandingContent() {
 
 export default function ScanLandingPage() {
   return (
-    <Suspense className="flex min-h-screen items-center justify-center text-slate-400" fallback="{<div">Loading scan pipeline...</div>}>
+    <Suspense <div className="flex min-h-screen items-center justify-center text-slate-400" fallback="{">
+          Loading scan pipeline...
+        </div>
+      }
+    >
       <ScanLandingContent/>
     </Suspense>
   );
