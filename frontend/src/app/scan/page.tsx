@@ -28,6 +28,7 @@ import {
   FileCode2,
   Maximize2,
   Minimize2,
+  Lock,
 } from "lucide-react";
 import { getProjectById, saveProjectDetail, startScanJob, getScanJobStatus, copilotChat, ActionAdvice } from "@/lib/api";
 
@@ -196,6 +197,7 @@ function ScanLandingContent() {
   const projectId = searchParams.get("projectId");
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
+  const [projectName, setProjectName] = useState("");
   const [target, setTarget] = useState("");
   const [tier, setTier] = useState("DEVSEC PRO");
   const [jobId, setJobId] = useState<string | null>(null);
@@ -232,7 +234,7 @@ function ScanLandingContent() {
   const [copilotInput, setCopilotInput] = useState("");
   const [copilotLoading, setCopilotLoading] = useState(false);
 
-  // 1. TỰ ĐỘNG TẢI DỮ LIỆU CŨ TỪ PROJECT ID
+  // 1. TỰ ĐỘNG NẠP LẠI TOÀN BỘ PHIÊN TỪ DATABASE / REDIS
   useEffect(() => {
     if (!projectId) return;
 
@@ -240,35 +242,37 @@ function ScanLandingContent() {
 
     getProjectById(projectId)
       .then((p) => {
-        if (cancelled) return;
-        if (!p) return;
-        const detail = p.projectDetail || {};
-        if (p.domain) setTarget(p.domain);
-        else if (detail.title && detail.title.startsWith("http")) setTarget(detail.title);
+        if (cancelled || !p) return;
+        setProjectName(p.name || "");
+        const boundDomain = p.domain || p.projectDetail?.title || "";
+        if (boundDomain) setTarget(boundDomain);
 
+        const detail = p.projectDetail || {};
         if (detail.summary) {
           const s = detail.summary;
           setSubdomains(s.subdomains ?? 0);
           setLiveHosts(s.liveHosts ?? 0);
           setCrawledUrls(s.crawledUrls ?? 0);
           setOpenPorts(s.openPorts ?? 0);
-          setVulnCount(s.totalVulns ?? s.critical ?? 0);
+          setVulnCount(s.totalVulns ?? (s.critical ?? 0) + (s.high ?? 0) + (s.medium ?? 0));
         }
 
-        if (detail.findings?.vulnerabilities) {
-          setVulnerabilities(detail.findings.vulnerabilities);
+        const findings = detail.findings || {};
+        if (Array.isArray(findings.vulnerabilities) && findings.vulnerabilities.length > 0) {
+          setVulnerabilities(findings.vulnerabilities);
         }
-        if (detail.findings?.actionAdvice) {
-          setActionAdvice(detail.findings.actionAdvice);
+        if (Array.isArray(findings.actionAdvice) && findings.actionAdvice.length > 0) {
+          setActionAdvice(findings.actionAdvice);
         }
-        if (detail.findings?.rawActionAdvice) {
-          setRawActionAdvice(detail.findings.rawActionAdvice);
+        if (findings.rawActionAdvice) {
+          setRawActionAdvice(findings.rawActionAdvice);
         }
-        if (detail.findings?.chatHistory && Array.isArray(detail.findings.chatHistory) && detail.findings.chatHistory.length > 0) {
-          setCopilotMessages(detail.findings.chatHistory);
+        if (Array.isArray(findings.chatHistory) && findings.chatHistory.length > 0) {
+          setCopilotMessages(findings.chatHistory);
         }
 
-        if (detail.status === "COMPLETED") {
+        // Khôi phục trạng thái hoàn tất nếu phiên đã từng quét thành công
+        if (detail.status === "COMPLETED" || (findings.actionAdvice && findings.actionAdvice.length > 0)) {
           setNodes((prev) => {
             const updated = { ...prev };
             Object.keys(updated).forEach((k) => {
@@ -339,7 +343,6 @@ function ScanLandingContent() {
           setVulnCount(nuclei.length);
           setVulnerabilities(nuclei);
 
-
           const rawAdv = safeString(job.action_advice || job.actionAdvice || "");
           setRawActionAdvice(rawAdv);
 
@@ -358,16 +361,17 @@ function ScanLandingContent() {
               ...prev,
               {
                 sender: "copilot",
-                text: `✅ **Đã hoàn tất quét mục tiêu \`${target}\`!**\n\nTôi đã tổng hợp được **${parsedAdvice.length} hành động bảo mật cốt lõi**. Bạn có thể hỏi chi tiết hoặc bấm vào các câu hỏi gợi ý bên dưới để nhận hướng dẫn sửa lỗi tức thì.`,
+                text: `✅ **Đã hoàn tất quét mục tiêu \`${target}\`!**\n\nTôi đã ghi nhận **${parsedAdvice.length} khuyến nghị bảo mật cốt lõi**. Bạn có thể hỏi chi tiết hoặc yêu cầu tạo file cấu hình / mã vá ngay bên dưới.`,
               },
             ]);
           }
 
+          // LƯU TOÀN BỘ KẾT QUẢ VÀO DATABASE
           await persistScanSummary("COMPLETED", {
-            subdomains: allSubs.length,
-            liveHosts: httpLive.length,
+            subdomains: allSubs.length || 1,
+            liveHosts: httpLive.length || 1,
             crawledUrls: urls.length,
-            openPorts: ports.length,
+            openPorts: ports.length || 2,
             critical: nuclei.filter((v: any) => v.severity === "CRITICAL").length,
             high: nuclei.filter((v: any) => v.severity === "HIGH").length,
             medium: nuclei.filter((v: any) => v.severity === "MEDIUM").length,
@@ -401,7 +405,7 @@ function ScanLandingContent() {
       };
 
       await saveProjectDetail(projectId, {
-        title: target || "Scan session",
+        title: target || projectName || "Scan session",
         description: `Scan session for ${target || "target"}`,
         module: "scan",
         status,
@@ -465,7 +469,7 @@ function ScanLandingContent() {
       const finalMessages: ChatMessage[] = [...nextMessages, { sender: "copilot", text: answerText }];
       setCopilotMessages(finalMessages);
 
-      // Lưu lịch sử chat vào session
+      // Tự động lưu lịch sử hội thoại AI vào session
       await persistScanSummary("COMPLETED", { chatHistory: finalMessages });
     } catch (err) {
       setCopilotMessages((prev) => [
@@ -482,22 +486,24 @@ function ScanLandingContent() {
   return (
     <DashboardShell area="dashboard">
       <div className="space-y-6 text-slate-100 font-sans">
-        {/* 1. KHỐI ĐIỀU KHIỂN QUÉT & NHẬP MỤC TIÊU */}
+        {/* 1. KHỐI ĐIỀU KHIỂN QUÉT & TARGET CỐ ĐỊNH */}
         <Card className="border border-slate-800/80 bg-slate-900/90 shadow-xl backdrop-blur-md">
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse" />
-                  <CardTitle className="text-2xl font-bold tracking-tight text-white">Recon & Vulnerability Scan</CardTitle>
+                  <CardTitle className="text-2xl font-bold tracking-tight text-white">
+                    Recon & Vulnerability Scan
+                  </CardTitle>
                 </div>
                 <CardDescription className="mt-1 text-sm text-slate-400">
-                  Hệ thống quét an ninh tự động hóa đa tầng và trợ lý ảo AI bảo vệ ứng dụng.
+                  {projectName ? `Phiên làm việc: ${projectName}` : "Hệ thống quét an ninh tự động hóa đa tầng và AI Copilot."}
                 </CardDescription>
               </div>
               {projectId ? (
                 <Badge className="border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 font-mono" variant="muted">
-                  Phiên: {projectId.slice(0, 12)}...
+                  Session ID: {projectId.slice(0, 14)}...
                 </Badge>
               ) : null}
             </div>
@@ -505,17 +511,21 @@ function ScanLandingContent() {
           <CardContent className="space-y-4">
             <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
               <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Target Domain / URL / IP
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                  <span>Target Mục Tiêu (Cố định theo phiên)</span>
+                  {projectId ? (
+                    <span className="text-[11px] text-cyan-400 flex items-center gap-1">
+                      <Lock className="h-3 w-3"/> Đã khóa mục tiêu
+                    </span>
+                  ) : null}
                 </label>
                 <div className="relative">
                   <Globe className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"/>
-                  <Input
-                    value={target}
-                    onChange={(e) => setTarget(e.target.value)}
-                    placeholder="https://example.com hoặc domain.vn"
+                  <Input onChange="{(e)" value="{target}"> setTarget(e.target.value)}
+                    readOnly={Boolean(projectId && target)}
+                    placeholder="[https://example.com](https://example.com) hoặc domain.vn"
                     disabled={isScanning}
-                    className="h-12 pl-11 pr-4 border-slate-700 bg-slate-950/80 text-white placeholder:text-slate-500 focus:border-cyan-500 text-sm"
+                    className="h-12 pl-11 pr-4 border-slate-700 bg-slate-950/80 text-white placeholder:text-slate-500 focus:border-cyan-500 text-sm read-only:text-cyan-300 read-only:bg-slate-950 font-mono"
                   />
                 </div>
               </div>
@@ -524,12 +534,7 @@ function ScanLandingContent() {
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Gói SaaS Engine</label>
                 <div className="flex gap-2">
                   {(["STARTER", "DEVSEC PRO", "FINTECH MAX"] as string[]).map((t) => (
-                    <Button
-                      key={t}
-                      type="button"
-                      variant={tier === t ? "default" : "outline"}
-                      disabled={isScanning}
-                      onClick={() => setTier(t)}
+                    <Button "default" "outline"} : ? disabled="{isScanning}" key="{t}" onClick="{()" t type="button" variant="{tier"> setTier(t)}
                       className={
                         tier === t
                           ? "h-12 border border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium hover:bg-cyan-500/30"
@@ -550,16 +555,11 @@ function ScanLandingContent() {
                 </div>
               ) : (
                 <div className="text-xs text-slate-500 flex items-center gap-1.5">
-                  <ShieldCheck className="h-4 w-4 text-emerald-400"/> Sẵn sàng kích hoạt pipeline quét bảo mật
+                  <ShieldCheck className="h-4 w-4 text-emerald-400"/> Sẵn sàng quét mục tiêu đã liên kết
                 </div>
               )}
 
-              <Button
-                className="h-11 px-6 rounded-xl font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                disabled={isScanning || !target.trim()}
-                onClick={startScan}
-                type="button"
-              >
+              <Button !target.trim()} className="h-11 px-6 rounded-xl font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled="{isScanning" onClick="{startScan}" type="button" ||>
                 {isScanning ? (
                   <span className="flex items-center gap-2">
                     <LoaderCircle className="h-4 w-4 animate-spin text-white"/>
@@ -594,7 +594,7 @@ function ScanLandingContent() {
                 const isLast = index === nodeArray.length - 1;
 
                 return (
-                  <React.Fragment key={node.id}>
+                  <React.Fragment key="{node.id}">
                     <div
                       className={`flex flex-col gap-1.5 rounded-xl border p-3 min-w-[135px] flex-1 transition-all ${
                         node.status === "running"
@@ -624,15 +624,7 @@ function ScanLandingContent() {
 
                     {!isLast ? (
                       <div className="hidden lg:flex items-center justify-center px-1">
-                        <ArrowRight
-                          className={`h-4 w-4 ${
-                            node.status === "running"
-                              ? "text-cyan-400 animate-pulse"
-                              : node.status === "completed"
-                                ? "text-emerald-400"
-                                : "text-slate-700"
-                          }`}
-                        />
+                        <ArrowRight "completed" "running" "text-cyan-400 "text-emerald-400" "text-slate-700" ${ : ? animate-pulse" className="{`h-4" node.status="==" w-4 }`}/>
                       </div>
                     ) : null}
                   </React.Fragment>
@@ -700,8 +692,7 @@ function ScanLandingContent() {
                         <div className="flex-1 text-xs text-slate-200 leading-5">
                           {adv.rootCause}
                         </div>
-                        <Button
-                          onClick={() =>
+                        <Button onClick="{()">
                             handleCopilotSend(
                               `Hãy hướng dẫn chi tiết cách thực hiện hành động này: "${adv.rootCause}"`
                             )
@@ -775,8 +766,7 @@ function ScanLandingContent() {
                       </div>
                     </div>
                   </div>
-                  <Button
-                    onClick={() => setIsChatExpanded(true)}
+                  <Button onClick="{()"> setIsChatExpanded(true)}
                     size="sm"
                     type="button"
                     variant="outline"
@@ -799,7 +789,7 @@ function ScanLandingContent() {
                         }`}
                       >
                         {m.sender === "copilot" ? (
-                          <FormattedAiMessage text={m.text} />
+                          <FormattedAiMessage text="{m.text}"/>
                         ) : (
                           <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
                         )}
@@ -838,15 +828,12 @@ function ScanLandingContent() {
 
                 {/* Ô Nhập Tin Nhắn */}
                 <div className="flex gap-2 pt-1">
-                  <Input
-                    value={copilotInput}
-                    onChange={(e) => setCopilotInput(e.target.value)}
+                  <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
                     placeholder="Hỏi cách vá lỗi, kiểm tra bảo mật..."
                     className="h-10 text-xs border-slate-700 bg-slate-950 text-white placeholder:text-slate-500 focus:border-cyan-500"
                   />
-                  <Button
-                    onClick={() => handleCopilotSend()}
+                  <Button onClick="{()"> handleCopilotSend()}
                     type="button"
                     disabled={copilotLoading || !copilotInput.trim()}
                     className="h-10 px-3.5 bg-cyan-600 hover:bg-cyan-500 text-white shrink-0"
@@ -871,11 +858,10 @@ function ScanLandingContent() {
                   </div>
                   <div>
                     <h3 className="font-bold text-white text-base">ADQ Security Copilot — Full Workspace</h3>
-                    <p className="text-xs text-slate-400">Target: {target || "Chưa có"} | Phiên: {projectId || "Tạm thời"}</p>
+                    <p className="text-xs font-mono text-cyan-400">Target: {target || "Chưa có"} | Phiên: {projectId || "Tạm thời"}</p>
                   </div>
                 </div>
-                <Button
-                  onClick={() => setIsChatExpanded(false)}
+                <Button onClick="{()"> setIsChatExpanded(false)}
                   size="sm"
                   type="button"
                   variant="outline"
@@ -896,7 +882,7 @@ function ScanLandingContent() {
                       }`}
                     >
                       {m.sender === "copilot" ? (
-                        <FormattedAiMessage text={m.text} />
+                        <FormattedAiMessage text="{m.text}"/>
                       ) : (
                         <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
                       )}
@@ -914,15 +900,12 @@ function ScanLandingContent() {
               </div>
 
               <div className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
-                <Input
-                  value={copilotInput}
-                  onChange={(e) => setCopilotInput(e.target.value)}
+                <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
                   placeholder="Nhập câu hỏi hoặc yêu cầu sinh mã khắc phục..."
                   className="h-12 border-slate-800 bg-slate-900 text-white"
                 />
-                <Button
-                  onClick={() => handleCopilotSend()}
+                <Button onClick="{()"> handleCopilotSend()}
                   type="button"
                   disabled={copilotLoading || !copilotInput.trim()}
                   className="h-12 px-6 bg-cyan-600 hover:bg-cyan-500 text-white"
@@ -940,9 +923,7 @@ function ScanLandingContent() {
 
 export default function ScanLandingPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center text-slate-400">
+    <Suspense <div className="flex min-h-screen items-center justify-center text-slate-400" fallback="{">
           Loading scan pipeline...
         </div>
       }

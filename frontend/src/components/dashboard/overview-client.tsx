@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Trash2, X, Play, Shield, Smartphone, Zap, Plus } from "lucide-react";
+import { AlertTriangle, Trash2, X, Play, Shield, Smartphone, Zap, Plus, Globe } from "lucide-react";
 
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +23,6 @@ export function OverviewClient() {
   const [newProjectDraft, setNewProjectDraft] = useState({
     name: "",
     projectInfo: "",
-    password: "",
     domain: "",
   });
 
@@ -34,7 +33,7 @@ export function OverviewClient() {
     let active = true;
 
     Promise.all([getDashboardOverview(), getProjects()])
-      .then(([overviewRes, projectsRes]) => {
+      .then(([_, projectsRes]) => {
         if (!active) return;
         setProjects(projectsRes || []);
       })
@@ -58,7 +57,7 @@ export function OverviewClient() {
       await deleteProject(projectToDelete.id);
       setProjects((prev) => (prev ? prev.filter((item) => item.id !== projectToDelete.id) : prev));
       setProjectToDelete(null);
-    } catch (err) {
+    } catch {
       alert("Không thể xóa phiên làm việc.");
     } finally {
       setDeleting(false);
@@ -66,11 +65,13 @@ export function OverviewClient() {
   };
 
   const handleCreateNewProject = async (module: "scan" | "apk-audit" | "stress-test") => {
+    const rawTarget = newProjectDraft.domain.trim();
+    const formattedDomain = /^https?:\/\//i.test(rawTarget) ? rawTarget : `https://${rawTarget}`;
+
     const payload = {
-      name: newProjectDraft.name.trim() || "Phiên quét mới",
-      domain: newProjectDraft.domain.trim() || undefined,
+      name: newProjectDraft.name.trim() || newProjectDraft.domain.trim(),
+      domain: formattedDomain,
       description: newProjectDraft.projectInfo.trim(),
-      password: newProjectDraft.password.trim(),
       module,
     };
 
@@ -78,8 +79,8 @@ export function OverviewClient() {
       const project = await createProject(payload);
       setShowNewProject(false);
       setNewProjectStep("setup");
-      setNewProjectDraft({ name: "", projectInfo: "", password: "", domain: "" });
-      
+      setNewProjectDraft({ name: "", projectInfo: "", domain: "" });
+
       const targetRoute = module === "scan" ? "/scan" : module === "apk-audit" ? "/apk-audit" : "/stress-test";
       router.push(`${targetRoute}?projectId=${encodeURIComponent(project.id)}`);
     } catch (err) {
@@ -114,7 +115,7 @@ export function OverviewClient() {
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-white">Quản lý Phiên Quét & Dự Án</h2>
             <p className="text-sm text-slate-400">
-              Tất cả kết quả phân tích, lỗ hổng và lịch sử hội thoại AI được lưu trữ theo từng phiên làm việc.
+              Mỗi phiên quét gắn liền với một Target cố định, lưu trữ vĩnh viễn lỗ hổng và toàn bộ lịch sử chat với AI.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -174,7 +175,7 @@ export function OverviewClient() {
                           </div>
                           <div>
                             <p className="font-bold text-white line-clamp-1">{p.name || p.domain || p.id}</p>
-                            <p className="text-xs text-slate-400 line-clamp-1">{p.domain || detail.title || "Chưa gắn target"}</p>
+                            <p className="text-xs font-mono text-cyan-400/90 line-clamp-1">{p.domain || "Chưa gắn target"}</p>
                           </div>
                         </div>
 
@@ -193,14 +194,16 @@ export function OverviewClient() {
                           <div className="text-sm font-bold text-rose-400">{summary.critical ?? 0}</div>
                         </div>
                         <div>
-                          <div className="text-[10px] text-slate-500">High/Med</div>
+                          <div className="text-[10px] text-slate-500">Lỗ hổng</div>
                           <div className="text-sm font-bold text-amber-400">
-                            {(summary.high ?? 0) + (summary.medium ?? 0)}
+                            {summary.totalVulns ?? (summary.critical ?? 0) + (summary.high ?? 0) + (summary.medium ?? 0)}
                           </div>
                         </div>
                         <div>
-                          <div className="text-[10px] text-slate-500">Risk Score</div>
-                          <div className="text-sm font-bold text-cyan-300">{detail.riskScore ?? 0}</div>
+                          <div className="text-[10px] text-slate-500">Trạng thái</div>
+                          <div className="text-xs font-bold text-emerald-400 mt-0.5">
+                            {detail.status === "COMPLETED" ? "Đã quét" : "Đang chờ"}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -245,11 +248,11 @@ export function OverviewClient() {
               </div>
               <h3 className="mt-4 text-center text-lg font-bold text-white">Xóa phiên làm việc này?</h3>
               <p className="mt-2 text-center text-xs text-slate-400">
-                Toàn bộ dữ liệu phân tích, lỗ hổng và lịch sử hội thoại AI của phiên{" "}
+                Toàn bộ kết quả quét, lỗ hổng và lịch sử hội thoại AI của phiên{" "}
                 <span className="font-semibold text-slate-200">
                   {projectToDelete.name || projectToDelete.domain || projectToDelete.id}
                 </span>{" "}
-                sẽ bị xóa vĩnh viễn khỏi Database.
+                sẽ bị xóa vĩnh viễn.
               </p>
               <div className="mt-6 flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setProjectToDelete(null)} disabled={deleting}>
@@ -263,14 +266,14 @@ export function OverviewClient() {
           </div>
         )}
 
-        {/* Modal Tạo Phiên Làm Việc Mới (2 Bước) */}
+        {/* Modal Tạo Phiên Làm Việc Mới */}
         {showNewProject && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setShowNewProject(false)} />
             <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <h3 className="text-lg font-bold text-white">
-                  {newProjectStep === "setup" ? "Bước 1: Thông tin phiên làm việc" : "Bước 2: Chọn tính năng quét"}
+                  {newProjectStep === "setup" ? "Bước 1: Thiết lập Target cố định cho phiên" : "Bước 2: Chọn module kiểm thử"}
                 </h3>
                 <button
                   onClick={() => setShowNewProject(false)}
@@ -283,30 +286,37 @@ export function OverviewClient() {
               {newProjectStep === "setup" ? (
                 <div className="mt-4 space-y-4">
                   <div>
-                    <label className="text-xs font-semibold uppercase text-slate-400">Tên phiên làm việc / Dự án</label>
+                    <label className="text-xs font-semibold uppercase text-slate-400 flex items-center gap-1">
+                      <Globe className="h-3.5 w-3.5 text-cyan-400" /> Target Domain / URL / IP (Bắt buộc)
+                    </label>
+                    <Input
+                      value={newProjectDraft.domain}
+                      onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, domain: e.target.value }))}
+                      placeholder="https://findproject.vercel.app hoặc example.com"
+                      className="mt-1.5 border-slate-800 bg-slate-950 text-white placeholder:text-slate-600"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Mục tiêu này sẽ được gắn cố định với phiên quét để đảm bảo dữ liệu và AI phân tích đồng nhất.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold uppercase text-slate-400">Tên phiên quét (Tùy chọn)</label>
                     <Input
                       value={newProjectDraft.name}
                       onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, name: e.target.value }))}
                       placeholder="VD: Kiểm thử Web Portal Quý 3"
-                      className="mt-1.5 border-slate-800 bg-slate-950 text-white"
+                      className="mt-1.5 border-slate-800 bg-slate-950 text-white placeholder:text-slate-600"
                     />
                   </div>
+
                   <div>
-                    <label className="text-xs font-semibold uppercase text-slate-400">Target / Domain mặc định</label>
-                    <Input
-                      value={newProjectDraft.domain}
-                      onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, domain: e.target.value }))}
-                      placeholder="https://example.com"
-                      className="mt-1.5 border-slate-800 bg-slate-950 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold uppercase text-slate-400">Ghi chú / Mô tả ngắn</label>
+                    <label className="text-xs font-semibold uppercase text-slate-400">Mô tả / Ghi chú</label>
                     <Input
                       value={newProjectDraft.projectInfo}
                       onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, projectInfo: e.target.value }))}
-                      placeholder="Mục tiêu kiểm thử, phạm vi IP..."
-                      className="mt-1.5 border-slate-800 bg-slate-950 text-white"
+                      placeholder="Phạm vi kiểm thử, ghi chú..."
+                      className="mt-1.5 border-slate-800 bg-slate-950 text-white placeholder:text-slate-600"
                     />
                   </div>
 
@@ -316,8 +326,8 @@ export function OverviewClient() {
                     </Button>
                     <Button
                       onClick={() => setNewProjectStep("module")}
-                      disabled={!newProjectDraft.name.trim()}
-                      className="bg-cyan-600 hover:bg-cyan-500 text-white"
+                      disabled={!newProjectDraft.domain.trim()}
+                      className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold"
                     >
                       Tiếp tục chọn module →
                     </Button>
