@@ -234,7 +234,6 @@ function ScanLandingContent() {
   const [copilotInput, setCopilotInput] = useState("");
   const [copilotLoading, setCopilotLoading] = useState(false);
 
-  // 1. TỰ ĐỘNG NẠP LẠI TOÀN BỘ PHIÊN TỪ DATABASE / REDIS
   useEffect(() => {
     if (!projectId) return;
 
@@ -271,7 +270,6 @@ function ScanLandingContent() {
           setCopilotMessages(findings.chatHistory);
         }
 
-        // Khôi phục trạng thái hoàn tất nếu phiên đã từng quét thành công
         if (detail.status === "COMPLETED" || (findings.actionAdvice && findings.actionAdvice.length > 0)) {
           setNodes((prev) => {
             const updated = { ...prev };
@@ -293,7 +291,6 @@ function ScanLandingContent() {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages, copilotLoading]);
 
-  // 2. POLLING QUÉT
   useEffect(() => {
     if (!jobId || !isScanning) return;
 
@@ -366,7 +363,6 @@ function ScanLandingContent() {
             ]);
           }
 
-          // LƯU TOÀN BỘ KẾT QUẢ VÀO DATABASE
           await persistScanSummary("COMPLETED", {
             subdomains: allSubs.length || 1,
             liveHosts: httpLive.length || 1,
@@ -389,7 +385,6 @@ function ScanLandingContent() {
     return () => clearInterval(interval);
   }, [jobId, isScanning, target]);
 
-  // 3. LƯU TIẾN TRÌNH VÀ LỊCH SỬ CHAT VÀO DATABASE
   const persistScanSummary = async (status: string, overrides?: any) => {
     if (!projectId) return;
     try {
@@ -469,9 +464,8 @@ function ScanLandingContent() {
       const finalMessages: ChatMessage[] = [...nextMessages, { sender: "copilot", text: answerText }];
       setCopilotMessages(finalMessages);
 
-      // Tự động lưu lịch sử hội thoại AI vào session
       await persistScanSummary("COMPLETED", { chatHistory: finalMessages });
-    } catch (err) {
+    } catch {
       setCopilotMessages((prev) => [
         ...prev,
         { sender: "copilot", text: "Xin lỗi, không thể kết nối tới Copilot AI lúc này. Vui lòng kiểm tra lại kết nối mạng." },
@@ -486,7 +480,6 @@ function ScanLandingContent() {
   return (
     <DashboardShell area="dashboard">
       <div className="space-y-6 text-slate-100 font-sans">
-        {/* 1. KHỐI ĐIỀU KHIỂN QUÉT & TARGET CỐ ĐỊNH */}
         <Card className="border border-slate-800/80 bg-slate-900/90 shadow-xl backdrop-blur-md">
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -576,7 +569,6 @@ function ScanLandingContent() {
           </CardContent>
         </Card>
 
-        {/* 2. SƠ ĐỒ TIẾN TRÌNH QUÉT ĐA TẦNG VỚI MŨI TÊN (DAG) */}
         <Card className="border border-slate-800/80 bg-slate-900/90 shadow-md">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
@@ -634,11 +626,8 @@ function ScanLandingContent() {
           </CardContent>
         </Card>
 
-        {/* 3. BỐ CỤC 2 CỘT: KẾT QUẢ QUÉT (TRÁI) & COPILOT AI (PHẢI) */}
         <div className="grid gap-6 lg:grid-cols-12">
-          {/* CỘT TRÁI: KẾT QUẢ & ACTION ADVICE */}
           <div className="space-y-6 lg:col-span-7">
-            {/* 4 Thẻ Đo Lường Nhanh */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-center">
                 <div className="text-xs text-slate-400">Subdomains</div>
@@ -658,7 +647,6 @@ function ScanLandingContent() {
               </div>
             </div>
 
-            {/* Khối AI Action Advice */}
             <Card className="border border-slate-800 bg-slate-900/90 shadow-md">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -713,13 +701,12 @@ function ScanLandingContent() {
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500">
-                    Chưa có khuyến nghị bảo mật nào. Hãy nhập mục tiêu và bấm "Bắt đầu quét" để nhận phân tích.
+                    Chưa có khuyến nghị bảo mật nào. Hãy bấm "Bắt đầu quét" để nhận phân tích.
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Danh sách Lỗ hổng */}
             <Card className="border border-slate-800 bg-slate-900/90 shadow-md">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
@@ -749,7 +736,6 @@ function ScanLandingContent() {
             </Card>
           </div>
 
-          {/* CỘT PHẢI: TRỢ LÝ COPILOT CHAT */}
           <div className="lg:col-span-5">
             <Card className="flex flex-col h-full border border-slate-800/80 bg-slate-900/90 shadow-xl">
               <CardHeader className="pb-3 border-b border-slate-800/80">
@@ -808,7 +794,6 @@ function ScanLandingContent() {
                   <div ref={chatBottomRef} />
                 </div>
 
-                {/* Gợi Ý Nhanh */}
                 <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/60">
                   <button
                     type="button"
@@ -826,7 +811,6 @@ function ScanLandingContent() {
                   </button>
                 </div>
 
-                {/* Ô Nhập Tin Nhắn */}
                 <div className="flex gap-2 pt-1">
                   <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
@@ -846,7 +830,6 @@ function ScanLandingContent() {
           </div>
         </div>
 
-        {/* 4. MODAL CHAT FULLSCREEN MỞ RỘNG (GIỮ NGUYÊN 100% NGỮ CẢNH VÀ DỮ LIỆU) */}
         {isChatExpanded && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
             <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setIsChatExpanded(false)} />
