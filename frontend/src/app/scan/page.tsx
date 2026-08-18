@@ -772,7 +772,11 @@ function ScanLandingContent() {
 
 export default function ScanLandingPage() {
   return (
-    <Suspense className="flex min-h-screen items-center justify-center text-slate-400" fallback="{<div">Loading scan pipeline...</div>}>
+    <Suspense <div className="flex min-h-screen items-center justify-center text-slate-400" fallback="{">
+          Loading scan pipeline...
+        </div>
+      }
+    >
       <ScanLandingContent/>
     </Suspense>
   );
