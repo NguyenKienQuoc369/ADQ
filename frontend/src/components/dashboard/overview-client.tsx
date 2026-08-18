@@ -217,25 +217,37 @@ export function OverviewClient() {
         
         {/* Priority list, current status, and recent activity removed per request */}
         {projectToDelete && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center">
-            <div className="absolute inset-0 bg-slate-950/55 backdrop-blur-[2px]" onClick={() => setProjectToDelete(null)} />
-            <div className="relative z-[70] w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/10">
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
-                  <AlertTriangle className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-slate-900">Xóa dự án?</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Bạn đang xóa dự án <span className="font-semibold text-slate-800">{projectToDelete.name ?? projectToDelete.domain ?? projectToDelete.id}</span>.
-                    Hành động này sẽ xoá dữ liệu dự án khỏi database và không thể hoàn tác.
-                  </p>
+          <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+            <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px]" onClick={() => setProjectToDelete(null)} />
+            <div className="relative z-[70] w-full max-w-xl rounded-[28px] border border-[color:var(--line)] bg-[color:var(--background-elevated)] p-6 shadow-[0_25px_80px_rgba(2,6,23,0.9)]">
+              <div className="flex items-center justify-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-rose-400/30 bg-rose-500/10 text-rose-400 shadow-[0_0_25px_rgba(251,113,133,0.15)]">
+                  <AlertTriangle className="h-7 w-7" />
                 </div>
               </div>
 
-              <div className="mt-6 flex items-center justify-end gap-3">
-                <Button variant="outline" onClick={() => setProjectToDelete(null)} disabled={deleting}>Hủy</Button>
-                <Button variant="destructive" onClick={handleDeleteProject} disabled={deleting}>
+              <div className="mt-5 text-center">
+                <h3 className="text-3xl font-semibold tracking-[-0.05em] text-[var(--foreground)]">Xóa dự án?</h3>
+                <p className="mt-3 text-base leading-7 text-[var(--foreground-muted)]">
+                  Bạn đang xóa dự án <span className="font-semibold text-[var(--foreground)]">{projectToDelete.name ?? projectToDelete.domain ?? projectToDelete.id}</span>.
+                  <span className="mt-1 block">Hành động này sẽ xoá dữ liệu dự án khỏi database và không thể hoàn tác.</span>
+                </p>
+              </div>
+
+              <div className="mt-7 flex items-center justify-center gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setProjectToDelete(null)}
+                  disabled={deleting}
+                  className="h-12 min-w-[120px] rounded-xl border border-[color:var(--line)] bg-[color:var(--background-muted)] text-[var(--foreground)] hover:bg-[color:var(--background-elevated)]"
+                >
+                  Hủy
+                </Button>
+                <Button
+                  onClick={handleDeleteProject}
+                  disabled={deleting}
+                  className="h-12 min-w-[170px] rounded-xl border border-rose-400/30 bg-rose-500/15 text-rose-300 shadow-[0_0_20px_rgba(251,113,133,0.12)] hover:bg-rose-500/20"
+                >
                   {deleting ? "Đang xóa..." : "Xác nhận xóa"}
                 </Button>
               </div>
@@ -246,21 +258,26 @@ export function OverviewClient() {
         {showNewProject && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/50" onClick={() => setShowNewProject(false)} />
-            <div className="relative z-50 w-full max-w-5xl rounded-2xl bg-[color:var(--background-elevated)] p-6">
+            <div className="relative z-50 w-full max-w-5xl rounded-2xl border border-[color:var(--line)] bg-[color:var(--background-elevated)] p-6 text-[var(--foreground)] shadow-[0_20px_60px_rgba(2,6,23,0.8)]">
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="text-2xl font-bold tracking-[-0.04em] text-slate-900">{newProjectStep === "setup" ? "Project setup" : "Select Project Type"}</h3>
+                  <h3 className="text-2xl font-bold tracking-[-0.04em] text-[var(--foreground)]">{newProjectStep === "setup" ? "Project setup" : "Select Project Type"}</h3>
                   <p className="mt-1 text-sm text-[var(--foreground-muted)]">
                     {newProjectStep === "setup"
                       ? "Điền thông tin dự án trước, sau đó chọn module phù hợp để bắt đầu."
                       : "Choose a scanning module to initiate your security assessment."}
                   </p>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => {
-                  setShowNewProject(false);
-                  setNewProjectStep("setup");
-                  setNewProjectDraft({ name: "", projectInfo: "", password: "", domain: "" });
-                }}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
+                  onClick={() => {
+                    setShowNewProject(false);
+                    setNewProjectStep("setup");
+                    setNewProjectDraft({ name: "", projectInfo: "", password: "", domain: "" });
+                  }}
+                >
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -269,7 +286,7 @@ export function OverviewClient() {
                 <div className="mt-6 grid gap-4 md:grid-cols-2">
                   <div className="space-y-4 md:col-span-2">
                     <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">Project name</label>
+                      <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Project name</label>
                       <Input
                         value={newProjectDraft.name}
                         onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, name: e.target.value }))}
@@ -277,7 +294,7 @@ export function OverviewClient() {
                       />
                     </div>
                     <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">Project info</label>
+                      <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Project info</label>
                       <Input
                         value={newProjectDraft.projectInfo}
                         onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, projectInfo: e.target.value }))}
@@ -287,7 +304,7 @@ export function OverviewClient() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">Domain / Target</label>
+                    <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Domain / Target</label>
                     <Input
                       value={newProjectDraft.domain}
                       onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, domain: e.target.value }))}
@@ -296,7 +313,7 @@ export function OverviewClient() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">Project password (optional)</label>
+                    <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Project password (optional)</label>
                     <Input
                       type="password"
                       value={newProjectDraft.password}
