@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Bot, Send, ArrowRight, CheckCircle2, LoaderCircle, Lock } from "lucide-react";
+import { Sparkles, Bot, Send, ArrowRight, CheckCircle2, LoaderCircle } from "lucide-react";
 import { saveProjectDetail, startScanJob, getScanJobStatus, copilotChat, ActionAdvice } from "@/lib/api";
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
@@ -166,8 +166,35 @@ function ScanLandingContent() {
     return () => clearInterval(interval);
   }, [jobId, isScanning]);
 
+  const persistScanSummary = async (status: string, summaryOverrides?: any) => {
+    if (!projectId) return;
+    try {
+      const summary = {
+        subdomains: Number(summaryOverrides?.subdomains ?? subdomains),
+        liveHosts: Number(summaryOverrides?.liveHosts ?? liveHosts),
+        crawledUrls: Number(summaryOverrides?.crawledUrls ?? crawledUrls),
+        openPorts: Number(summaryOverrides?.openPorts ?? openPorts),
+        critical: Number(summaryOverrides?.critical ?? vulnerabilities.filter((v) => v.severity === "CRITICAL").length),
+        high: Number(summaryOverrides?.high ?? vulnerabilities.filter((v) => v.severity === "HIGH").length),
+        medium: Number(summaryOverrides?.medium ?? vulnerabilities.filter((v) => v.severity === "MEDIUM").length),
+        totalVulns: Number(summaryOverrides?.totalVulns ?? vulnCount),
+      };
+
+      await saveProjectDetail(projectId, {
+        title: target || "Scan project",
+        description: `Scan summary for ${target || "target"}`,
+        module: "scan",
+        status,
+        riskScore: Math.min(100, summary.critical * 26 + summary.high * 12 + summary.medium * 6),
+        summary,
+        lastScanAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn("[persistScanSummary] Ignored error updating project detail:", e);
+    }
+  };
+
   const startScan = async () => {
-    // 1. Chống Spam: Nếu đang quét hoặc chưa nhập target thì dừng ngay lập tức
     if (isScanning || !target.trim()) return;
 
     setScanError(null);
@@ -218,30 +245,6 @@ function ScanLandingContent() {
   };
 
   const filteredVulns = useMemo(() => (severityFilter === 'ALL' ? vulnerabilities : vulnerabilities.filter((v) => v.severity === severityFilter)), [vulnerabilities, severityFilter]);
-
-  const persistScanSummary = async (status: string, summaryOverrides?: any) => {
-    if (!projectId) return;
-    const summary = {
-      subdomains: Number(summaryOverrides?.subdomains ?? subdomains),
-      liveHosts: Number(summaryOverrides?.liveHosts ?? liveHosts),
-      crawledUrls: Number(summaryOverrides?.crawledUrls ?? crawledUrls),
-      openPorts: Number(summaryOverrides?.openPorts ?? openPorts),
-      critical: Number(summaryOverrides?.critical ?? vulnerabilities.filter((v) => v.severity === "CRITICAL").length),
-      high: Number(summaryOverrides?.high ?? vulnerabilities.filter((v) => v.severity === "HIGH").length),
-      medium: Number(summaryOverrides?.medium ?? vulnerabilities.filter((v) => v.severity === "MEDIUM").length),
-      totalVulns: Number(summaryOverrides?.totalVulns ?? vulnCount),
-    };
-
-    await saveProjectDetail(projectId, {
-      title: target || "Scan project",
-      description: `Scan summary for ${target || "target"}`,
-      module: "scan",
-      status,
-      riskScore: Math.min(100, summary.critical * 26 + summary.high * 12 + summary.medium * 6),
-      summary,
-      lastScanAt: new Date().toISOString(),
-    });
-  };
 
   const copyToClipboard = async (text: string) => {
     try {
