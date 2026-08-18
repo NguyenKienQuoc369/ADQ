@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Bot, Send, ArrowRight, ShieldAlert, CheckCircle2, LoaderCircle } from "lucide-react";
+import { Sparkles, Bot, Send, ArrowRight, CheckCircle2, LoaderCircle, Lock } from "lucide-react";
 import { saveProjectDetail, startScanJob, getScanJobStatus, copilotChat, ActionAdvice } from "@/lib/api";
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
@@ -90,7 +90,6 @@ function ScanLandingContent() {
 
         const currentStatus = (job.status || "").toLowerCase();
         
-        // Update DAG running states
         if (currentStatus === "running" || currentStatus === "queued") {
           setNodes((n) => ({
             ...n,
@@ -105,7 +104,6 @@ function ScanLandingContent() {
           setIsScanning(false);
           clearInterval(interval);
 
-          // All nodes completed
           setNodes((n) => ({
             node_recon: { id: "node_recon", label: "Reconnaissance", status: "completed" },
             node_port_scan: { id: "node_port_scan", label: "Port Scanning", status: "completed" },
@@ -116,7 +114,6 @@ function ScanLandingContent() {
             node_logic_chain: { id: "node_logic_chain", label: "AI Action Advice", status: "completed" },
           }));
 
-          // Parse actual metrics
           const httpLive = job.subdomains?.http_live || [];
           const allSubs = job.subdomains?.all || [];
           const ports = job.highlights?.ports || [];
@@ -131,14 +128,12 @@ function ScanLandingContent() {
           setVulnCount(nuclei.length);
           setVulnerabilities(nuclei);
 
-          // Parse secrets
           setSecrets(secList.map((s: any) => ({
             type: s.type || "Hardcoded Credential",
             value: s.value || s.token || "HIDDEN_SECRET",
             source: s.source || target
           })));
 
-          // Parse Action Advice
           const rawAdv = job.action_advice || job.actionAdvice || "";
           setRawActionAdvice(typeof rawAdv === "string" ? rawAdv : JSON.stringify(rawAdv));
           
@@ -152,7 +147,6 @@ function ScanLandingContent() {
             })));
           }
 
-          // Persist summary
           await persistScanSummary("COMPLETED", {
             subdomains: allSubs.length,
             liveHosts: httpLive.length,
@@ -173,13 +167,15 @@ function ScanLandingContent() {
   }, [jobId, isScanning]);
 
   const startScan = async () => {
-    if (!target.trim()) return;
+    // 1. Chống Spam: Nếu đang quét hoặc chưa nhập target thì dừng ngay lập tức
+    if (isScanning || !target.trim()) return;
+
     setScanError(null);
     setIsScanning(true);
     setNodes((n) => ({ ...n, node_recon: { ...n.node_recon, status: "running" } }));
 
     try {
-      const data = await startScanJob(target);
+      const data = await startScanJob(target.trim());
       if (!data.ok || !data.job_id) {
         throw new Error("Không thể khởi tạo lượt quét");
       }
@@ -282,7 +278,7 @@ function ScanLandingContent() {
                   onChange={(e) => setTarget(e.target.value)}
                   placeholder="https://example.com"
                   disabled={isScanning}
-                  className="h-12 border-[color:var(--line)] bg-transparent text-[var(--foreground)] placeholder:text-[var(--foreground-muted)]"
+                  className="h-12 border-[color:var(--line)] bg-transparent text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] disabled:opacity-60 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -293,10 +289,11 @@ function ScanLandingContent() {
                     <Button
                       key={t}
                       variant={tier === t ? "default" : "outline"}
+                      disabled={isScanning}
                       onClick={() => setTier(t)}
                       className={tier === t
-                        ? "h-11 justify-center rounded-xl border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/15"
-                        : "h-11 justify-center rounded-xl border border-[color:var(--line)] bg-[color:var(--background-muted)] text-[var(--foreground)] hover:bg-[color:var(--background-elevated)]"}
+                        ? "h-11 justify-center rounded-xl border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/15 disabled:opacity-60 disabled:cursor-not-allowed"
+                        : "h-11 justify-center rounded-xl border border-[color:var(--line)] bg-[color:var(--background-muted)] text-[var(--foreground)] hover:bg-[color:var(--background-elevated)] disabled:opacity-60 disabled:cursor-not-allowed"}
                     >
                       {t}
                     </Button>
@@ -307,8 +304,19 @@ function ScanLandingContent() {
 
             <div className="flex items-center justify-between">
               {scanError ? <div className="text-sm text-rose-400">{scanError}</div> : <div />}
-              <Button onClick={startScan} disabled={!target || isScanning} className="h-11 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-5 text-cyan-100 hover:bg-cyan-500/15 disabled:opacity-50">
-                {isScanning ? <><LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Đang quét pipeline...</> : "Bắt đầu quét"}
+              <Button
+                onClick={startScan}
+                disabled={!target.trim() || isScanning}
+                className="h-11 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-5 text-cyan-100 hover:bg-cyan-500/15 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {isScanning ? (
+                  <span className="flex items-center gap-2">
+                    <LoaderCircle className="h-4 w-4 animate-spin text-cyan-300" />
+                    Đang quét pipeline (Vui lòng chờ)...
+                  </span>
+                ) : (
+                  "Bắt đầu quét"
+                )}
               </Button>
             </div>
           </CardContent>
@@ -341,7 +349,7 @@ function ScanLandingContent() {
                 >
                   <div className="flex w-full items-center justify-between gap-2">
                     <div className="text-sm font-medium text-[var(--foreground)]">{n.label}</div>
-                    <Badge className="border border-[color:var(--line)] bg-[color:var(--background-muted)] text-[10px] uppercase tracking-[0.14em] text-[var(--foreground-muted)]">
+                    <Badge variant="muted" className="border border-[color:var(--line)] bg-[color:var(--background-muted)] text-[10px] uppercase tracking-[0.14em] text-[var(--foreground-muted)]">
                       {n.status.toUpperCase()}
                     </Badge>
                   </div>
