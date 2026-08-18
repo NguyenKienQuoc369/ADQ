@@ -10,6 +10,15 @@ import { Badge } from "@/components/ui/badge";
 import { Bot, Send, Sparkles, Wrench, ShieldAlert, Check, Copy, LoaderCircle } from "lucide-react";
 import { copilotChat, copilotAnalyze, copilotPatch } from "@/lib/api";
 
+function safeString(val: any): string {
+  if (val === null || val === undefined) return "";
+  if (typeof val === "string") return val;
+  if (typeof val === "object") {
+    return val.text || val.content || val.message || JSON.stringify(val);
+  }
+  return String(val);
+}
+
 function CopilotContent() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("jobId");
@@ -21,14 +30,13 @@ function CopilotContent() {
     {
       id: "init",
       sender: "copilot",
-      text: "Xin chào! Tôi là **ADQ Security Copilot** – Trợ lý AI chuyên trách Pentest, DevSecOps và tự động sinh bản vá. Hãy chọn tác vụ nhanh hoặc đặt câu hỏi kỹ thuật bên dưới.",
+      text: "Xin chào! Tôi là ADQ Security Copilot – Trợ lý AI chuyên trách Pentest, DevSecOps và tự động sinh bản vá. Hãy chọn tác vụ nhanh hoặc đặt câu hỏi kỹ thuật bên dưới.",
     },
   ]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Tự động phân tích khi có context từ trang kết quả chuyển sang
   useEffect(() => {
     if (jobId) {
       handleAutoAnalyze(jobId);
@@ -48,7 +56,7 @@ function CopilotContent() {
       const res = await copilotAnalyze(jid);
       setMessages((s) => [
         ...s,
-        { id: id + "_r", sender: "copilot", text: res.analysis || "Đã phân tích xong dữ liệu quét." },
+        { id: id + "_r", sender: "copilot", text: safeString(res.analysis || "Đã phân tích xong dữ liệu quét.") },
       ]);
     } catch {
       setMessages((s) => [
@@ -69,13 +77,14 @@ function CopilotContent() {
     setLoading(true);
     try {
       const res = await copilotPatch({ vulnerability_type: vuln, endpoint: ep, framework: "Next.js / FastAPI" });
+      const patchStr = safeString(res.patch_result);
       setMessages((s) => [
         ...s,
         {
           id: id + "_r",
           sender: "copilot",
-          text: `Đã sinh bản vá cho **${vuln}**:\n\n\`\`\`diff\n${res.patch_result}\n\`\`\``,
-          toolResult: { type: "patch", content: res.patch_result },
+          text: `Đã sinh bản vá cho **${vuln}**:\n\n\`\`\`diff\n${patchStr}\n\`\`\``,
+          toolResult: { type: "patch", content: patchStr },
         },
       ]);
     } catch {
@@ -98,9 +107,10 @@ function CopilotContent() {
 
     try {
       const res = await copilotChat(query);
+      const answer = safeString(res.copilot_response);
       setMessages((s) => [
         ...s,
-        { id: id + "_r", sender: "copilot", text: res.copilot_response },
+        { id: id + "_r", sender: "copilot", text: answer },
       ]);
     } catch {
       setMessages((s) => [
@@ -161,7 +171,7 @@ function CopilotContent() {
                         : "bg-[color:var(--background-elevated)] border border-[color:var(--line)] text-[var(--foreground)]"
                     }`}
                   >
-                    <div className="whitespace-pre-wrap">{m.text}</div>
+                    <div className="whitespace-pre-wrap">{safeString(m.text)}</div>
 
                     {m.toolResult?.content ? (
                       <div className="mt-3 relative rounded-xl bg-slate-950 p-3 font-mono text-xs text-emerald-300 border border-slate-800">

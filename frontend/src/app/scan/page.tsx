@@ -35,6 +35,15 @@ interface DAGNodeState {
   error?: string;
 }
 
+function safeString(val: any): string {
+  if (val === null || val === undefined) return "";
+  if (typeof val === "string") return val;
+  if (typeof val === "object") {
+    return val.text || val.content || val.message || JSON.stringify(val);
+  }
+  return String(val);
+}
+
 function ScanLandingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,7 +65,7 @@ function ScanLandingContent() {
     node_logic_chain: { id: "node_logic_chain", label: "AI Action Advice", status: "pending", parentId: "node_waf_evasion" },
   });
 
-  // Metrics
+  // Real scan metrics
   const [subdomains, setSubdomains] = useState(0);
   const [liveHosts, setLiveHosts] = useState(0);
   const [crawledUrls, setCrawledUrls] = useState(0);
@@ -69,43 +78,43 @@ function ScanLandingContent() {
   const [rawActionAdvice, setRawActionAdvice] = useState<string>("");
   const [severityFilter, setSeverityFilter] = useState<SeverityLevel | 'ALL'>('ALL');
   const [secrets, setSecrets] = useState<SecretItem[]>([]);
-  const [unmasked, setUnmasked] = useState<Record<number, boolean>>({});
   const [scanError, setScanError] = useState<string | null>(null);
 
-  // Copilot Chat
+  // Quick Copilot Chat state
   const [copilotMessages, setCopilotMessages] = useState<Array<{ sender: "user" | "copilot"; text: string }>>([
-    { sender: "copilot", text: "Xin chào! Tôi là ADQ Copilot. Sau khi hoàn tất quét mục tiêu, bạn có thể hỏi tôi cách khai thác hoặc tạo mã vá tự động." }
+    { sender: "copilot", text: "Xin chào! Tôi là ADQ Copilot. Hãy hỏi tôi về phân tích bảo mật, cách kiểm tra lỗ hổng hoặc tạo bản vá." }
   ]);
   const [copilotInput, setCopilotInput] = useState("");
   const [copilotLoading, setCopilotLoading] = useState(false);
 
-  // Polling loop
+  // Polling loop when a job is active
   useEffect(() => {
     if (!jobId || !isScanning) return;
 
-    let pollCount = 0;
+    let tick = 0;
     const interval = setInterval(async () => {
-      pollCount++;
+      tick++;
       try {
         const res = await getScanJobStatus(jobId);
         const job = res?.job || res || {};
         const currentStatus = String(job.status || "").toLowerCase();
 
-        // Cập nhật hoạt ảnh DAG theo tiến độ thời gian thực
-        if (currentStatus === "running" || currentStatus === "queued" || pollCount > 1) {
+        // 1. Tiến độ DAG chạy song song
+        if (currentStatus === "running" || currentStatus === "queued") {
           setNodes((n) => ({
             ...n,
             node_recon: { ...n.node_recon, status: "completed" },
-            node_port_scan: { ...n.node_port_scan, status: pollCount > 2 ? "completed" : "running" },
-            node_crawl_gau: { ...n.node_crawl_gau, status: pollCount > 4 ? "completed" : "running" },
-            node_vuln_nuclei: { ...n.node_vuln_nuclei, status: pollCount > 6 ? "completed" : "running" },
-            node_js_secrets: { ...n.node_js_secrets, status: pollCount > 6 ? "completed" : "running" },
+            node_port_scan: { ...n.node_port_scan, status: tick > 2 ? "completed" : "running" },
+            node_crawl_gau: { ...n.node_crawl_gau, status: tick > 4 ? "completed" : "running" },
+            node_vuln_nuclei: { ...n.node_vuln_nuclei, status: tick > 6 ? "completed" : "running" },
+            node_js_secrets: { ...n.node_js_secrets, status: tick > 8 ? "completed" : "running" },
             node_waf_evasion: { ...n.node_waf_evasion, status: "running" },
             node_logic_chain: { ...n.node_logic_chain, status: "running" },
           }));
         }
 
-        if (currentStatus === "done" || currentStatus === "completed" || job.counts || job.action_advice) {
+        // 2. CHỈ KẾT THÚC KHI THỰC SỰ HOÀN TẤT
+        if (currentStatus === "done" || currentStatus === "completed") {
           setIsScanning(false);
           clearInterval(interval);
 
@@ -134,15 +143,15 @@ function ScanLandingContent() {
           setVulnerabilities(nuclei);
 
           setSecrets(secList.map((s: any) => ({
-            type: s.type || "Hardcoded Credential",
-            value: s.value || s.token || "HIDDEN_SECRET",
-            source: s.source || target
+            type: safeString(s.type || "Hardcoded Credential"),
+            value: safeString(s.value || s.token || "HIDDEN_SECRET"),
+            source: safeString(s.source || target)
           })));
 
-          const rawAdv = job.action_advice || job.actionAdvice || "";
-          setRawActionAdvice(typeof rawAdv === "string" ? rawAdv : JSON.stringify(rawAdv));
+          const rawAdv = safeString(job.action_advice || job.actionAdvice || "");
+          setRawActionAdvice(rawAdv);
           
-          if (typeof rawAdv === "string" && rawAdv.trim()) {
+          if (rawAdv.trim()) {
             const lines = rawAdv.split("\n").filter(l => l.trim() && !l.startsWith("🧭"));
             setActionAdvice(lines.map((l, idx) => ({
               vulnerabilityId: `vuln-${idx}`,
@@ -229,8 +238,10 @@ function ScanLandingContent() {
     setCopilotLoading(true);
 
     try {
-      const res = await copilotChat(`Mục tiêu hiện tại: ${target || "findproject.vercel.app"}. Context kết quả scan: ${rawActionAdvice || "Chưa có khuyến nghị."}. Câu hỏi của tôi: ${userQuery}`);
-      setCopilotMessages(prev => [...prev, { sender: "copilot", text: res.copilot_response }]);
+      const promptContext = `Mục tiêu hiện tại: ${target || "findproject.vercel.app"}. Context kết quả scan: ${rawActionAdvice || "Chưa có khuyến nghị."}. Câu hỏi của tôi: ${userQuery}`;
+      const res = await copilotChat(promptContext);
+      const answerText = safeString(res.copilot_response);
+      setCopilotMessages(prev => [...prev, { sender: "copilot", text: answerText }]);
     } catch (err) {
       setCopilotMessages(prev => [...prev, { sender: "copilot", text: "Xin lỗi, không thể kết nối tới Copilot AI. Vui lòng kiểm tra lại API." }]);
     } finally {
@@ -250,14 +261,6 @@ function ScanLandingContent() {
   };
 
   const filteredVulns = useMemo(() => (severityFilter === 'ALL' ? vulnerabilities : vulnerabilities.filter((v) => v.severity === severityFilter)), [vulnerabilities, severityFilter]);
-
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (e) {
-      console.error('copy failed', e);
-    }
-  };
 
   return (
     <DashboardShell area="dashboard">
@@ -477,7 +480,7 @@ function ScanLandingContent() {
               {copilotMessages.map((m, i) => (
                 <div key={i} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${m.sender === "user" ? "bg-cyan-600 text-white" : "bg-[color:var(--background-elevated)] border border-[color:var(--line)] text-[var(--foreground)]"}`}>
-                    {m.text}
+                    {safeString(m.text)}
                   </div>
                 </div>
               ))}
