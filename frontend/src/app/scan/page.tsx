@@ -270,7 +270,9 @@ function ScanLandingContent() {
 
           setNodes((prev) => {
             const updated = { ...prev };
-            Object.keys(updated).forEach((k) => (updated[k].status = "completed"));
+            Object.keys(updated).forEach((k) => {
+              updated[k] = { ...updated[k], status: "completed" };
+            });
             return updated;
           });
 
@@ -372,7 +374,9 @@ function ScanLandingContent() {
     setIsScanning(true);
     setNodes((prev) => {
       const reset = { ...prev };
-      Object.keys(reset).forEach((k) => (reset[k].status = "pending"));
+      Object.keys(reset).forEach((k) => {
+        reset[k] = { ...reset[k], status: "pending" };
+      });
       reset.node_recon.status = "running";
       return reset;
     });
@@ -768,11 +772,7 @@ function ScanLandingContent() {
 
 export default function ScanLandingPage() {
   return (
-    <Suspense <div className="flex min-h-screen items-center justify-center text-slate-400" fallback="{">
-          Loading scan pipeline...
-        </div>
-      }
-    >
+    <Suspense className="flex min-h-screen items-center justify-center text-slate-400" fallback="{<div">Loading scan pipeline...</div>}>
       <ScanLandingContent/>
     </Suspense>
   );
