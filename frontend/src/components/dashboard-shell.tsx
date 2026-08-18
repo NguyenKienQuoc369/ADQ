@@ -1,18 +1,16 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Activity,
   BadgeCheck,
   CreditCard,
   Gauge,
   KeyRound,
   LogOut,
   Menu,
-  Shield,
-  ShieldCheck,
   Users,
   X,
   Folder,
@@ -52,7 +50,8 @@ const routeMeta: Record<string, { eyebrow: string; title: string }> = {
   "/dashboard/tools": { eyebrow: "Attack Mesh", title: "Trung tâm công cụ DAST" },
   "/dashboard/billing": { eyebrow: "License Key", title: "Quản lý gói & Hạn ngạch Worker" },
   "/vulnerabilities": { eyebrow: "Vulnerability Intel", title: "Chi tiết lỗ hổng OWASP" },
-  "/settings": { eyebrow: "Engine Configuration", title: "Cấu hình bảo mật & Tác tử AI" },
+  "/settings": { eyebrow: "Engine Configuration", title: "Cấu hình bảo mật & cài đặt" },
+  "/settings/api-nodes": { eyebrow: "API Nodes", title: "Cài đặt & API Nodes" },
   "/admin": { eyebrow: "Root Admin", title: "Tổng quan hệ thống phân tán" },
   "/admin/users": { eyebrow: "Identity Access", title: "Quản trị danh tính & Phân quyền" },
   "/admin/redeem-codes": { eyebrow: "License Generator", title: "Tạo và theo dõi mã nâng cấp" },
@@ -106,9 +105,9 @@ export function DashboardShell({
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#020617] text-cyan-400">
         <div className="relative flex flex-col items-center gap-4 rounded-3xl border border-cyan-500/30 bg-slate-950/80 p-8 backdrop-blur-2xl shadow-[0_0_60px_rgba(6,182,212,0.2)]">
-          <div className="relative flex h-14 w-14 items-center justify-center">
+          <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl">
             <span className="absolute h-full w-full animate-ping rounded-full bg-cyan-400/20" />
-            <ShieldCheck className="h-8 w-8 text-cyan-400 animate-pulse" />
+            <Image src="/logo.png" alt="ADQ SECURITY logo" width={56} height={56} className="h-full w-full object-contain animate-pulse" />
           </div>
           <p className="font-mono text-xs tracking-widest uppercase">Initialising SOC Console...</p>
         </div>
@@ -129,9 +128,9 @@ export function DashboardShell({
           href="/"
           className="group relative flex items-center gap-3.5 overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 via-slate-950/80 to-transparent p-3.5 shadow-[0_0_20px_rgba(6,182,212,0.15)] transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_30px_rgba(6,182,212,0.3)]"
         >
-          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-400 p-0.5 shadow-lg shadow-cyan-500/30">
-            <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-slate-950">
-              <Shield className="h-5 w-5 text-cyan-400 transition-transform duration-300 group-hover:scale-110" />
+          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-tr from-cyan-500/20 to-emerald-400/20 p-0.5 shadow-lg shadow-cyan-500/30">
+            <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[10px] bg-slate-950">
+              <Image src="/logo.png" alt="ADQ SECURITY logo" width={44} height={44} className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-110" />
             </div>
           </div>
           <div className="min-w-0">
@@ -288,10 +287,8 @@ export function DashboardShell({
         {/* Main Console Viewport */}
         <div className="flex min-w-0 flex-1 flex-col">
           
-          {/* Top HUD Header */}
           <header className="sticky top-0 z-30 border-b border-cyan-500/20 bg-slate-950/80 backdrop-blur-2xl">
             <div className="flex items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-              
               <div className="flex items-center gap-3">
                 <Button
                   variant="ghost"
@@ -314,7 +311,6 @@ export function DashboardShell({
                 </div>
               </div>
 
-              {/* Realtime Telemetry Badges */}
               <div className="flex items-center gap-3">
                 <div className="hidden sm:flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-950/40 px-3.5 py-1.5 backdrop-blur-md shadow-[0_0_15px_rgba(16,185,129,0.15)]">
                   <Radio className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
@@ -330,7 +326,6 @@ export function DashboardShell({
                   </span>
                 </div>
               </div>
-
             </div>
           </header>
 

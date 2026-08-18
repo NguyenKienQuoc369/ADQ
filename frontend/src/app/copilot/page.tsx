@@ -51,7 +51,7 @@ export default function CopilotPage() {
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>ADQ Security Copilot</CardTitle>
+            <CardTitle>NQ SECURITY Copilot</CardTitle>
             <CardDescription>Chat with the security copilot, request actions and get patch suggestions. Function-calling cards render results directly.</CardDescription>
           </CardHeader>
           <CardContent>

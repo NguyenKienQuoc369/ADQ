@@ -1,10 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { FileText, SearchCheck, Shield, Sparkles } from "lucide-react";
+import { FileText, SearchCheck, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
-
-import { Badge } from "@/components/ui/badge";
 
 export function AuthShell({
   title,
@@ -28,12 +27,12 @@ export function AuthShell({
           className="hidden space-y-8 lg:block"
         >
           <Link href="/" className="inline-flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-500/10 shadow-[0_0_30px_rgba(34,211,238,0.12)]">
-              <Shield className="h-7 w-7 text-cyan-600 dark:text-cyan-300" />
+            <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-cyan-500/30 bg-cyan-500/10 shadow-[0_0_30px_rgba(34,211,238,0.12)]">
+              <Image src="/logo.png" alt="ADQ SECURITY logo" width={56} height={56} className="h-full w-full object-contain" />
             </div>
             <div className="flex items-center gap-3">
               <div className="relative">
-                <h1 className="text-2xl font-semibold tracking-wide text-[var(--foreground)]">ADQ Security</h1>
+                <h1 className="text-2xl font-semibold tracking-wide text-[var(--foreground)]">ADQ SECURITY</h1>
                 <div className="pointer-events-none absolute inset-0 -z-10 translate-y-2 scale-110 bg-cyan-400/10 blur-2xl" />
               </div>
             </div>
@@ -90,11 +89,11 @@ export function AuthShell({
         >
           <div className="mb-8 lg:hidden">
             <Link href="/" className="inline-flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-500/10 shadow-[0_0_24px_rgba(34,211,238,0.12)]">
-                <Shield className="h-5 w-5 text-cyan-600 dark:text-cyan-300" />
+                <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-cyan-500/30 bg-cyan-500/10 shadow-[0_0_24px_rgba(34,211,238,0.12)]">
+                  <Image src="/logo.png" alt="ADQ SECURITY logo" width={44} height={44} className="h-full w-full object-contain" />
               </div>
               <div className="relative">
-                <p className="text-lg font-semibold text-[var(--foreground)]">ADQ Security</p>
+                <p className="text-lg font-semibold text-[var(--foreground)]">ADQ SECURITY</p>
                 <div className="pointer-events-none absolute inset-0 -z-10 translate-y-2 scale-110 bg-cyan-400/10 blur-xl" />
               </div>
             </Link>

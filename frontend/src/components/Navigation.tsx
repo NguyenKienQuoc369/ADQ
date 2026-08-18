@@ -1,8 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowRight, LayoutDashboard, LogIn, ShieldCheck } from "lucide-react";
+import { ArrowRight, LayoutDashboard, LogIn } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 
@@ -22,11 +23,11 @@ export function Navigation() {
     <header className="sticky top-0 z-50 border-b border-cyan-500/20 bg-[#020617]/75 text-[var(--foreground)] backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-8">
         <Link href="/" className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-300 shadow-[0_0_26px_rgba(6,182,212,0.22)]">
-            <ShieldCheck className="h-5 w-5" />
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl border border-cyan-400/30 bg-cyan-400/10 shadow-[0_0_26px_rgba(6,182,212,0.22)]">
+            <Image src="/logo.png" alt="ADQ SECURITY logo" width={40} height={40} className="h-full w-full object-contain" />
           </div>
           <div>
-            <p className="text-base font-semibold text-slate-100">ADQ Security</p>
+            <p className="text-base font-semibold text-slate-100">ADQ SECURITY</p>
             <p className="text-[11px] tracking-[0.2em] text-cyan-300/80">OFFENSIVE CLOUD</p>
           </div>
         </Link>

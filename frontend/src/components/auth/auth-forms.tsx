@@ -11,9 +11,9 @@ import { z } from "zod";
 import { useAuth } from "@/components/providers/auth-provider";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 function FormAlert({
   type,
@@ -80,6 +80,29 @@ const emailSchema = z.object({
   email: z.string().email("Email không hợp lệ."),
 });
 
+type RegisterValues = {
+  name: string;
+  email: string;
+  password?: string;
+  confirmPassword?: string;
+  company?: string;
+  phone?: string;
+};
+
+function GoogleMark() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+      <path
+        fill="#EA4335"
+        d="M12 10.2v3.9h5.4c-.2 1.4-1.6 4.1-5.4 4.1-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 4 1.5l2.7-2.6C16.9 3.5 14.7 2.6 12 2.6 6.7 2.6 2.4 6.9 2.4 12S6.7 21.4 12 21.4c6.9 0 11.5-4.8 11.5-11.6 0-.8-.1-1.4-.2-2H12Z"
+      />
+      <path fill="#34A853" d="M3.9 7.3l3.5 2.6c.9-1.8 2.9-3 5.1-3 1.9 0 3.2.8 4 1.5l2.7-2.6C16.9 3.5 14.7 2.6 12 2.6c-3.5 0-6.4 2-8.1 4.7Z" />
+      <path fill="#FBBC05" d="M3.9 16.7c1.8 3.5 5.3 5.7 8.1 5.7 2.4 0 4.4-.9 5.8-2.4l-2.7-2.2c-.8.6-1.9 1-3.1 1-2.3 0-4.2-1.5-4.8-3.5l-3.8 2.9Z" />
+      <path fill="#4285F4" d="M12 19.4c1.8 0 3.4-.6 4.7-1.7l2.7 2.2c-1.9 1.9-4.6 3-7.4 3-4.8 0-8.9-3.2-10.3-7.5l3.8-2.9c.6 2 2.5 3.5 4.8 3.5Z" />
+    </svg>
+  );
+}
+
 const resetSchema = z
   .object({
     token: z.string().min(6, "Token khôi phục không hợp lệ."),
@@ -141,18 +164,6 @@ export function LoginForm() {
 
   const isGoogleLoading = submitting;
   const isLoginLoading = submitting;
-
-  const GoogleMark = () => (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
-      <path
-        fill="#EA4335"
-        d="M12 10.2v3.9h5.4c-.2 1.4-1.6 4.1-5.4 4.1-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 4 1.5l2.7-2.6C16.9 3.5 14.7 2.6 12 2.6 6.7 2.6 2.4 6.9 2.4 12S6.7 21.4 12 21.4c6.9 0 11.5-4.8 11.5-11.6 0-.8-.1-1.4-.2-2H12Z"
-      />
-      <path fill="#34A853" d="M3.9 7.3l3.5 2.6c.9-1.8 2.9-3 5.1-3 1.9 0 3.2.8 4 1.5l2.7-2.6C16.9 3.5 14.7 2.6 12 2.6c-3.5 0-6.4 2-8.1 4.7Z" />
-      <path fill="#FBBC05" d="M3.9 16.7c1.8 3.5 5.3 5.7 8.1 5.7 2.4 0 4.4-.9 5.8-2.4l-2.7-2.2c-.8.6-1.9 1-3.1 1-2.3 0-4.2-1.5-4.8-3.5l-3.8 2.9Z" />
-      <path fill="#4285F4" d="M12 19.4c1.8 0 3.4-.6 4.7-1.7l2.7 2.2c-1.9 1.9-4.6 3-7.4 3-4.8 0-8.9-3.2-10.3-7.5l3.8-2.9c.6 2 2.5 3.5 4.8 3.5Z" />
-    </svg>
-  );
 
   return (
     <AuthShell
@@ -234,7 +245,7 @@ export function RegisterForm() {
 
   const [adminExists, setAdminExists] = useState<boolean | null>(null);
 
-  const form = useForm<any>({
+  const form = useForm<RegisterValues>({
     resolver: zodResolver(isGoogleOnboarding ? googleOnboardingSchema : registerSchema),
     defaultValues: {
       name: "",
@@ -245,42 +256,58 @@ export function RegisterForm() {
       phone: "",
     },
   });
-  const emailValue = form.watch("email") || googleEmail;
+  const emailValue = form.getValues("email") || googleEmail || "";
 
-  // When onboarding with Google, check whether the email already maps to an existing admin user.
-  // If admin exists, skip onboarding and send user to dashboard. Otherwise show onboarding and require password.
+  // When onboarding with Google, verify the authenticated user email before revealing the onboarding form.
+  // If the account already exists, skip onboarding and route straight to the dashboard.
   useEffect(() => {
     if (!isGoogleOnboarding) return;
-    const emailToCheck = googleEmail || form.getValues("email");
-    if (!emailToCheck) return;
 
     let mounted = true;
+
     (async () => {
       try {
-        const res = await fetch("/api/auth/check-admin", {
+        const supabase = createSupabaseBrowserClient();
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        const resolvedEmail = (userData?.user?.email ?? googleEmail ?? form.getValues("email") ?? "").trim().toLowerCase();
+
+        if (!mounted) return;
+
+        if (userError || !resolvedEmail) {
+          setAdminExists(false);
+          return;
+        }
+
+        form.setValue("email", resolvedEmail, { shouldValidate: true });
+
+        const res = await fetch("/api/auth/check-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: emailToCheck }),
+          body: JSON.stringify({ email: resolvedEmail }),
         });
         const j = await res.json();
+
         if (!mounted) return;
+
         if (j?.exists) {
           setAdminExists(true);
-          // Already an admin user in DB — no need to complete profile; route to dashboard
-          window.setTimeout(() => window.location.replace("/dashboard"), 200);
-        } else {
+          window.setTimeout(() => window.location.replace("/dashboard"), 150);
+          return;
+        }
+
+        setAdminExists(false);
+      } catch (e) {
+        console.error("check-email failed", e);
+        if (mounted) {
           setAdminExists(false);
         }
-      } catch (e) {
-        console.error("check-admin failed", e);
-        setAdminExists(false);
       }
     })();
 
     return () => {
       mounted = false;
     };
-  }, [isGoogleOnboarding, googleEmail, form]);
+  }, [form, googleEmail, isGoogleOnboarding, router]);
 
   const onSubmit = form.handleSubmit(async (values) => {
     setSubmitting(true);

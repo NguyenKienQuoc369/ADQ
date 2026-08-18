@@ -17,7 +17,7 @@ export function SettingsClient() {
   const [profile, setProfile] = useState({
     name: user?.name ?? "",
     email: user?.email ?? "",
-    company: "ADQ Security Labs",
+    company: "NQ SECURITY Labs",
     phone: "+84 912 345 678",
   });
   const [security, setSecurity] = useState({

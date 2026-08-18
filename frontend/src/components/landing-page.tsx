@@ -87,7 +87,7 @@ export function LandingPage() {
             </h1>
 
             <p className="max-w-2xl text-base leading-8 text-slate-300 md:text-lg">
-              ADQ Security hợp nhất DAST, asset intelligence và AI để đơn giản hóa quá trình kiểm thử bảo mật web
+              ADQ SECURITY hợp nhất DAST, asset intelligence và AI để đơn giản hóa quá trình kiểm thử bảo mật web
               
             </p>
 
@@ -229,7 +229,7 @@ export function LandingPage() {
 
       <footer className="relative border-t border-cyan-500/20 bg-[#020617]">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-8 text-xs text-slate-400 md:flex-row md:px-8">
-          <TextHoverEffect text="ADQ SECURITY" className="text-sm tracking-[0.3em]" />
+          <TextHoverEffect text="© 2026 ADQ SECURITY. All rights reserved." className="text-sm tracking-[0.3em]" />
           <div className="flex items-center gap-4">
             <Link href="/login" className="transition hover:text-cyan-200">Console</Link>
           </div>

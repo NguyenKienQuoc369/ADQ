@@ -16,7 +16,7 @@ type AuthContextValue = {
   completeGoogleProfile: (payload: { name: string; company?: string; phone?: string; password?: string }) => Promise<User>;
   loginWithGoogle: () => Promise<AuthResponse>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshUser: (showLoader?: boolean) => Promise<void>;
   updateUser: (user: User) => void;
 };
 
@@ -121,8 +121,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return supabaseRef.current;
   }, []);
 
-  const refreshUser = useCallback(async () => {
-    setLoading(true);
+  const refreshUser = useCallback(async (showLoader = false) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     try {
       // Call server-side account endpoint which also checks admin_users status
       try {
@@ -161,11 +163,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Account is locked (or forbidden) - sign out locally and set lock message
           try {
             await supabase.auth.signOut();
-          } catch (e) {
+          } catch {
             // ignore
           }
           setUser(null);
-          setLockMessage('TÃ i khoáº£n cá»§a báº¡n Ä‘Ã£ bá»‹ khÃ³a');
+          setLockMessage('Tài khoản của bạn đã bị khóa');
           return;
         }
       } catch (err) {
@@ -179,7 +181,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(data.user ? mapSupabaseUserToAppUser(data.user) : null);
       }
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
   }, [getSupabaseClient]);
 
@@ -187,11 +191,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = getSupabaseClient();
 
     let active = true;
-
-    // Use the server-backed refreshUser so account status (LOCKED) is enforced.
-    refreshUser().finally(() => {
-      if (!active) return;
-      setLoading(false);
+    const frameHandle = window.requestAnimationFrame(() => {
+      void refreshUser(true).finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -203,9 +207,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       active = false;
+      window.cancelAnimationFrame(frameHandle);
       subscription.subscription.unsubscribe();
     };
-  }, [getSupabaseClient]);
+  }, [getSupabaseClient, refreshUser]);
 
   const login = useCallback(async (email: string, password: string) => {
     const supabase = getSupabaseClient();
@@ -352,14 +357,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // If caller provided a password, set it on the Supabase auth user so they can use password auth later.
-    let updateArgs: any = { data: {
-      name: nextName,
-      company: payload.company?.trim() || null,
-      phone: payload.phone?.trim() || null,
-      role: "USER",
-      packageTier: "FREE",
-      onboarding_complete: true,
-    } };
+    let updateArgs: {
+      data: {
+        name: string;
+        company: string | null;
+        phone: string | null;
+        role: string;
+        packageTier: string;
+        onboarding_complete: boolean;
+      };
+      password?: string;
+    } = {
+      data: {
+        name: nextName,
+        company: payload.company?.trim() || null,
+        phone: payload.phone?.trim() || null,
+        role: "USER",
+        packageTier: "FREE",
+        onboarding_complete: true,
+      },
+    };
 
     if (payload.password && payload.password.trim().length >= 8) {
       updateArgs = { ...updateArgs, password: payload.password };

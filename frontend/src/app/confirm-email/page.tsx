@@ -22,7 +22,7 @@ function ConfirmEmailContent() {
               <Mail className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80">ADQ Security</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80">NQ SECURITY</p>
               <h1 className="text-xl font-semibold text-white">Xác nhận email</h1>
             </div>
           </div>
