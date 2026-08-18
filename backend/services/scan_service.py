@@ -4,6 +4,7 @@ import sys
 import json
 import uuid
 import time
+import ssl
 import urllib.request
 import urllib.error
 from typing import Dict, Any, List, Optional
@@ -41,6 +42,8 @@ try:
 except Exception:
     redis_client = None
 
+ssl_unverified_context = ssl._create_unverified_context()
+
 class ScanService:
     @staticmethod
     def create_scan_job(req: ScanRequest) -> Dict[str, Any]:
@@ -76,6 +79,11 @@ class ScanService:
                     raw_st = str(res_data.get("status", "running")).lower()
                     job_data["status"] = "COMPLETED" if raw_st in ["done", "completed"] else "RUNNING"
                     JOBS_STORAGE[job_id] = job_data
+                elif not job_data:
+                    raw_meta = redis_client.get(f"job_meta:{job_id}")
+                    if raw_meta:
+                        job_data = json.loads(raw_meta)
+                        JOBS_STORAGE[job_id] = job_data
             except Exception:
                 pass
 
@@ -96,17 +104,23 @@ class ScanService:
 
     @staticmethod
     def discover_endpoints(target_url: str) -> Dict[str, Any]:
+        """Tự động cào và bóc tách toàn bộ API Routes & Endpoints của mục tiêu"""
         target = target_url.strip()
         if not target.startswith("http"):
             target = f"https://{target}"
 
         discovered: List[str] = [target]
         base_clean = target.rstrip("/")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
 
+        # 1. Quét robots.txt & sitemap.xml
         for path in ["/robots.txt", "/sitemap.xml"]:
             try:
-                req = urllib.request.Request(f"{base_clean}{path}", headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=4) as resp:
+                req = urllib.request.Request(f"{base_clean}{path}", headers=headers)
+                with urllib.request.urlopen(req, timeout=4, context=ssl_unverified_context) as resp:
                     content = resp.read().decode("utf-8", errors="ignore")
                     for line in content.splitlines():
                         if "Disallow:" in line or "Allow:" in line:
@@ -118,20 +132,47 @@ class ScanService:
             except Exception:
                 pass
 
+        # 2. Cào mã nguồn HTML & Bóc tách Next.js Build Manifest
         try:
-            req = urllib.request.Request(base_clean, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            req = urllib.request.Request(base_clean, headers=headers)
+            with urllib.request.urlopen(req, timeout=5, context=ssl_unverified_context) as resp:
                 html_body = resp.read().decode("utf-8", errors="ignore")
+                
+                # Tìm Next.js build manifest script
+                manifest_matches = re.findall(r'src=["\'](/_next/static/[^"\']+/_buildManifest\.js)["\']', html_body)
+                for mf in manifest_matches:
+                    try:
+                        mf_url = f"{base_clean}{mf}"
+                        mf_req = urllib.request.Request(mf_url, headers=headers)
+                        with urllib.request.urlopen(mf_req, timeout=4, context=ssl_unverified_context) as mf_resp:
+                            mf_js = mf_resp.read().decode("utf-8", errors="ignore")
+                            routes = re.findall(r'["\'](/[a-zA-Z0-9_\-\/]+)["\']', mf_js)
+                            for r in routes:
+                                if not any(r.endswith(ext) for ext in [".js", ".css", ".json"]):
+                                    full_route = f"{base_clean}{r}"
+                                    if full_route not in discovered and len(discovered) < 30:
+                                        discovered.append(full_route)
+                    except Exception:
+                        pass
+
+                # Trích xuất link & API paths từ HTML
                 links = re.findall(r'(?:href|src|action)=["\'](/[^"\'>\s]+)["\']', html_body)
                 api_calls = re.findall(r'["\'](/api/[a-zA-Z0-9_\-\/]+)["\']', html_body)
                 for link in list(set(links + api_calls)):
-                    if any(link.endswith(ext) for ext in [".css", ".png", ".jpg", ".svg", ".ico", ".woff"]):
+                    if any(link.endswith(ext) for ext in [".css", ".png", ".jpg", ".svg", ".ico", ".woff", ".woff2"]):
                         continue
                     full_ep = f"{base_clean}{link}"
                     if full_ep not in discovered and len(discovered) < 25:
                         discovered.append(full_ep)
         except Exception:
             pass
+
+        # 3. Dự phòng các API endpoints phổ biến
+        common_probes = ["/api/auth/login", "/api/v1/user", "/api/health", "/login", "/register", "/dashboard"]
+        for cp in common_probes:
+            full_probe = f"{base_clean}{cp}"
+            if full_probe not in discovered and len(discovered) < 20:
+                discovered.append(full_probe)
 
         return {"ok": True, "target": target, "total_found": len(discovered), "endpoints": discovered}
 
@@ -152,7 +193,7 @@ class ScanService:
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
                 method="HEAD"
             )
-            with urllib.request.urlopen(req_probe, timeout=5) as resp:
+            with urllib.request.urlopen(req_probe, timeout=5, context=ssl_unverified_context) as resp:
                 headers_detected = {k.lower(): v for k, v in resp.getheaders()}
         except urllib.error.HTTPError as he:
             headers_detected = {k.lower(): v for k, v in he.headers.items()}
@@ -163,15 +204,15 @@ class ScanService:
         if "cf-ray" in headers_detected or "cloudflare" in server_h:
             detected_waf = "cloudflare"
             waf_name = "Cloudflare WAF / DDoS Protection"
-            default_bypass_hint = "cf_clearance=<token> hoặc CF-Access-Client-Id:<secret>"
+            default_bypass_hint = "cf_clearance=<token>"
         elif "x-vercel-id" in headers_detected or "vercel" in server_h:
             detected_waf = "vercel"
             waf_name = "Vercel Edge Deployment Protection"
-            default_bypass_hint = "x-vercel-protection-bypass:<secret>"
+            default_bypass_hint = "x-vercel-protection-bypass: <secret>"
         elif "x-amz-cf-id" in headers_detected or "awselb" in server_h:
             detected_waf = "awswaf"
             waf_name = "AWS WAF / CloudFront"
-            default_bypass_hint = "x-api-key:<your-key>"
+            default_bypass_hint = "x-api-key: <token>"
 
         return {
             "ok": True,

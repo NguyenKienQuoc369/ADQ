@@ -13,13 +13,10 @@ import {
   Lock,
   Flame,
   Activity,
-  Sliders,
   Search,
   ShieldCheck,
   KeyRound,
-  Zap,
   Terminal,
-  Server,
 } from "lucide-react";
 import { getProjectById, saveProjectDetail, detectWaf, runStressTest, discoverEndpoints } from "@/lib/api";
 
@@ -58,7 +55,6 @@ function StressTestContent() {
   const [liveLogs, setLiveLogs] = useState<Array<{ time: string; ip: string; status: number; latency: number }>>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Tính toán tốc độ lý thuyết: Requests / Duration
   const calculatedRps = Math.round(targetRequests / Math.max(1, duration));
 
   // 1. Tự động nạp Target từ phiên làm việc
@@ -118,7 +114,7 @@ function StressTestContent() {
     }
   };
 
-  // 4. Kích hoạt k6 Go Engine Stress Test
+  // 4. Kích hoạt Stress Test
   const handleStartStress = async () => {
     const finalUrl = selectedEndpoint || baseDomain;
     if (!finalUrl || running) return;
@@ -135,7 +131,6 @@ function StressTestContent() {
       bypass_code: bypassCode.trim(),
     };
 
-    // Tạo luồng log live
     const intervalMs = Math.max(30, Math.min(100, Math.round(1000 / Math.max(1, calculatedRps))));
     const logInterval = setInterval(() => {
       const randomIp = `${Math.floor(Math.random() * 200) + 10}.${Math.floor(Math.random() * 254) + 1}.${Math.floor(Math.random() * 254) + 1}.${Math.floor(Math.random() * 254) + 1}`;
@@ -194,7 +189,7 @@ function StressTestContent() {
               <h2 className="text-2xl font-bold tracking-tight text-white">L7 Stress Test & WAF Assessment</h2>
             </div>
             <p className="mt-1 text-sm text-slate-400">
-              Kiểm thử tải tốc độ cao bằng Go k6 engine, kiểm định ngưỡng Rate Limit và hiệu quả mã Bypass.
+              Kiểm thử tải tốc độ cao, kiểm định ngưỡng Rate Limit và hiệu quả mã Bypass.
             </p>
           </div>
           {projectId ? (
@@ -272,7 +267,7 @@ function StressTestContent() {
               {/* TÍNH TOÁN TỐC ĐỘ: REQUESTS / DURATION */}
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase text-slate-300">Tốc độ Bắn Tải k6</span>
+                  <span className="text-xs font-semibold uppercase text-slate-300">Tốc độ Bắn Tải</span>
                   <Badge className="border-rose-500/40 bg-rose-500/15 text-rose-300 font-mono text-xs font-bold" variant="muted">
                     {calculatedRps.toLocaleString()} req/sec
                   </Badge>
@@ -348,7 +343,7 @@ function StressTestContent() {
                 </div>
               ) : null}
 
-              {/* Ô NHẬP MÃ BYPASS ĐA NĂNG */}
+              {/* Ô NHẬP MÃ BYPASS */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase text-slate-400 flex items-center justify-between">
                   <span>Mã Bypass / Header / Cookie Token</span>
@@ -396,7 +391,7 @@ function StressTestContent() {
                   {running ? (
                     <span className="flex items-center gap-2">
                       <LoaderCircle className="h-4 w-4 animate-spin text-white" />
-                      Đang bắn k6 ({targetRequests} reqs / {duration}s = {calculatedRps} req/s)...
+                      Đang thực thi ({targetRequests} reqs / {duration}s = {calculatedRps} req/s)...
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
@@ -461,7 +456,7 @@ function StressTestContent() {
               <CardHeader className="pb-3 border-b border-slate-800">
                 <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
                   <Terminal className="h-4 w-4 text-cyan-400" />
-                  Live War Room Stream Log (k6 Engine)
+                  Live War Room Stream Log
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0 flex-1">

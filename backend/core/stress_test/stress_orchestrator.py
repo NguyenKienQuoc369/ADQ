@@ -1,25 +1,22 @@
 import os
 import sys
+import time
+import ssl
 import json
-import shutil
 import logging
-import tempfile
-import subprocess
-from typing import Any, Dict, Optional
+import random
+import threading
+import urllib.request
+import urllib.error
+import concurrent.futures
+from typing import Any, Dict, Optional, List
 
 logger = logging.getLogger(__name__)
+ssl_ctx = ssl._create_unverified_context()
 
 class StressOrchestrator:
     def __init__(self, k6_path: Optional[str] = None):
-        if k6_path:
-            self.k6_path = k6_path
-        else:
-            found = shutil.which("k6")
-            if found:
-                self.k6_path = found
-            else:
-                venv_k6 = os.path.join(sys.prefix, "bin", "k6")
-                self.k6_path = venv_k6 if os.path.exists(venv_k6) else "k6"
+        self.k6_path = k6_path or "k6"
 
     def execute_stress_test(
         self,
@@ -46,18 +43,18 @@ class StressOrchestrator:
         total_reqs = max(10, target_requests)
         target_rps = max(1, int(total_reqs / duration_sec))
 
-        # 2. Xây dựng Headers & Cookies nạp mã Bypass
+        # 2. Xử lý & Nạp mã Bypass
         headers_dict: Dict[str, str] = custom_headers.copy() if custom_headers else {}
         headers_dict["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         headers_dict["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        headers_dict["Connection"] = "keep-alive"
 
-        cookie_items: list[str] = []
+        cookie_items: List[str] = []
         if custom_cookies:
             for k, v in custom_cookies.items():
                 if k and v:
                     cookie_items.append(f"{k.strip()}={v.strip()}")
 
-        # Tự động nhận diện và inject Bypass Code
         clean_code = bypass_code.strip() if bypass_code else ""
         if clean_code:
             if ":" in clean_code and not clean_code.startswith("http"):
@@ -69,7 +66,7 @@ class StressOrchestrator:
             elif clean_code.startswith("eyJ") or clean_code.lower().startswith("bearer "):
                 headers_dict["Authorization"] = clean_code if clean_code.lower().startswith("bearer ") else f"Bearer {clean_code}"
             else:
-                # Universal Bypass Injection (Vercel Protection Bypass / CF Token / Custom Secret)
+                # Universal Bypass Injection
                 headers_dict["x-vercel-protection-bypass"] = clean_code
                 headers_dict["x-vercel-set-bypass-cookie"] = "true"
                 headers_dict["CF-Access-Client-Id"] = clean_code
@@ -80,134 +77,108 @@ class StressOrchestrator:
         if cookie_items:
             headers_dict["Cookie"] = "; ".join(cookie_items)
 
-        headers_js = json.dumps(headers_dict, indent=4)
-
-        # 3. Tạo k6 Scenario tốc độ cao (constant-arrival-rate)
-        pre_vus = min(1500, max(50, int(target_rps * 0.5)))
-        max_vus = min(3000, max(100, int(target_rps * 1.5)))
-
-        k6_script = f"""
-import http from 'k6/http';
-import {{ check }} from 'k6';
-
-export const options = {{
-  scenarios: {{
-    adq_high_speed_attack: {{
-      executor: 'constant-arrival-rate',
-      rate: {target_rps},
-      timeUnit: '1s',
-      duration: '{duration_sec}s',
-      preAllocatedVUs: {pre_vus},
-      maxVUs: {max_vus},
-      gracefulStop: '0s',
-    }},
-  }},
-  thresholds: {{}},
-}};
-
-export default function () {{
-  const url = '{target_url}';
-  const customHeaders = {headers_js};
-
-  // Multi-Header IP Spoofing xoay tua trên từng request
-  const ip1 = Math.floor(Math.random() * 200) + 10;
-  const ip2 = Math.floor(Math.random() * 254) + 1;
-  const ip3 = Math.floor(Math.random() * 254) + 1;
-  const ip4 = Math.floor(Math.random() * 254) + 1;
-  const spoofedIp = `${{ip1}}.${{ip2}}.${{ip3}}.${{ip4}}`;
-
-  customHeaders['X-Forwarded-For'] = spoofedIp;
-  customHeaders['X-Real-IP'] = spoofedIp;
-  customHeaders['True-Client-IP'] = spoofedIp;
-
-  const res = http.get(url, {{
-    headers: customHeaders,
-    timeout: '3s',
-  }});
-
-  check(res, {{
-    'status 200': (r) => r.status === 200,
-    'status 429': (r) => r.status === 429,
-    'status 403': (r) => r.status === 403,
-    'status 500+': (r) => r.status >= 500,
-  }});
-}}
-"""
-
-        # 4. Thực thi k6 CLI
-        with tempfile.TemporaryDirectory(prefix="adq_stress_") as tmp_dir:
-            script_file = os.path.join(tmp_dir, "runner.js")
-            summary_file = os.path.join(tmp_dir, "summary.json")
-
-            with open(script_file, "w", encoding="utf-8") as f:
-                f.write(k6_script)
-
-            cmd = [
-                self.k6_path, "run",
-                "--summary-export", summary_file,
-                script_file
-            ]
-
-            try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=duration_sec + 10)
-                metrics = self._parse_summary(summary_file, duration_sec, target_rps)
-                return {
-                    "ok": True,
-                    "engine": "Official-Go-k6-CLI",
-                    "target_url": target_url,
-                    "target_requests": total_reqs,
-                    "duration": f"{duration_sec}s",
-                    "metrics": metrics,
-                    "bypass_active": bool(clean_code),
-                }
-            except Exception as exc:
-                logger.error(f"k6 execution failed: {exc}")
-                return {
-                    "ok": False,
-                    "error": str(exc),
-                    "metrics": {
-                        "total_requests": 0,
-                        "rps": 0,
-                        "status_200": 0,
-                        "status_403_waf_blocked": 0,
-                        "status_429_rate_limited": 0,
-                        "status_500_crashed": 0,
-                        "p95_latency": "0ms",
-                    }
-                }
-
-    def _parse_summary(self, summary_path: str, duration_sec: int, expected_rps: int) -> Dict[str, Any]:
-        if os.path.exists(summary_path):
-            try:
-                with open(summary_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    metrics_raw = data.get("metrics", {})
-
-                    http_reqs = int(metrics_raw.get("http_reqs", {}).get("values", {}).get("count", 0))
-                    rate = float(metrics_raw.get("http_reqs", {}).get("values", {}).get("rate", 0.0))
-                    p95 = float(metrics_raw.get("http_req_duration", {}).get("values", {}).get("p(95)", 0.0))
-
-                    checks = metrics_raw.get("checks", {}).get("values", {})
-                    passes = int(checks.get("passes", 0))
-
-                    return {
-                        "total_requests": http_reqs,
-                        "rps": round(rate if rate > 0 else http_reqs / max(1, duration_sec), 1),
-                        "status_200": passes,
-                        "status_403_waf_blocked": max(0, http_reqs - passes) if http_reqs > passes else 0,
-                        "status_429_rate_limited": 0,
-                        "status_500_crashed": 0,
-                        "p95_latency": f"{round(p95, 1)}ms" if p95 > 0 else "25ms",
-                    }
-            except Exception:
-                pass
-
-        return {
-            "total_requests": expected_rps * duration_sec,
-            "rps": expected_rps,
-            "status_200": expected_rps * duration_sec,
+        metrics = {
+            "total_requests": 0,
+            "target_requests": total_reqs,
+            "target_rps": target_rps,
+            "status_200": 0,
             "status_403_waf_blocked": 0,
             "status_429_rate_limited": 0,
             "status_500_crashed": 0,
-            "p95_latency": "20ms",
+            "other_status": 0,
+            "rps": 0.0,
+            "p95_latency": "0ms",
+        }
+
+        latencies: List[int] = []
+        start_time = time.time()
+        end_time = start_time + duration_sec
+
+        try:
+            from curl_cffi import requests as curl_cffi_requests
+            has_curl = True
+        except ImportError:
+            has_curl = False
+
+        thread_local = threading.local()
+
+        def get_worker_session():
+            if not getattr(thread_local, "session", None):
+                if has_curl:
+                    thread_local.session = curl_cffi_requests.Session(impersonate="chrome120", timeout=3)
+                else:
+                    thread_local.session = None
+            return thread_local.session
+
+        def send_request():
+            req_headers = headers_dict.copy()
+            # Xoay tua IP
+            spoofed_ip = f"{random.randint(11,220)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+            req_headers["X-Forwarded-For"] = spoofed_ip
+            req_headers["X-Real-IP"] = spoofed_ip
+            req_headers["True-Client-IP"] = spoofed_ip
+
+            req_start = time.time()
+            status_code = 0
+            session = get_worker_session()
+
+            if session is not None:
+                try:
+                    resp = session.get(target_url, headers=req_headers, timeout=3)
+                    status_code = resp.status_code
+                except Exception:
+                    status_code = 500
+            else:
+                req = urllib.request.Request(target_url, headers=req_headers, method="GET")
+                try:
+                    with urllib.request.urlopen(req, timeout=3, context=ssl_ctx) as response:
+                        status_code = response.getcode()
+                except urllib.error.HTTPError as he:
+                    status_code = he.code
+                except Exception:
+                    status_code = 500
+
+            req_latency = int((time.time() - req_start) * 1000)
+            return status_code, req_latency
+
+        lock = threading.Lock()
+
+        def worker_batch():
+            while time.time() < end_time:
+                code, lat = send_request()
+                with lock:
+                    if metrics["total_requests"] >= total_reqs:
+                        break
+                    metrics["total_requests"] += 1
+                    latencies.append(lat)
+                    if code in (200, 201, 204):
+                        metrics["status_200"] += 1
+                    elif code == 403:
+                        metrics["status_403_waf_blocked"] += 1
+                    elif code == 429:
+                        metrics["status_429_rate_limited"] += 1
+                    elif code >= 500 or code == 0:
+                        metrics["status_500_crashed"] += 1
+                    else:
+                        metrics["other_status"] += 1
+
+        concurrency = min(200, max(15, int(target_rps * 0.4)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = [executor.submit(worker_batch) for _ in range(concurrency)]
+            concurrent.futures.wait(futures, timeout=duration_sec + 2)
+
+        elapsed = max(0.1, time.time() - start_time)
+        metrics["rps"] = round(metrics["total_requests"] / elapsed, 1)
+        if latencies:
+            latencies.sort()
+            p95_idx = int(len(latencies) * 0.95)
+            metrics["p95_latency"] = f"{latencies[min(p95_idx, len(latencies)-1)]}ms"
+
+        return {
+            "ok": True,
+            "target_url": target_url,
+            "target_requests": total_reqs,
+            "duration": f"{duration_sec}s",
+            "metrics": metrics,
+            "bypass_active": bool(clean_code),
         }
