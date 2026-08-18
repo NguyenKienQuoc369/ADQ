@@ -452,7 +452,9 @@ function ScanLandingContent() {
                 </label>
                 <div className="relative">
                   <Globe className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"/>
-                  <Input onChange="{(e)" value="{target}"> setTarget(e.target.value)}
+                  <Input
+                    onChange={(e) => setTarget(e.target.value)}
+                    value={target}
                     placeholder="[https://example.com](https://example.com) hoặc domain.vn"
                     disabled={isScanning}
                     className="h-12 pl-11 pr-4 border-slate-700 bg-slate-950/80 text-white placeholder:text-slate-500 focus:border-cyan-500 text-sm"
@@ -464,7 +466,13 @@ function ScanLandingContent() {
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Gói SaaS Engine</label>
                 <div className="flex gap-2">
                   {(["STARTER", "DEVSEC PRO", "FINTECH MAX"] as string[]).map((t) => (
-                    <Button "default" "outline"} : ? disabled="{isScanning}" key="{t}" onClick="{()" t type="button" variant="{tier"> setTier(t)}
+                    <Button
+                      key={t}
+                      type="button"
+                      variant={tier === t ? "default" : "outline"}
+                      disabled={isScanning}
+                      onClick={() => setTier(t)}
+
                       className={
                         tier === t
                           ? "h-12 border border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium hover:bg-cyan-500/30"
@@ -489,7 +497,12 @@ function ScanLandingContent() {
                 </div>
               )}
 
-              <Button className="h-11 px-6 rounded-xl font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled="{!target.trim()" isScanning} onClick="{startScan}" type="button" ||>
+              <Button
+                className="h-11 px-6 rounded-xl font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                disabled={isScanning || !target.trim()}
+                onClick={startScan}
+                type="button"
+              >
                 {isScanning ? (
                   <span className="flex items-center gap-2">
                     <LoaderCircle className="h-4 w-4 animate-spin text-white"/>
@@ -524,7 +537,7 @@ function ScanLandingContent() {
                 const isLast = index === nodeArray.length - 1;
 
                 return (
-                  <React.Fragment key="{node.id}">
+                  <React.Fragment key={node.id}>
                     <div
                       className={`flex flex-col gap-1.5 rounded-xl border p-3 min-w-[135px] flex-1 transition-all ${
                         node.status === "running"
@@ -554,7 +567,15 @@ function ScanLandingContent() {
 
                     {!isLast ? (
                       <div className="hidden lg:flex items-center justify-center px-1">
-                        <ArrowRight "completed" "running" "text-cyan-400 "text-emerald-400" "text-slate-700" ${ : ? animate-pulse" className="{`h-4" node.status="==" w-4 }`}/>
+                        <ArrowRight
+                          className={`h-4 w-4 ${
+                            node.status === "running"
+                              ? "text-cyan-400 animate-pulse"
+                              : node.status === "completed"
+                                ? "text-emerald-400"
+                                : "text-slate-700"
+                          }`}
+                        />
                       </div>
                     ) : null}
                   </React.Fragment>
@@ -622,7 +643,15 @@ function ScanLandingContent() {
                         <div className="flex-1 text-xs text-slate-200 leading-5">
                           {adv.rootCause}
                         </div>
-                        <Button onClick="{()" size="sm" type="button" variant="ghost"> handleCopilotSend(`Hãy hướng dẫn chi tiết cách thực hiện hành động này: "${adv.rootCause}"`)}
+                        <Button
+                          onClick={() =>
+                            handleCopilotSend(
+                              `Hãy hướng dẫn chi tiết cách thực hiện hành động này: "${adv.rootCause}"`,
+                            )
+                          }
+                          size="sm"
+                          type="button"
+                          variant="ghost"
                           className="shrink-0 h-7 text-[11px] text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10"
                         >
                           Hỏi AI <ArrowRight className="ml-1 h-3 w-3"/>
@@ -689,7 +718,12 @@ function ScanLandingContent() {
                       </div>
                     </div>
                   </div>
-                  <Button onClick="{()" size="sm" type="button" variant="outline"> router.push(`/copilot?target=${encodeURIComponent(target)}`)}
+                  <Button
+                    onClick={() => router.push(`/copilot?target=${encodeURIComponent(target)}`)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+
                     className="h-7 text-[11px] border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white"
                   >
                     Mở rộng <ArrowRight className="ml-1 h-3 w-3"/>
@@ -709,7 +743,7 @@ function ScanLandingContent() {
                         }`}
                       >
                         {m.sender === "copilot" ? (
-                          <FormattedAiMessage text="{m.text}"/>
+                          <FormattedAiMessage text={m.text} />
                         ) : (
                           <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
                         )}
@@ -748,12 +782,17 @@ function ScanLandingContent() {
 
                 {/* Ô Nhập Tin Nhắn */}
                 <div className="flex gap-2 pt-1">
-                  <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
+                  <Input
+                    onChange={(e) => setCopilotInput(e.target.value)}
+                    value={copilotInput}
+
                     onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
                     placeholder="Hỏi cách vá lỗi, kiểm tra bảo mật..."
                     className="h-10 text-xs border-slate-700 bg-slate-950 text-white placeholder:text-slate-500 focus:border-cyan-500"
                   />
-                  <Button onClick="{()" type="button"> handleCopilotSend()}
+                  <Button
+                    onClick={() => handleCopilotSend()}
+                    type="button"
                     disabled={copilotLoading || !copilotInput.trim()}
                     className="h-10 px-3.5 bg-cyan-600 hover:bg-cyan-500 text-white shrink-0"
                   >
@@ -771,7 +810,9 @@ function ScanLandingContent() {
 
 export default function ScanLandingPage() {
   return (
-    <Suspense <div className="flex min-h-screen items-center justify-center text-slate-400" fallback="{">
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center text-slate-400">
           Loading scan pipeline...
         </div>
       }
