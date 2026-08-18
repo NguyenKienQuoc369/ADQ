@@ -132,6 +132,33 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
     out, err = proc.communicate()
     final_status = "done" if proc.returncode == 0 else "failed"
 
+    import glob
+    target_clean = target.replace("http://", "").replace("https://", "").strip("/")
+    folder = "".join([c if c.isalnum() or c in (".", "_", "-") else "_" for c in target_clean])
+    
+    # Hỗ trợ tìm cả thư mục có prefix recon_ lẫn không có
+    candidate_paths = [
+        os.path.join(BASE_DIR, f"recon_{folder}", "result.json"),
+        os.path.join(BASE_DIR, folder, "result.json"),
+    ]
+    result_json_path = None
+    for p in candidate_paths:
+        if os.path.exists(p):
+            result_json_path = p
+            break
+    if not result_json_path:
+        matches = glob.glob(os.path.join(BASE_DIR, "recon_*", "result.json"))
+        if matches:
+            result_json_path = max(matches, key=os.path.getmtime)
+
+    scan_tree_data = {}
+    if result_json_path and os.path.exists(result_json_path):
+        try:
+            with open(result_json_path, "r", encoding="utf-8") as f:
+                scan_tree_data = json.load(f)
+        except Exception as e:
+            print(f"[{worker_id}] Lỗi đọc result.json: {e}", flush=True)
+
     completed_result = {
         "status": final_status,
         "worker_id": worker_id,
@@ -142,6 +169,8 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         "stderr_tail": err[-4000:] if err else "",
         "completed_at": time.time(),
     }
+    # Hợp nhất toàn bộ dữ liệu quét (subdomains, vulnerabilities, action_advice) vào Redis
+    completed_result.update(scan_tree_data)
     redis_client.set(f"job_result:{job_id}", json.dumps(completed_result))
 
     try:
@@ -149,20 +178,14 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
             from backend.core.engine.db import save_live_hosts, save_vulnerabilities, update_scan_status
         except ImportError:
             from core.engine.db import save_live_hosts, save_vulnerabilities, update_scan_status
-        target_clean = target.replace("http://", "").replace("https://", "").strip("/")
-        folder = "".join([c if c.isalnum() or c in (".", "_", "-") else "_" for c in target_clean])
-        result_json_path = os.path.join(BASE_DIR, folder, "result.json")
 
-        if os.path.exists(result_json_path):
-            with open(result_json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            sub_live = data.get("subdomains", {}).get("http_live", [])
+        if scan_tree_data:
+            sub_live = scan_tree_data.get("subdomains", {}).get("http_live", [])
             hosts = [{"url": u, "status_code": 200, "title": "Live Host"} for u in sub_live]
             if hosts:
                 save_live_hosts(job_id, hosts)
 
-            nuclei_vulns = data.get("vulnerabilities", {}).get("nuclei", [])
+            nuclei_vulns = scan_tree_data.get("vulnerabilities", {}).get("nuclei", [])
             if nuclei_vulns:
                 save_vulnerabilities(job_id, nuclei_vulns)
 
