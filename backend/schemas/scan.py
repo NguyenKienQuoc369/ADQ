@@ -29,8 +29,8 @@ class WafDetectRequest(BaseModel):
 class StressRequest(BaseModel):
     target_url: str
     bearer_token: Optional[str] = ""
-    vus: int = 50
-    duration: str = "10s"
+    target_requests: Optional[int] = 100
+    duration: str = "5s"
     method: str = "GET"
     body: Optional[str] = None
     headers: Optional[Dict[str, str]] = None

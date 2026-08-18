@@ -62,7 +62,7 @@ class ScanService:
                 redis_client.rpush("scan_queue", json.dumps(job_data))
                 redis_client.set(f"job_meta:{job_id}", json.dumps(job_data), ex=86400)
             except Exception as exc:
-                print(f"[ScanService] Redis queue push error: {exc}")
+                print(f"[ScanService] Redis queue error: {exc}")
         return job_data
 
     @staticmethod
@@ -109,7 +109,6 @@ class ScanService:
 
     @staticmethod
     def discover_endpoints(target_url: str) -> Dict[str, Any]:
-        """Tự động cào và bóc tách toàn bộ API Routes & Endpoints của mục tiêu"""
         target = target_url.strip()
         if not target.startswith("http"):
             target = f"https://{target}"
@@ -117,7 +116,6 @@ class ScanService:
         discovered: List[str] = [target]
         base_clean = target.rstrip("/")
 
-        # 1. Quét robots.txt & sitemap.xml
         for path in ["/robots.txt", "/sitemap.xml"]:
             try:
                 req = urllib.request.Request(f"{base_clean}{path}", headers={"User-Agent": "Mozilla/5.0"})
@@ -133,40 +131,29 @@ class ScanService:
             except Exception:
                 pass
 
-        # 2. Quét mã nguồn HTML trang chủ & trích xuất API routes
         try:
             req = urllib.request.Request(base_clean, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=5) as resp:
                 html_body = resp.read().decode("utf-8", errors="ignore")
-                
-                # Tìm các href & src
                 links = re.findall(r'(?:href|src|action)=["\'](/[^"\'>\s]+)["\']', html_body)
-                # Tìm các endpoint API dạng /api/... trong JS scripts
                 api_calls = re.findall(r'["\'](/api/[a-zA-Z0-9_\-\/]+)["\']', html_body)
-                
                 all_found = list(set(links + api_calls))
                 for link in all_found:
-                    if any(link.endswith(ext) for ext in [".css", ".png", ".jpg", ".svg", ".ico", ".woff", ".woff2"]):
+                    if any(link.endswith(ext) for ext in [".css", ".png", ".jpg", ".svg", ".ico", ".woff"]):
                         continue
-                    full_endpoint = f"{base_clean}{link}"
-                    if full_endpoint not in discovered and len(discovered) < 25:
-                        discovered.append(full_endpoint)
+                    full_ep = f"{base_clean}{link}"
+                    if full_ep not in discovered and len(discovered) < 25:
+                        discovered.append(full_ep)
         except Exception:
             pass
 
-        # 3. Dự đoán các endpoint bảo mật phổ biến
         common_probes = ["/api/auth/login", "/api/v1/user", "/api/health", "/login", "/register", "/dashboard"]
         for cp in common_probes:
             full_probe = f"{base_clean}{cp}"
             if full_probe not in discovered and len(discovered) < 20:
                 discovered.append(full_probe)
 
-        return {
-            "ok": True,
-            "target": target,
-            "total_found": len(discovered),
-            "endpoints": discovered
-        }
+        return {"ok": True, "target": target, "total_found": len(discovered), "endpoints": discovered}
 
     @staticmethod
     def detect_waf(req: WafDetectRequest) -> Dict[str, Any]:
@@ -176,7 +163,7 @@ class ScanService:
 
         headers_detected = {}
         detected_waf = "standard"
-        waf_name = "Standard Origin (Nginx / Cloud Linux)"
+        waf_name = "Standard Origin (Nginx / Linux)"
         bypass_suggestions = {}
 
         try:
@@ -202,7 +189,7 @@ class ScanService:
                 "header_value": "",
                 "cookie_key": "cf_clearance",
                 "cookie_value": "",
-                "note": "Cần cấu hình Service Token hoặc Cookie cf_clearance nếu có quyền truy cập Staging."
+                "note": "Cần cung cấp Header CF-Access hoặc Cookie cf_clearance."
             }
         elif "x-vercel-id" in headers_detected or "vercel" in server_header:
             detected_waf = "vercel"
@@ -212,7 +199,7 @@ class ScanService:
                 "header_value": "",
                 "cookie_key": "x-vercel-set-bypass-cookie",
                 "cookie_value": "true",
-                "note": "Sử dụng Bypass Secret cấp trong Project Settings > Deployment Protection trên Vercel."
+                "note": "Cung cấp Protection Bypass Secret từ Vercel Project Settings."
             }
         elif "x-amz-cf-id" in headers_detected or "awselb" in server_header:
             detected_waf = "awswaf"
@@ -222,7 +209,7 @@ class ScanService:
                 "header_value": "",
                 "cookie_key": "",
                 "cookie_value": "",
-                "note": "Cung cấp Header x-api-key hoặc token xác thực môi trường nội bộ."
+                "note": "Cung cấp API Key x-api-key được cấp quyền."
             }
         elif "nginx" in server_header:
             detected_waf = "nginx"
@@ -232,16 +219,10 @@ class ScanService:
                 "header_value": "127.0.0.1",
                 "cookie_key": "",
                 "cookie_value": "",
-                "note": "Kích hoạt chế độ xoay tua IP Multi-Header Spoofing để kiểm thử vượt Rate Limit."
+                "note": "Bật Multi-Header IP Spoofing để kiểm tra tính năng bypass Rate Limit."
             }
 
-        return {
-            "ok": True,
-            "target_url": target,
-            "detected_waf": detected_waf,
-            "waf_name": waf_name,
-            "bypass_suggestions": bypass_suggestions,
-        }
+        return {"ok": True, "target_url": target, "detected_waf": detected_waf, "waf_name": waf_name, "bypass_suggestions": bypass_suggestions}
 
     @staticmethod
     def run_stress_test(req: StressRequest) -> Dict[str, Any]:
@@ -258,10 +239,10 @@ class ScanService:
                 method=req.method or "GET",
                 headers=req.headers or {},
                 body=req.body or None,
-                vus=req.vus,
-                duration=req.duration,
+                target_requests=req.target_requests or 100,
+                duration=req.duration or "5s",
                 bypass_config=req.bypass_config
             )
             return {"ok": True, "result": result}
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Stress test execution failed: {str(exc)}")
+            raise HTTPException(status_code=500, detail=f"Stress test error: {str(exc)}")

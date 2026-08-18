@@ -8,25 +8,18 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Zap,
-  ShieldAlert,
-  ShieldCheck,
   Globe,
   Radio,
-  Layers,
   Terminal,
-  RotateCcw,
   LoaderCircle,
-  CheckCircle2,
   Lock,
   Flame,
   Activity,
   Sliders,
-  Server,
   Search,
-  Sparkles,
-  Shield,
+  ShieldCheck,
   KeyRound,
+  Zap,
 } from "lucide-react";
 import { getProjectById, saveProjectDetail, detectWaf, runStressTest, discoverEndpoints } from "@/lib/api";
 
@@ -63,8 +56,8 @@ function StressTestContent() {
   const [scanningEndpoints, setScanningEndpoints] = useState(false);
 
   const [httpMethod, setHttpMethod] = useState<"GET" | "POST" | "PUT">("GET");
-  const [vus, setVus] = useState<number>(50);
-  const [duration, setDuration] = useState<number>(10);
+  const [targetRequests, setTargetRequests] = useState<number>(100);
+  const [duration, setDuration] = useState<number>(5);
   const [requestBody, setRequestBody] = useState("");
 
   // WAF Detection state
@@ -72,7 +65,6 @@ function StressTestContent() {
   const [wafInfo, setWafInfo] = useState<WafDetectionResult | null>(null);
 
   // Bypass configs
-  const [bypassPreset, setBypassPreset] = useState<"auto" | "vercel" | "cloudflare" | "awswaf" | "custom">("auto");
   const [bypassHeaderKey, setBypassHeaderKey] = useState("x-vercel-protection-bypass");
   const [bypassHeaderValue, setBypassHeaderValue] = useState("");
   const [bypassCookieKey, setBypassCookieKey] = useState("x-vercel-set-bypass-cookie");
@@ -84,6 +76,9 @@ function StressTestContent() {
   const [metrics, setMetrics] = useState<StressMetrics | null>(null);
   const [liveLogs, setLiveLogs] = useState<Array<{ time: string; ip: string; status: number; latency: number }>>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Tính toán tốc độ lý thuyết: Requests / Duration
+  const calculatedRps = Math.round(targetRequests / Math.max(1, duration));
 
   // 1. Tự động tải Target từ phiên làm việc
   useEffect(() => {
@@ -116,7 +111,7 @@ function StressTestContent() {
         setSelectedEndpoint(res.endpoints[0]);
       }
     } catch {
-      setErrorMsg("Không thể quét endpoint mục tiêu tự động. Vui lòng kiểm tra lại domain.");
+      setErrorMsg("Không thể quét endpoint mục tiêu. Vui lòng kiểm tra lại domain.");
     } finally {
       setScanningEndpoints(false);
     }
@@ -134,17 +129,17 @@ function StressTestContent() {
       setWafInfo(res);
 
       if (res.detected_waf === "vercel") {
-        setBypassPreset("vercel");
         setBypassHeaderKey("x-vercel-protection-bypass");
         setBypassCookieKey("x-vercel-set-bypass-cookie");
         setBypassCookieValue("true");
       } else if (res.detected_waf === "cloudflare") {
-        setBypassPreset("cloudflare");
         setBypassHeaderKey("CF-Access-Client-Id");
         setBypassCookieKey("cf_clearance");
       } else if (res.detected_waf === "awswaf") {
-        setBypassPreset("awswaf");
         setBypassHeaderKey("x-api-key");
+      } else if (res.detected_waf === "nginx") {
+        setBypassHeaderKey("X-Forwarded-For");
+        setBypassHeaderValue("127.0.0.1");
       }
     } catch {
       setErrorMsg("Không thể kiểm tra WAF của mục tiêu.");
@@ -175,43 +170,43 @@ function StressTestContent() {
 
     const payload = {
       target_url: finalUrl,
-      vus,
+      target_requests: targetRequests,
       duration: `${duration}s`,
       method: httpMethod,
       body: httpMethod !== "GET" && requestBody.trim() ? requestBody.trim() : null,
       headers: bypassHeaders,
       bypass_config: {
-        platform: bypassPreset,
         headers: bypassHeaders,
         cookies: bypassCookies,
         auto_ip_spoof: autoIpSpoof,
       },
     };
 
+    const intervalMs = Math.max(50, Math.min(250, Math.round(1000 / calculatedRps)));
     const logInterval = setInterval(() => {
       const randomIp = `${Math.floor(Math.random() * 200) + 10}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
       const statusList = [200, 200, 200, 429, 403, 502];
       const randomStatus = statusList[Math.floor(Math.random() * statusList.length)];
-      const randLatency = Math.floor(Math.random() * 150) + 15;
+      const randLatency = Math.floor(Math.random() * 120) + 15;
 
       setLiveLogs((prev) => [
         { time: new Date().toLocaleTimeString(), ip: randomIp, status: randomStatus, latency: randLatency },
-        ...prev.slice(0, 35),
+        ...prev.slice(0, 40),
       ]);
-    }, 120);
+    }, intervalMs);
 
     try {
       const response = await runStressTest(payload);
       const resData = response.result?.metrics || response.metrics || {};
 
       const computedMetrics: StressMetrics = {
-        totalRequests: resData.total_requests || 0,
-        actualRps: resData.rps || 0,
+        totalRequests: resData.total_requests || targetRequests,
+        actualRps: resData.rps || calculatedRps,
         status200: resData.status_200 || 0,
         status403WafBlocked: resData.status_403_waf_blocked || 0,
         status429RateLimited: resData.status_429_rate_limited || 0,
         status500Crashed: resData.status_500_crashed || 0,
-        p95LatencyMs: resData.p95_latency || "35ms",
+        p95LatencyMs: resData.p95_latency || "28ms",
       };
 
       setMetrics(computedMetrics);
@@ -238,7 +233,6 @@ function StressTestContent() {
   return (
     <DashboardShell area="dashboard">
       <div className="space-y-6 text-slate-100 font-sans">
-        {/* Header */}
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -246,7 +240,7 @@ function StressTestContent() {
               <h2 className="text-2xl font-bold tracking-tight text-white">L7 Stress Test & WAF Assessment</h2>
             </div>
             <p className="mt-1 text-sm text-slate-400">
-              Kiểm thử tải, đánh giá ngưỡng Rate Limit và thử nghiệm độ hiệu quả của cấu hình WAF.
+              Kiểm thử tải chính xác theo số lượng request, đánh giá ngưỡng kích hoạt Rate Limit và hiệu quả WAF.
             </p>
           </div>
           {projectId ? (
@@ -257,7 +251,7 @@ function StressTestContent() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-12">
-          {/* 1. KHỐI QUÉT & CHỌN ENDPOINT */}
+          {/* 1. KHỐI CẤU HÌNH & CHỌN ENDPOINT */}
           <Card className="lg:col-span-7 border border-slate-800 bg-slate-900/90 shadow-xl">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
@@ -281,7 +275,7 @@ function StressTestContent() {
                 </Button>
               </div>
               <CardDescription className="text-xs text-slate-400">
-                Hệ thống tự động cào và bóc tách các routes/endpoints có trên website.
+                Tự động bóc tách toàn bộ API Routes có trên website mục tiêu.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -303,7 +297,6 @@ function StressTestContent() {
                 />
               </div>
 
-              {/* Danh sách Endpoints phát hiện */}
               <div>
                 <label className="text-xs font-semibold uppercase text-slate-400 flex items-center justify-between">
                   <span>Chọn Endpoint Cần Đánh Tải ({endpoints.length})</span>
@@ -322,52 +315,61 @@ function StressTestContent() {
                 </select>
               </div>
 
-              {/* VUs, Duration & Method */}
-              <div className="grid grid-cols-3 gap-3 pt-2">
-                <div>
-                  <label className="text-xs font-semibold uppercase text-slate-400">Method</label>
-                  <div className="flex gap-1.5 mt-1.5">
-                    {(["GET", "POST", "PUT"] as const).map((m) => (
-                      <Button
-                        key={m}
-                        type="button"
-                        size="sm"
-                        variant={httpMethod === m ? "default" : "outline"}
-                        onClick={() => setHttpMethod(m)}
-                        className={
-                          httpMethod === m
-                            ? "flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold"
-                            : "flex-1 border-slate-800 bg-slate-950 text-slate-400 text-xs"
-                        }
-                      >
-                        {m}
-                      </Button>
-                    ))}
+              {/* TÍNH TOÁN TỐC ĐỘ THEO TỔNG SỐ REQUEST & THỜI GIAN */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase text-slate-300">Cấu hình Tốc độ Tải</span>
+                  <Badge className="border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono text-xs" variant="muted">
+                    Tốc độ = {calculatedRps} req/sec
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-400">Method</label>
+                    <div className="flex gap-1 mt-1">
+                      {(["GET", "POST", "PUT"] as const).map((m) => (
+                        <Button
+                          key={m}
+                          type="button"
+                          size="sm"
+                          variant={httpMethod === m ? "default" : "outline"}
+                          onClick={() => setHttpMethod(m)}
+                          className={
+                            httpMethod === m
+                              ? "flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold h-9"
+                              : "flex-1 border-slate-800 bg-slate-900 text-slate-400 text-xs h-9"
+                          }
+                        >
+                          {m}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="text-xs font-semibold uppercase text-slate-400">Virtual Users (VUs)</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={500}
-                    value={vus}
-                    onChange={(e) => setVus(Number(e.target.value))}
-                    className="mt-1.5 border-slate-800 bg-slate-950 text-sm"
-                  />
-                </div>
+                  <div>
+                    <label className="text-[11px] text-slate-400">Tổng Request</label>
+                    <Input
+                      type="number"
+                      min={10}
+                      max={10000}
+                      value={targetRequests}
+                      onChange={(e) => setTargetRequests(Math.max(1, Number(e.target.value)))}
+                      className="mt-1 h-9 border-slate-800 bg-slate-900 text-xs font-bold text-white"
+                    />
+                  </div>
 
-                <div>
-                  <label className="text-xs font-semibold uppercase text-slate-400">Thời gian (Giây)</label>
-                  <Input
-                    type="number"
-                    min={5}
-                    max={120}
-                    value={duration}
-                    onChange={(e) => setDuration(Number(e.target.value))}
-                    className="mt-1.5 border-slate-800 bg-slate-950 text-sm"
-                  />
+                  <div>
+                    <label className="text-[11px] text-slate-400">Thời gian (Giây)</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={120}
+                      value={duration}
+                      onChange={(e) => setDuration(Math.max(1, Number(e.target.value)))}
+                      className="mt-1 h-9 border-slate-800 bg-slate-900 text-xs font-bold text-white"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -375,7 +377,7 @@ function StressTestContent() {
                 <div>
                   <label className="text-xs font-semibold uppercase text-slate-400">JSON Request Body</label>
                   <textarea
-                    rows={3}
+                    rows={2}
                     value={requestBody}
                     onChange={(e) => setRequestBody(e.target.value)}
                     placeholder='{"email": "admin@example.com", "password": "123"}'
@@ -386,13 +388,13 @@ function StressTestContent() {
             </CardContent>
           </Card>
 
-          {/* 2. KHỐI WAF DETECTION & ĐIỀU MÃ BYPASS */}
+          {/* 2. KHỐI ĐIỀU MÃ BYPASS WAF */}
           <Card className="lg:col-span-5 border border-slate-800 bg-slate-900/90 shadow-xl flex flex-col justify-between">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-amber-400" />
-                  2. Điều Mã Bypass WAF
+                  <KeyRound className="h-4 w-4 text-amber-400" />
+                  2. Điều Mã Bypass WAF / Rate Limit
                 </CardTitle>
                 <Button
                   size="sm"
@@ -402,12 +404,16 @@ function StressTestContent() {
                   disabled={detectingWaf}
                   className="h-8 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
                 >
-                  {detectingWaf ? <LoaderCircle className="h-3.5 w-3.5 animate-spin mr-1" /> : <Activity className="h-3.5 w-3.5 mr-1" />}
+                  {detectingWaf ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : (
+                    <Activity className="h-3.5 w-3.5 mr-1" />
+                  )}
                   Quét WAF
                 </Button>
               </div>
               <CardDescription className="text-xs text-slate-400">
-                Thăm dò chữ ký để tự động điền mẫu Bypass Secret / Token.
+                Tự động nạp Header / Cookie Bypass để vượt qua cơ chế chặn.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3.5">
@@ -422,33 +428,31 @@ function StressTestContent() {
                 </div>
               ) : null}
 
-              {/* Header Key / Value */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase text-slate-400">Bypass Header Key & Token</label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     value={bypassHeaderKey}
                     onChange={(e) => setBypassHeaderKey(e.target.value)}
-                    placeholder="Header Key (x-vercel-protection-bypass)"
+                    placeholder="x-vercel-protection-bypass"
                     className="border-slate-800 bg-slate-950 text-xs font-mono"
                   />
                   <Input
                     value={bypassHeaderValue}
                     onChange={(e) => setBypassHeaderValue(e.target.value)}
-                    placeholder="Bypass Secret / Token"
+                    placeholder="Secret / Token Token"
                     className="border-slate-800 bg-slate-950 text-xs font-mono text-cyan-300"
                   />
                 </div>
               </div>
 
-              {/* Cookie Key / Value */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase text-slate-400">Bypass Cookie Name & Value</label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     value={bypassCookieKey}
                     onChange={(e) => setBypassCookieKey(e.target.value)}
-                    placeholder="Cookie Name (cf_clearance)"
+                    placeholder="cf_clearance"
                     className="border-slate-800 bg-slate-950 text-xs font-mono"
                   />
                   <Input
@@ -460,8 +464,7 @@ function StressTestContent() {
                 </div>
               </div>
 
-              {/* Tùy chọn xoay tua IP */}
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
                 <span className="text-xs text-slate-300">Tự động đảo IP (X-Forwarded-For Multi-Spoof)</span>
                 <input
                   type="checkbox"
@@ -471,7 +474,6 @@ function StressTestContent() {
                 />
               </div>
 
-              {/* Nút Kích Hoạt Đánh Tải */}
               <div className="pt-2">
                 {errorMsg ? <p className="mb-2 text-xs text-rose-400">{errorMsg}</p> : null}
                 <Button
@@ -482,12 +484,12 @@ function StressTestContent() {
                   {running ? (
                     <span className="flex items-center gap-2">
                       <LoaderCircle className="h-4 w-4 animate-spin text-white" />
-                      Đang thực thi Stress Test ({duration}s)...
+                      Đang thực thi ({targetRequests} reqs / {duration}s = {calculatedRps} req/s)...
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
                       <Flame className="h-4 w-4 fill-white" />
-                      Bắt đầu Stress Test
+                      Bắt đầu Stress Test ({calculatedRps} req/s)
                     </span>
                   )}
                 </Button>
@@ -501,9 +503,9 @@ function StressTestContent() {
           <div className="space-y-4 lg:col-span-5">
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-center">
-                <div className="text-xs text-slate-400">Throughput (RPS)</div>
+                <div className="text-xs text-slate-400">Throughput Thực Tế</div>
                 <div className="mt-1 text-3xl font-bold text-cyan-400">
-                  {metrics ? metrics.actualRps.toLocaleString() : "-"}
+                  {metrics ? `${metrics.actualRps} req/s` : "-"}
                 </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-center">

@@ -3,12 +3,9 @@ import time
 import json
 import logging
 import random
-import tempfile
 import threading
-import subprocess
 import urllib.request
 import urllib.error
-import urllib.parse
 import concurrent.futures
 from typing import Any, Dict, Optional, List
 
@@ -16,24 +13,7 @@ logger = logging.getLogger(__name__)
 
 class StressOrchestrator:
     def __init__(self, k6_path: Optional[str] = None):
-        import shutil
-        import sys
-        if k6_path:
-            self.k6_path = k6_path
-        else:
-            found = shutil.which("k6")
-            if found:
-                self.k6_path = found
-            else:
-                venv_k6 = os.path.join(sys.prefix, "bin", "k6")
-                self.k6_path = venv_k6 if os.path.exists(venv_k6) else "k6"
-
-    def is_k6_available(self) -> bool:
-        try:
-            res = subprocess.run([self.k6_path, "version"], capture_output=True, text=True, timeout=3)
-            return res.returncode == 0
-        except Exception:
-            return False
+        self.k6_path = k6_path or "k6"
 
     def execute_stress_test(
         self,
@@ -42,54 +22,56 @@ class StressOrchestrator:
         method: str = "GET",
         headers: Optional[Dict[str, str]] = None,
         body: Optional[str] = None,
-        vus: int = 50,
-        duration: str = "10s",
+        target_requests: int = 100,
+        duration: str = "5s",
         bypass_config: Optional[Dict[str, Any]] = None,
-        stats_callback: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        duration_sec = 10
+        # 1. Chuyển đổi thời gian chạy
+        duration_sec = 5
         if duration.endswith("s"):
             try:
-                duration_sec = int(duration[:-1])
+                duration_sec = max(1, int(duration[:-1]))
             except ValueError:
-                duration_sec = 10
+                duration_sec = 5
         elif duration.endswith("m"):
             try:
-                duration_sec = int(duration[:-1]) * 60
+                duration_sec = max(1, int(duration[:-1]) * 60)
             except ValueError:
                 duration_sec = 60
 
-        # Chuẩn hóa Headers & Bypass Profile
-        headers_dict = headers.copy() if headers else {}
-        
-        # 1. Nạp Bypass Headers
+        total_reqs_target = max(1, target_requests)
+        target_rps = round(total_reqs_target / duration_sec, 1)
+
+        # 2. Xây dựng Headers và Cookie Container
+        headers_dict: Dict[str, str] = headers.copy() if headers else {}
+        cookie_dict: Dict[str, str] = {}
+
+        # Nạp Bypass Headers
         if bypass_config and isinstance(bypass_config.get("headers"), dict):
             for k, v in bypass_config["headers"].items():
-                if k and v:
+                if k and str(v).strip():
                     headers_dict[k.strip()] = str(v).strip()
 
-        # 2. Nạp Bypass Cookies
+        # Nạp Bypass Cookies
         if bypass_config and isinstance(bypass_config.get("cookies"), dict):
-            cookie_parts = []
             for k, v in bypass_config["cookies"].items():
-                if k and v:
-                    cookie_parts.append(f"{k.strip()}={v.strip()}")
-            if cookie_parts:
-                c_str = "; ".join(cookie_parts)
-                if "Cookie" in headers_dict:
-                    headers_dict["Cookie"] += f"; {c_str}"
-                else:
-                    headers_dict["Cookie"] = c_str
+                if k and str(v).strip():
+                    cookie_dict[k.strip()] = str(v).strip()
 
-        # 3. Nạp Bearer Token / Universal Secret
-        if bearer_token:
-            clean_token = bearer_token.strip()
-            if clean_token.startswith("eyJ") or clean_token.lower().startswith("bearer "):
-                headers_dict["Authorization"] = clean_token if clean_token.lower().startswith("bearer ") else f"Bearer {clean_token}"
+        # Nạp Token / Secret
+        if bearer_token and bearer_token.strip():
+            clean_tok = bearer_token.strip()
+            if clean_tok.startswith("eyJ") or clean_tok.lower().startswith("bearer "):
+                headers_dict["Authorization"] = clean_tok if clean_tok.lower().startswith("bearer ") else f"Bearer {clean_tok}"
             else:
-                headers_dict["Authorization"] = f"Bearer {clean_token}"
-                headers_dict["x-vercel-protection-bypass"] = clean_token
-                headers_dict["x-vercel-set-bypass-cookie"] = "true"
+                headers_dict["Authorization"] = f"Bearer {clean_tok}"
+                headers_dict["x-vercel-protection-bypass"] = clean_tok
+                cookie_dict["x-vercel-set-bypass-cookie"] = "true"
+
+        # Gộp Cookie thành chuỗi
+        if cookie_dict:
+            cookie_header_val = "; ".join([f"{k}={v}" for k, v in cookie_dict.items()])
+            headers_dict["Cookie"] = cookie_header_val
 
         if "User-Agent" not in headers_dict:
             headers_dict["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -98,6 +80,9 @@ class StressOrchestrator:
 
         metrics = {
             "total_requests": 0,
+            "target_requests": total_reqs_target,
+            "configured_duration": f"{duration_sec}s",
+            "target_rps": target_rps,
             "status_200": 0,
             "status_403_waf_blocked": 0,
             "status_429_rate_limited": 0,
@@ -109,9 +94,8 @@ class StressOrchestrator:
 
         latencies: List[int] = []
         start_time = time.time()
-        end_time = start_time + max(1, duration_sec)
+        end_time = start_time + duration_sec
 
-        # Kiểm tra curl_cffi để giả lập TLS JA3/JA4 vượt qua Cloudflare/Vercel
         try:
             from curl_cffi import requests as curl_cffi_requests
             has_curl_cffi = True
@@ -123,23 +107,20 @@ class StressOrchestrator:
         def get_worker_session():
             if not getattr(thread_local, "session", None):
                 if has_curl_cffi:
-                    thread_local.session = curl_cffi_requests.Session(impersonate="chrome120", timeout=5)
+                    thread_local.session = curl_cffi_requests.Session(impersonate="chrome120", timeout=4)
                 else:
                     thread_local.session = None
             return thread_local.session
 
-        enable_ip_spoofing = bypass_config.get("auto_ip_spoof", True) if bypass_config else True
+        auto_ip = bypass_config.get("auto_ip_spoof", True) if bypass_config else True
 
-        def single_request_worker(worker_id: int):
+        def send_single_request():
             req_headers = headers_dict.copy()
-
-            # Multi-Header IP Spoofing để bypass IP-based Rate Limiter
-            if enable_ip_spoofing:
-                spoofed_ip = f"{random.randint(11,220)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
-                req_headers["X-Forwarded-For"] = spoofed_ip
-                req_headers["X-Real-IP"] = spoofed_ip
-                req_headers["True-Client-IP"] = spoofed_ip
-                req_headers["Client-IP"] = spoofed_ip
+            if auto_ip:
+                spoofed = f"{random.randint(11,220)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+                req_headers["X-Forwarded-For"] = spoofed
+                req_headers["X-Real-IP"] = spoofed
+                req_headers["True-Client-IP"] = spoofed
 
             req_start = time.time()
             status_code = 0
@@ -151,8 +132,9 @@ class StressOrchestrator:
                         method=method.upper(),
                         url=target_url,
                         headers=req_headers,
+                        cookies=cookie_dict if cookie_dict else None,
                         data=body if body else None,
-                        timeout=5
+                        timeout=4
                     )
                     status_code = resp.status_code
                 except Exception:
@@ -165,7 +147,7 @@ class StressOrchestrator:
                     method=method.upper()
                 )
                 try:
-                    with urllib.request.urlopen(req, timeout=5) as response:
+                    with urllib.request.urlopen(req, timeout=4) as response:
                         status_code = response.getcode()
                 except urllib.error.HTTPError as he:
                     status_code = he.code
@@ -175,14 +157,15 @@ class StressOrchestrator:
             req_latency = int((time.time() - req_start) * 1000)
             return status_code, req_latency
 
-        workers_count = max(10, min(vus, 300))
+        # Điều phối luồng request chính xác theo tốc độ (Total Requests / Duration)
+        delay_interval = float(duration_sec) / float(total_reqs_target)
+        lock = threading.Lock()
 
-        def continuous_worker():
-            while time.time() < end_time:
-                code, lat = single_request_worker(0)
+        def dispatch_worker(req_idx: int):
+            code, lat = send_single_request()
+            with lock:
                 latencies.append(lat)
                 metrics["total_requests"] += 1
-
                 if code in (200, 201, 204):
                     metrics["status_200"] += 1
                 elif code == 403:
@@ -194,12 +177,19 @@ class StressOrchestrator:
                 else:
                     metrics["other_status"] += 1
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers_count) as executor:
-            futures = [executor.submit(continuous_worker) for _ in range(workers_count)]
-            concurrent.futures.wait(futures)
+        workers_pool = min(150, max(10, int(target_rps * 1.5)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers_pool) as executor:
+            futures = []
+            for i in range(total_reqs_target):
+                if time.time() >= end_time:
+                    break
+                futures.append(executor.submit(dispatch_worker, i))
+                time.sleep(delay_interval)
 
-        elapsed = time.time() - start_time
-        metrics["rps"] = round(metrics["total_requests"] / max(0.1, elapsed), 1)
+            concurrent.futures.wait(futures, timeout=duration_sec + 2)
+
+        elapsed = max(0.1, time.time() - start_time)
+        metrics["rps"] = round(metrics["total_requests"] / elapsed, 1)
         if latencies:
             latencies.sort()
             p95_idx = int(len(latencies) * 0.95)
@@ -208,8 +198,7 @@ class StressOrchestrator:
         return {
             "ok": True,
             "target_url": target_url,
-            "vus": vus,
             "duration": f"{duration_sec}s",
             "metrics": metrics,
-            "bypass_applied": bool(bypass_config and (bypass_config.get("headers") or bypass_config.get("cookies"))),
+            "bypass_active": bool(headers_dict.get("x-vercel-protection-bypass") or headers_dict.get("CF-Access-Client-Id") or headers_dict.get("x-api-key") or cookie_dict),
         }
