@@ -95,12 +95,23 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
       <div className="space-y-6 bg-[#edf3f7] p-2 md:p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-4xl font-black tracking-[-0.04em] text-[#111827]">{displayTitle}</h2>
-            <p className="mt-1 text-base text-[#4b5563]">{displayDomain}</p>
+            <h2 className="text-4xl font-black tracking-[-0.06em] text-[#101828]">{displayTitle}</h2>
+            <p className="mt-1 text-base text-[#475467]">{displayDomain}</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="secondary" onClick={updateSummary}>Lưu/tải chi tiết</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+            <Button
+              variant="secondary"
+              onClick={updateSummary}
+              className="h-11 rounded-xl border border-[#d0d5dd] bg-[#111827] text-white hover:bg-[#1f2937]"
+            >
+              Lưu/tải chi tiết
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="h-11 rounded-xl border border-rose-300/40 bg-[#f7d5db] text-[#b42318] hover:bg-[#f9c7cf]"
+            >
               {deleting ? "Đang xóa..." : "Xóa dự án"}
             </Button>
           </div>
@@ -108,10 +119,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
 
         <div className="grid gap-6 xl:grid-cols-[1.6fr_0.9fr]">
           <div className="space-y-6">
-            <Card className="border-[#dfe7ee] bg-[#f8fafc] shadow-none">
+            <Card className="border border-[#1f2d3d] bg-[#1f2d3d] shadow-none">
               <CardHeader className="pb-4">
-                <CardTitle className="text-[2rem] font-bold tracking-[-0.04em] text-[#111827]">Summary</CardTitle>
-                <CardDescription className="text-base text-[#4b5563]">Thông tin tổng quan dự án</CardDescription>
+                <CardTitle className="text-[2rem] font-bold tracking-[-0.05em] text-white">Summary</CardTitle>
+                <CardDescription className="text-base text-slate-300">Thông tin tổng quan dự án</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -121,19 +132,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
                     { label: "Crawled URLs", value: summary.crawledUrls },
                     { label: "Open ports", value: summary.openPorts },
                   ].map((item) => (
-                    <div key={item.label} className="rounded-2xl border border-[#2f3a46] bg-[#f8fafc] p-4 text-[#111827] shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]">
-                      <div className="text-sm text-[#4b5563]">{item.label}</div>
-                      <div className="mt-3 text-4xl font-bold tracking-[-0.04em]">{item.value}</div>
+                    <div key={item.label} className="rounded-2xl border border-slate-600/60 bg-[#f8fafc] p-4 text-[#111827] shadow-[inset_0_0_0_1px_rgba(15,23,42,0.05)]">
+                      <div className="text-sm text-[#475467]">{item.label}</div>
+                      <div className="mt-3 text-4xl font-bold tracking-[-0.04em] text-[#0f172a]">{item.value}</div>
                     </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="border-[#dfe7ee] bg-[#f8fafc] shadow-none">
+            <Card className="border border-[#1f2d3d] bg-[#1f2d3d] shadow-none">
               <CardHeader className="pb-4">
-                <CardTitle className="text-[2rem] font-bold tracking-[-0.04em] text-[#111827]">Vulnerability</CardTitle>
-                <CardDescription className="text-base text-[#4b5563]">Thông tin mức độ rủi ro</CardDescription>
+                <CardTitle className="text-[2rem] font-bold tracking-[-0.05em] text-white">Vulnerability</CardTitle>
+                <CardDescription className="text-base text-slate-300">Thông tin mức độ rủi ro</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {[
@@ -142,11 +153,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
                   { label: "Medium", value: summary.medium, color: "#facc15", width: `${Math.min(summary.medium * 10, 100)}%` },
                 ].map((item) => (
                   <div key={item.label}>
-                    <div className="mb-2 flex items-center justify-between text-base font-medium text-[#111827]">
+                    <div className="mb-2 flex items-center justify-between text-base font-medium text-white/90">
                       <span>{item.label}</span>
                       <span style={{ color: item.color }}>{item.value}</span>
                     </div>
-                    <div className="h-2.5 overflow-hidden rounded-full bg-[#e5e7eb]">
+                    <div className="h-2.5 overflow-hidden rounded-full bg-slate-700/80">
                       <div className="h-full rounded-full" style={{ width: item.width, backgroundColor: item.color }} />
                     </div>
                   </div>
@@ -156,24 +167,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
           </div>
 
           <div className="space-y-6">
-            <Card className="border-[#dfe7ee] bg-[#f8fafc] shadow-none">
+            <Card className="border border-[#1f2d3d] bg-[#1f2d3d] shadow-none">
               <CardHeader className="pb-3">
-                <CardTitle className="text-[2rem] font-bold tracking-[-0.04em] text-[#111827]">Project metadata</CardTitle>
+                <CardTitle className="text-[2rem] font-bold tracking-[-0.05em] text-white">Project metadata</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4 text-base text-[#111827]">
-                <div className="flex items-center justify-between gap-4"><span className="text-[#4b5563]">Status</span><span className="font-medium uppercase">{detail?.status ?? "ACTIVE"}</span></div>
-                <div className="flex items-center justify-between gap-4"><span className="text-[#4b5563]">Module</span><span className="font-medium">{detail?.module ?? "dashboard"}</span></div>
-                <div className="flex items-center justify-between gap-4"><span className="text-[#4b5563]">Risk score</span><span className="font-medium">{detail?.riskScore ?? 78}</span></div>
-                <div className="flex items-center justify-between gap-4"><span className="text-[#4b5563]">Last scan</span><span className="font-medium">{detail?.lastScanAt ? new Date(detail.lastScanAt).toLocaleString() : "Not available"}</span></div>
+              <CardContent className="space-y-4 text-base text-slate-100">
+                <div className="flex items-center justify-between gap-4"><span className="text-slate-300">Status</span><span className="font-medium uppercase text-white">{detail?.status ?? "ACTIVE"}</span></div>
+                <div className="flex items-center justify-between gap-4"><span className="text-slate-300">Module</span><span className="font-medium text-white">{detail?.module ?? "dashboard"}</span></div>
+                <div className="flex items-center justify-between gap-4"><span className="text-slate-300">Risk score</span><span className="font-medium text-white">{detail?.riskScore ?? 78}</span></div>
+                <div className="flex items-center justify-between gap-4"><span className="text-slate-300">Last scan</span><span className="font-medium text-white">{detail?.lastScanAt ? new Date(detail.lastScanAt).toLocaleString() : "Not available"}</span></div>
               </CardContent>
             </Card>
 
-            <Card className="border-[#dfe7ee] bg-[#f8fafc] shadow-none">
+            <Card className="border border-[#1f2d3d] bg-[#1f2d3d] shadow-none">
               <CardHeader className="pb-3">
-                <CardTitle className="text-[2rem] font-bold tracking-[-0.04em] text-[#111827]">Recommendations</CardTitle>
+                <CardTitle className="text-[2rem] font-bold tracking-[-0.05em] text-white">Recommendations</CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="list-disc space-y-3 pl-5 text-base leading-7 text-[#374151]">
+                <ul className="list-disc space-y-3 pl-5 text-base leading-7 text-slate-200">
                   <li>Enable rate limiting on public endpoints.</li>
                   <li>Patch critical authentication and input validation flaws.</li>
                   <li>Rotate exposed secrets and restrict origin access.</li>

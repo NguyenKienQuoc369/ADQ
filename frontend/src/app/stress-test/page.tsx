@@ -114,108 +114,162 @@ export default function StressTestPage() {
 
   return (
     <DashboardShell area="dashboard">
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>L7 Stress Test & Rate Limit</CardTitle>
-            <CardDescription>Simulate high-volume traffic to validate WAF rules and backend resilience.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="md:col-span-1 space-y-3">
-                <label className="block text-sm">Target URL Endpoint</label>
-                <Input value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)} placeholder="https://api.example.com/endpoint" className="mt-2" />
+      <div className="space-y-6 text-[var(--foreground)]">
+        <div className="rounded-[20px] border border-[color:var(--line)] bg-[color:var(--background-elevated)] p-5 shadow-[0_0_0_1px_rgba(148,163,184,0.04)] md:p-6">
+          <div className="mb-6 border-b border-[color:var(--line)] pb-5">
+            <h1 className="text-[clamp(1.8rem,2.4vw,2.5rem)] font-semibold tracking-[-0.06em] text-[var(--foreground)]">
+              L7 Stress Test & Rate Limit
+            </h1>
+            <p className="mt-2 text-sm text-[var(--foreground-muted)]">
+              Simulate high-volume traffic to validate WAF rules and backend resilience.
+            </p>
+          </div>
 
-                <label className="block text-sm mt-2">Target Requests per Second (RPS)</label>
-                <input type="range" min={100} max={10000} value={rps} onChange={(e) => setRps(Number(e.target.value))} className="mt-2 w-full" />
-                <div className="text-sm text-zinc-600">{rps} RPS</div>
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+            <div className="space-y-5 rounded-2xl border border-[color:var(--line)] bg-[color:var(--background)]/40 p-4 md:p-5">
+              <div>
+                <label className="mb-2 block text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
+                  Target URL Endpoint
+                </label>
+                <Input
+                  value={targetUrl}
+                  onChange={(e) => setTargetUrl(e.target.value)}
+                  placeholder="https://api.example.com/endpoint"
+                  className="h-11 rounded-xl border-[color:var(--line)] bg-transparent text-[var(--foreground)] placeholder:text-[var(--foreground-muted)]"
+                />
+              </div>
 
-                <label className="block text-sm mt-2">Duration (seconds)</label>
-                <input type="range" min={5} max={600} value={duration} onChange={(e) => setDuration(Number(e.target.value))} className="mt-2 w-full" />
-                <div className="text-sm text-zinc-600">{duration} seconds</div>
+              <div>
+                <label className="mb-3 block text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
+                  Target Requests per Second (RPS)
+                </label>
+                <input
+                  type="range"
+                  min={100}
+                  max={10000}
+                  value={rps}
+                  onChange={(e) => setRps(Number(e.target.value))}
+                  className="mt-2 w-full accent-cyan-400"
+                />
+                <div className="mt-2 text-sm text-[var(--foreground)]">{rps} RPS</div>
+              </div>
 
-                <div className="mt-3">
-                  <Button onClick={start} disabled={!targetUrl || running}>{running ? 'Running...' : 'Initiate Attack Simulation'}</Button>
+              <div>
+                <label className="mb-3 block text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--foreground-muted)]">
+                  Duration (seconds)
+                </label>
+                <input
+                  type="range"
+                  min={5}
+                  max={600}
+                  value={duration}
+                  onChange={(e) => setDuration(Number(e.target.value))}
+                  className="mt-2 w-full accent-cyan-400"
+                />
+                <div className="mt-2 text-sm text-[var(--foreground)]">{duration} seconds</div>
+              </div>
+
+              <div>
+                <Button
+                  onClick={start}
+                  disabled={!targetUrl || running}
+                  className="h-11 w-full rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 text-sm font-medium text-cyan-100 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {running ? 'Running...' : 'Initiate Attack Simulation'}
+                </Button>
+              </div>
+
+              <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--background)]/35 p-4">
+                <h4 className="text-sm font-semibold text-[var(--foreground)]">WAF Bypass Configuration</h4>
+                <div className="mt-2 text-xs leading-5 text-[var(--foreground-muted)]">
+                  Provide platform-specific headers or select an existing profile.
                 </div>
-
-                <div className="mt-4">
-                  <h4 className="text-sm font-medium">WAF Bypass Configuration</h4>
-                  <div className="mt-2 text-xs text-zinc-600">Provide platform-specific headers or select an existing profile.</div>
-                  <div className="mt-3 space-y-2">
-                    <select className="w-full rounded border px-3 py-1 text-sm" value={bypassConfig.platform} onChange={(e)=>setBypassConfig({...bypassConfig, platform: e.target.value})}>
-                      <option value="standard">Standard (no bypass)</option>
-                      <option value="cloudflare">Cloudflare - CF-Access</option>
-                      <option value="vercel">Vercel - x-vercel-protection-bypass</option>
-                      <option value="awswaf">AWS WAF - x-api-key</option>
-                    </select>
-                    {/* Simple form inputs for header examples */}
-                    <div className="text-xs text-zinc-500">Example headers: CF-Access-Client-Id, cf_clearance, x-vercel-protection-bypass, x-api-key</div>
+                <div className="mt-4 space-y-3">
+                  <select
+                    className="w-full rounded-xl border border-[color:var(--line)] bg-[color:var(--background-elevated)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none"
+                    value={bypassConfig.platform}
+                    onChange={(e) => setBypassConfig({ ...bypassConfig, platform: e.target.value })}
+                  >
+                    <option value="standard">Standard (no bypass)</option>
+                    <option value="cloudflare">Cloudflare - CF-Access</option>
+                    <option value="vercel">Vercel - x-vercel-protection-bypass</option>
+                    <option value="awswaf">AWS WAF - x-api-key</option>
+                  </select>
+                  <div className="text-xs leading-5 text-[var(--foreground-muted)]">
+                    Example headers: CF-Access-Client-Id, cf_clearance, x-vercel-protection-bypass, x-api-key
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div className="md:col-span-2 space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Live War Room</CardTitle>
-                    <CardDescription>Real-time metrics and rolling request stream (SSE/WebSocket in production)</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="rounded border p-3">
-                        <div className="text-sm text-zinc-500">Current Throughput (RPS)</div>
-                        <div className="text-3xl font-semibold">{metrics ? metrics.actualRps.toLocaleString() : '-'}</div>
-                      </div>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--background)]/30 p-4 md:p-5">
+                <div className="mb-4">
+                  <h2 className="text-2xl font-semibold tracking-[-0.05em] text-[var(--foreground)]">Live War Room</h2>
+                  <p className="mt-1 text-sm text-[var(--foreground-muted)]">
+                    Real-time metrics and rolling request stream (SSE/WebSocket in production)
+                  </p>
+                </div>
 
-                      <div className="rounded border p-3">
-                        <div className="text-sm text-zinc-500">Latency p95 (ms)</div>
-                        <div className="text-3xl font-semibold">{metrics ? metrics.p95LatencyMs : '-'}</div>
-                      </div>
-
-                      <div className="rounded border p-3 col-span-2">
-                        <div className="text-sm text-zinc-500">HTTP Status distribution</div>
-                        <div className="mt-2 text-sm grid grid-cols-4 gap-2">
-                          <div>200 OK: {metrics ? metrics.status200 + '%' : ' -'}</div>
-                          <div>403 WAF Blocked: {metrics ? metrics.status403WafBlocked + '%' : ' -'}</div>
-                          <div>429 Rate Limited: {metrics ? metrics.status429RateLimited + '%' : ' -'}</div>
-                          <div>500 Server Error: {metrics ? metrics.status500Crashed + '%' : ' -'}</div>
-                        </div>
-                      </div>
-
-                      <div className="col-span-2">
-                        <div className="text-sm text-zinc-500 mb-2">Rolling Request Log</div>
-                        <div className="max-h-60 overflow-auto rounded border bg-white">
-                          <table className="min-w-full text-sm">
-                            <thead className="bg-zinc-100 text-left">
-                              <tr>
-                                <th className="px-2 py-2">Time</th>
-                                <th className="px-2 py-2">Spoofed IP</th>
-                                <th className="px-2 py-2">Endpoint</th>
-                                <th className="px-2 py-2">Status</th>
-                                <th className="px-2 py-2">Latency</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {logs.map((l, idx) => (
-                                <tr key={idx} className="border-t">
-                                  <td className="px-2 py-2 text-xs">{new Date(l.time).toLocaleTimeString()}</td>
-                                  <td className="px-2 py-2 text-xs">{l.ip}</td>
-                                  <td className="px-2 py-2 text-xs font-mono">{l.path}</td>
-                                  <td className={`px-2 py-2 text-xs ${l.status >=500 ? 'text-rose-600' : l.status===403 ? 'text-orange-500' : ''}`}>{l.status}</td>
-                                  <td className="px-2 py-2 text-xs">{l.latency}ms</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-[color:var(--line)] bg-[color:var(--background-elevated)] p-4">
+                    <div className="text-sm text-[var(--foreground-muted)]">Current Throughput (RPS)</div>
+                    <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[var(--foreground)]">
+                      {metrics ? metrics.actualRps.toLocaleString() : '-'}
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+
+                  <div className="rounded-xl border border-[color:var(--line)] bg-[color:var(--background-elevated)] p-4">
+                    <div className="text-sm text-[var(--foreground-muted)]">Latency p95 (ms)</div>
+                    <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[var(--foreground)]">
+                      {metrics ? metrics.p95LatencyMs : '-'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-[color:var(--line)] bg-[color:var(--background-elevated)] p-4">
+                  <div className="text-sm text-[var(--foreground-muted)]">HTTP Status distribution</div>
+                  <div className="mt-3 grid gap-2 text-sm text-[var(--foreground)] sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--background-muted)] px-3 py-2">200 OK: {metrics ? `${metrics.status200}%` : ' -'}</div>
+                    <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--background-muted)] px-3 py-2">403 WAF Blocked: {metrics ? `${metrics.status403WafBlocked}%` : ' -'}</div>
+                    <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--background-muted)] px-3 py-2">429 Rate Limited: {metrics ? `${metrics.status429RateLimited}%` : ' -'}</div>
+                    <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--background-muted)] px-3 py-2">500 Server Error: {metrics ? `${metrics.status500Crashed}%` : ' -'}</div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="mb-3 text-sm text-[var(--foreground-muted)]">Rolling Request Log</div>
+                  <div className="max-h-[320px] overflow-auto rounded-xl border border-[color:var(--line)] bg-[color:var(--background-elevated)]">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-[color:var(--background-muted)] text-left text-[var(--foreground-muted)]">
+                        <tr>
+                          <th className="px-3 py-2.5 font-medium">Time</th>
+                          <th className="px-3 py-2.5 font-medium">Spoofed IP</th>
+                          <th className="px-3 py-2.5 font-medium">Endpoint</th>
+                          <th className="px-3 py-2.5 font-medium">Status</th>
+                          <th className="px-3 py-2.5 font-medium">Latency</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-[var(--foreground)]">
+                        {logs.map((l, idx) => (
+                          <tr key={idx} className="border-t border-[color:var(--line)]">
+                            <td className="px-3 py-2 text-xs">{new Date(l.time).toLocaleTimeString()}</td>
+                            <td className="px-3 py-2 text-xs">{l.ip}</td>
+                            <td className="px-3 py-2 font-mono text-xs">{l.path}</td>
+                            <td className={`px-3 py-2 text-xs ${l.status >= 500 ? 'text-rose-400' : l.status === 403 ? 'text-orange-400' : 'text-cyan-300'}`}>
+                              {l.status}
+                            </td>
+                            <td className="px-3 py-2 text-xs">{l.latency}ms</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </DashboardShell>
   );
