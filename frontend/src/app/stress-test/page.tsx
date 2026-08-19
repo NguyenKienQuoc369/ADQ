@@ -40,13 +40,20 @@ function StressTestContent() {
   const [selectedEndpoint, setSelectedEndpoint] = useState("");
   const [scanningEndpoints, setScanningEndpoints] = useState(false);
 
+  // Tốc độ: Tổng request trong N giây
   const [targetRequests, setTargetRequests] = useState<number>(2000);
   const [duration, setDuration] = useState<number>(5);
 
+  // WAF Detection state
   const [detectingWaf, setDetectingWaf] = useState(false);
+  const [detectedWaf, setDetectedWaf] = useState<string>("standard");
   const [detectedWafName, setDetectedWafName] = useState<string | null>(null);
+  const [inputLabel, setInputLabel] = useState<string>("Mã Bypass / Secret Token");
+  const [inputPlaceholder, setInputPlaceholder] = useState<string>("Nhập mã bypass hoặc token xác thực");
+  const [wafHint, setWafHint] = useState<string | null>(null);
   const [bypassCode, setBypassCode] = useState<string>("");
 
+  // Execution state
   const [running, setRunning] = useState(false);
   const [metrics, setMetrics] = useState<StressMetrics | null>(null);
   const [liveLogs, setLiveLogs] = useState<Array<{ time: string; ip: string; status: number; latency: number }>>([]);
@@ -54,6 +61,7 @@ function StressTestContent() {
 
   const calculatedRps = Math.round(targetRequests / Math.max(1, duration));
 
+  // 1. Nạp dữ liệu từ Project Session
   useEffect(() => {
     if (!projectId) return;
 
@@ -71,6 +79,7 @@ function StressTestContent() {
       .catch((e) => console.warn("Load project error:", e));
   }, [projectId]);
 
+  // 2. Quét Endpoint tự động của mục tiêu
   const handleScanEndpoints = async () => {
     if (!baseDomain) return;
     setScanningEndpoints(true);
@@ -89,6 +98,7 @@ function StressTestContent() {
     }
   };
 
+  // 3. Quét WAF & Tự Động Thích Ứng Ô Nhập Mã Bypass
   const handleDetectWaf = async () => {
     const target = selectedEndpoint || baseDomain;
     if (!target) return;
@@ -97,10 +107,11 @@ function StressTestContent() {
 
     try {
       const res = await detectWaf(target);
+      setDetectedWaf(res.detected_waf || "standard");
       setDetectedWafName(res.waf_name);
-      if (!bypassCode && res.default_bypass_hint) {
-        setBypassCode(res.default_bypass_hint);
-      }
+      setInputLabel(res.input_label || "Mã Bypass / Secret Token");
+      setInputPlaceholder(res.input_placeholder || "Nhập mã bypass");
+      setWafHint(res.hint);
     } catch {
       setErrorMsg("Không thể kiểm tra WAF của mục tiêu.");
     } finally {
@@ -108,6 +119,7 @@ function StressTestContent() {
     }
   };
 
+  // 4. Kích hoạt L7 Stress Test
   const handleStartStress = async () => {
     const finalUrl = selectedEndpoint || baseDomain;
     if (!finalUrl || running) return;
@@ -122,6 +134,7 @@ function StressTestContent() {
       target_requests: targetRequests,
       duration: `${duration}s`,
       bypass_code: bypassCode.trim(),
+      waf_type: detectedWaf,
     };
 
     try {
@@ -170,7 +183,7 @@ function StressTestContent() {
               <h2 className="text-2xl font-bold tracking-tight text-white">L7 Stress Test & WAF Assessment</h2>
             </div>
             <p className="mt-1 text-sm text-slate-400">
-              Kiểm thử tải thực tế, đo lường chính xác mã phản hồi HTTP và hiệu quả của mã Bypass.
+              Kiểm thử tải chính xác theo số lượng request, đo lường phản hồi thực tế và kiểm tra hiệu quả mã Bypass.
             </p>
           </div>
           {projectId ? (
@@ -245,7 +258,7 @@ function StressTestContent() {
                 </select>
               </div>
 
-              {/* CẤU HÌNH TỐC ĐỘ: REQUESTS / DURATION */}
+              {/* TÍNH TOÁN TỐC ĐỘ: REQUESTS / DURATION */}
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase text-slate-300">Tốc độ Bắn Tải Mục Tiêu</span>
@@ -284,7 +297,7 @@ function StressTestContent() {
             </CardContent>
           </Card>
 
-          {/* 2. KHỐI WAF DETECTION & ĐIỀU MÃ BYPASS */}
+          {/* 2. KHỐI WAF DETECTION & Ô NHẬP BYPASS TỰ ĐỘNG THÍCH ỨNG */}
           <Card className="lg:col-span-5 border border-slate-800 bg-slate-900/90 shadow-xl flex flex-col justify-between">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
@@ -309,7 +322,7 @@ function StressTestContent() {
                 </Button>
               </div>
               <CardDescription className="text-xs text-slate-400">
-                Nhận diện tường lửa và nhập chuỗi token/secret bypass.
+                Ô nhập mã Bypass sẽ tự thích ứng theo loại tường lửa đã phát hiện.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -318,47 +331,29 @@ function StressTestContent() {
                   <div className="font-bold text-amber-300 flex items-center gap-1.5">
                     <ShieldCheck className="h-4 w-4 text-emerald-400" /> {detectedWafName}
                   </div>
-                  <p className="text-[11px] text-slate-300">
-                    Đã phát hiện chữ ký WAF. Hãy điền mã Bypass Secret hoặc Cookie bên dưới.
-                  </p>
+                  {wafHint ? <p className="text-[11px] text-slate-300">{wafHint}</p> : null}
                 </div>
               ) : null}
 
-              {/* Ô NHẬP MÃ BYPASS ĐA NĂNG */}
+              {/* Ô NHẬP MÃ BYPASS THÍCH ỨNG TỰ ĐỘNG */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase text-slate-400 flex items-center justify-between">
-                  <span>Mã Bypass / Header / Cookie Token</span>
-                  <span className="text-[10px] text-cyan-400">Universal Inject</span>
+                  <span>{inputLabel}</span>
+                  <span className="text-[10px] text-cyan-400 uppercase font-mono">[{detectedWaf}]</span>
                 </label>
                 <Input
                   value={bypassCode}
                   onChange={(e) => setBypassCode(e.target.value)}
-                  placeholder="VD: x-vercel-protection-bypass: secret_token hoặc cf_clearance=abc"
+                  placeholder={inputPlaceholder}
                   className="h-11 border-slate-800 bg-slate-950 font-mono text-xs text-cyan-300 placeholder:text-slate-600"
                 />
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setBypassCode("x-vercel-protection-bypass: ")}
-                    className="rounded px-2 py-0.5 text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300"
-                  >
-                    + Vercel Header
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBypassCode("cf_clearance=")}
-                    className="rounded px-2 py-0.5 text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300"
-                  >
-                    + Cloudflare Cookie
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBypassCode("x-api-key: ")}
-                    className="rounded px-2 py-0.5 text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300"
-                  >
-                    + AWS x-api-key
-                  </button>
-                </div>
+                <p className="text-[11px] text-slate-500">
+                  {detectedWaf === "vercel"
+                    ? "Chỉ cần dán mã secret (rsE...), hệ thống sẽ tự nạp header x-vercel-protection-bypass."
+                    : detectedWaf === "cloudflare"
+                    ? "Chỉ cần dán token cf_clearance hoặc Service Token."
+                    : "Hỗ trợ nhập trực tiếp token, API key hoặc định dạng key: value."}
+                </p>
               </div>
 
               {/* Nút Bắt Đầu Bắn Tải */}
@@ -372,7 +367,7 @@ function StressTestContent() {
                   {running ? (
                     <span className="flex items-center gap-2">
                       <LoaderCircle className="h-4 w-4 animate-spin text-white" />
-                      Đang thực thi bắn tải thực tế...
+                      Đang thực thi bắn tải ({targetRequests} reqs / {duration}s = {calculatedRps} req/s)...
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">

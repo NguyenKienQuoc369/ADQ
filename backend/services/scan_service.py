@@ -131,12 +131,11 @@ class ScanService:
             except Exception:
                 pass
 
-        # 2. Cào mã nguồn HTML & Bóc tách Next.js Build Manifest
+        # 2. Cào HTML & Bóc tách Next.js Manifest
         try:
             req = urllib.request.Request(base_clean, headers=headers)
             with urllib.request.urlopen(req, timeout=5, context=ssl_unverified_context) as resp:
                 html_body = resp.read().decode("utf-8", errors="ignore")
-                
                 manifest_matches = re.findall(r'src=["\'](/_next/static/[^"\']+/_buildManifest\.js)["\']', html_body)
                 for mf in manifest_matches:
                     try:
@@ -164,7 +163,6 @@ class ScanService:
         except Exception:
             pass
 
-        # 3. Dự phòng các API endpoints phổ biến
         common_probes = ["/api/auth/login", "/api/v1/user", "/api/health", "/login", "/register", "/dashboard"]
         for cp in common_probes:
             full_probe = f"{base_clean}{cp}"
@@ -182,7 +180,9 @@ class ScanService:
         headers_detected = {}
         detected_waf = "standard"
         waf_name = "Standard Origin (Nginx / Linux)"
-        default_bypass_hint = "x-forwarded-for: 127.0.0.1"
+        input_label = "Mã Bypass / Secret Token"
+        input_placeholder = "Nhập mã bypass hoặc token xác thực"
+        hint = "Hệ thống hỗ trợ nạp Bearer token hoặc header tùy chỉnh."
 
         try:
             req_probe = urllib.request.Request(
@@ -201,22 +201,30 @@ class ScanService:
         if "cf-ray" in headers_detected or "cloudflare" in server_h:
             detected_waf = "cloudflare"
             waf_name = "Cloudflare WAF / DDoS Protection"
-            default_bypass_hint = "cf_clearance=<token>"
+            input_label = "Cloudflare cf_clearance / Token"
+            input_placeholder = "Nhập trực tiếp mã token cf_clearance hoặc Access Client Secret"
+            hint = "Hệ thống tự động nạp cookie cf_clearance và header CF-Access tương ứng."
         elif "x-vercel-id" in headers_detected or "vercel" in server_h:
             detected_waf = "vercel"
             waf_name = "Vercel Edge Deployment Protection"
-            default_bypass_hint = "x-vercel-protection-bypass: <secret>"
+            input_label = "Vercel Protection Bypass Secret"
+            input_placeholder = "rsE... (Nhập trực tiếp chuỗi mã secret)"
+            hint = "Hệ thống tự động cấu hình header x-vercel-protection-bypass và cookie xác thực."
         elif "x-amz-cf-id" in headers_detected or "awselb" in server_h:
             detected_waf = "awswaf"
-            waf_name = "AWS WAF / CloudFront"
-            default_bypass_hint = "x-api-key: <token>"
+            waf_name = "AWS WAF / Amazon CloudFront"
+            input_label = "AWS WAF x-api-key"
+            input_placeholder = "Nhập chuỗi API Key x-api-key"
+            hint = "Hệ thống tự động gắn header x-api-key vào từng request."
 
         return {
             "ok": True,
             "target_url": target,
             "detected_waf": detected_waf,
             "waf_name": waf_name,
-            "default_bypass_hint": default_bypass_hint,
+            "input_label": input_label,
+            "input_placeholder": input_placeholder,
+            "hint": hint,
         }
 
     @staticmethod
@@ -229,6 +237,7 @@ class ScanService:
                 target_requests=req.target_requests or 1000,
                 duration=req.duration or "5s",
                 bypass_code=req.bypass_code or "",
+                waf_type=req.waf_type or "standard",
                 custom_headers=req.custom_headers,
                 custom_cookies=req.custom_cookies,
             )
