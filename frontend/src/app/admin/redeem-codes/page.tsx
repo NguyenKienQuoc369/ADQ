@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import AdminLoginPage from "@/app/admin/login/page";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { KeyRound, Plus, Copy, Check } from "lucide-react";
 import { getRedeemCodes, createRedeemCode } from "@/lib/api";
 
 export default function AdminRedeemCodesPage() {
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [codes, setCodes] = useState<any[]>([
     { id: "rc_1", code: "ADQ-PRO-98AF23", packageTier: "PRO", durationLabel: "30 Ngày", maxUses: 1, usedCount: 0, status: "UNUSED" },
     { id: "rc_2", code: "ADQ-PRO_MAX-77C091", packageTier: "PRO_MAX", durationLabel: "90 Ngày", maxUses: 1, usedCount: 0, status: "UNUSED" },
@@ -17,12 +19,21 @@ export default function AdminRedeemCodesPage() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   useEffect(() => {
-    getRedeemCodes()
-      .then((res: any) => {
-        if (res && res.codes && res.codes.length > 0) setCodes(res.codes);
-      })
-      .catch(() => {});
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("adq_admin_root_token");
+      setAuthorized(token === "soc_root_authorized_session");
+    }
   }, []);
+
+  useEffect(() => {
+    if (authorized) {
+      getRedeemCodes()
+        .then((res: any) => {
+          if (res && res.codes && res.codes.length > 0) setCodes(res.codes);
+        })
+        .catch(() => {});
+    }
+  }, [authorized]);
 
   const handleGenerate = async () => {
     try {
@@ -54,6 +65,9 @@ export default function AdminRedeemCodesPage() {
     setCopiedCode(c);
     setTimeout(() => setCopiedCode(null), 2000);
   };
+
+  if (authorized === null) return <div className="min-h-screen bg-[#020617]" />;
+  if (!authorized) return <AdminLoginPage onSuccess={() => setAuthorized(true)} />;
 
   return (
     <AdminShell>
@@ -94,7 +108,6 @@ export default function AdminRedeemCodesPage() {
           </div>
         </Card>
 
-        {/* Danh Sách Mã Đã Tạo */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {codes.map((c) => (
             <div key={c.id || c.code} className="p-4 rounded-2xl border border-slate-800 bg-slate-900/60 flex items-center justify-between">
@@ -105,7 +118,7 @@ export default function AdminRedeemCodesPage() {
                 </div>
               </div>
               <Button size="sm" variant="outline" onClick={() => handleCopy(c.code)} className="h-8 border-slate-800 bg-slate-950 text-xs">
-                {copiedCode === c.code ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiedCode === c.code ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 text-slate-400" />}
               </Button>
             </div>
           ))}

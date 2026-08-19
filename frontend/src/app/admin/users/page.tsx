@@ -1,23 +1,30 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import AdminLoginPage from "@/app/admin/login/page";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Users, Search, UserPlus, Shield, Sparkles, CheckCircle2, XCircle } from "lucide-react";
+import { Users, Search } from "lucide-react";
 
 export default function AdminUsersPage() {
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [users, setUsers] = useState<any[]>([
     { id: "usr_001", name: "Nguyễn Kiến Quốc", email: "quockien2006@gmail.com", role: "ADMIN", packageTier: "PRO_MAX", status: "ACTIVE", scansToday: 8, dailyLimit: 999 },
     { id: "usr_002", name: "Test Developer", email: "dev@adq.io.vn", role: "USER", packageTier: "FREE", status: "ACTIVE", scansToday: 1, dailyLimit: 3 },
   ]);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("adq_admin_root_token");
+      setAuthorized(token === "soc_root_authorized_session");
+    }
+  }, []);
 
   const fetchUsers = async () => {
-    setLoading(true);
     try {
       const res = await fetch("/api/admin/users");
       if (res.ok) {
@@ -25,23 +32,23 @@ export default function AdminUsersPage() {
         if (data.users && data.users.length > 0) setUsers(data.users);
       }
     } catch {}
-    finally {
-      setLoading(false);
-    }
   };
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    if (authorized) fetchUsers();
+  }, [authorized]);
 
   const filteredUsers = users.filter(u => 
-    u.email.toLowerCase().includes(search.toLowerCase()) || 
-    u.name.toLowerCase().includes(search.toLowerCase())
+    u.email?.toLowerCase().includes(search.toLowerCase()) || 
+    u.name?.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleUpgradeTier = (userId: string, newTier: string) => {
     setUsers(users.map(u => u.id === userId ? { ...u, packageTier: newTier } : u));
   };
+
+  if (authorized === null) return <div className="min-h-screen bg-[#020617]" />;
+  if (!authorized) return <AdminLoginPage onSuccess={() => setAuthorized(true)} />;
 
   return (
     <AdminShell>
@@ -53,16 +60,14 @@ export default function AdminUsersPage() {
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">Kiểm soát hạn ngạch quét, nâng cấp gói cước và trạng thái tài khoản</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
-              <Input
-                placeholder="Tìm email hoặc tên..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-8 pl-8 text-xs border-slate-800 bg-slate-900/80 rounded-xl"
-              />
-            </div>
+          <div className="relative w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+            <Input
+              placeholder="Tìm email hoặc tên..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 pl-8 text-xs border-slate-800 bg-slate-900/80 rounded-xl"
+            />
           </div>
         </div>
 

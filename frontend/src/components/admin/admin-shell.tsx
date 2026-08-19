@@ -1,9 +1,8 @@
 "use client";
 
-import React from "react";
-import Link from "next/link";
+import React, { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Gauge, Users, KeyRound, LogOut, Terminal } from "lucide-react";
+import { Gauge, Users, KeyRound, LogOut, Terminal, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +14,11 @@ const adminNav = [
 
 export function AdminShell({ children, onLogout }: { children: React.ReactNode; onLogout?: () => void }) {
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleLogout = () => {
     if (onLogout) {
@@ -22,12 +26,15 @@ export function AdminShell({ children, onLogout }: { children: React.ReactNode; 
     } else if (typeof window !== "undefined") {
       localStorage.removeItem("adq_admin_root_token");
       document.cookie = "adq_admin_root_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
-      window.location.reload();
+      window.location.href = "/";
     }
   };
 
+  if (!mounted) return <div className="min-h-screen bg-[#020617]" />;
+
   return (
     <div className="flex min-h-screen bg-[#020617] text-slate-100 font-sans selection:bg-rose-500 selection:text-white">
+      {/* Sidebar Admin Riêng Biệt */}
       <aside className="w-64 shrink-0 border-r border-white/[0.08] bg-slate-950/90 p-4 flex flex-col justify-between backdrop-blur-2xl">
         <div className="space-y-6">
           <div className="flex items-center gap-3 p-2 rounded-2xl bg-slate-900/80 border border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.15)]">
@@ -47,19 +54,19 @@ export function AdminShell({ children, onLogout }: { children: React.ReactNode; 
               const Icon = item.icon;
               const active = pathname === item.href || (item.href === "/admin" && (pathname === "/" || pathname === ""));
               return (
-                <Link
+                <a
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium transition",
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium transition cursor-pointer",
                     active
-                      ? "border border-rose-500/40 bg-rose-950/40 text-rose-300 shadow-md"
+                      ? "border border-rose-500/40 bg-rose-950/40 text-rose-300 shadow-md font-bold"
                       : "text-slate-400 hover:bg-slate-900/60 hover:text-slate-200"
                   )}
                 >
                   <Icon className={cn("h-4 w-4", active ? "text-rose-400" : "text-slate-400")} />
                   <span>{item.label}</span>
-                </Link>
+                </a>
               );
             })}
           </nav>
@@ -74,6 +81,7 @@ export function AdminShell({ children, onLogout }: { children: React.ReactNode; 
         </Button>
       </aside>
 
+      {/* Main Content */}
       <main className="flex-1 p-6 overflow-y-auto">{children}</main>
     </div>
   );
