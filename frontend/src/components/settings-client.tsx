@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import Image from "next/image";
 import {
-  Globe2,
   KeyRound,
   Lock,
   Mail,
@@ -13,10 +13,12 @@ import {
   LoaderCircle,
   Copy,
   Check,
-  Bell,
   ShieldCheck,
   LogOut,
-  Send,
+  Camera,
+  Headphones,
+  ExternalLink,
+  Code2,
 } from "lucide-react";
 
 import { DashboardShell } from "@/components/dashboard-shell";
@@ -29,15 +31,17 @@ import { Label } from "@/components/ui/label";
 
 export function SettingsClient() {
   const { user, updateUser, logout } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // State Profile
   const [profile, setProfile] = useState({
     name: "",
     email: "",
-    company: "",
     phone: "",
+    avatarUrl: "",
   });
   const [profileLoading, setProfileLoading] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [profileStatus, setProfileStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   // State Password
@@ -52,26 +56,20 @@ export function SettingsClient() {
   const [apiToken, setApiToken] = useState("");
   const [tokenCopied, setTokenCopied] = useState(false);
 
-  // State Webhook Notification
-  const [webhookUrl, setWebhookUrl] = useState("");
-  const [webhookSaved, setWebhookSaved] = useState(false);
+  // State Modal Hỗ Trợ Developer
+  const [showSupportModal, setShowSupportModal] = useState(false);
 
-  // Đồng bộ dữ liệu khi user nạp xong
   useEffect(() => {
     if (user) {
       setProfile({
         name: user.name || "",
         email: user.email || "",
-        company: (user as any).company || "NQ SECURITY Labs",
         phone: (user as any).phone || "",
+        avatarUrl: user.avatar || (user as any).avatar_url || "",
       });
     }
 
     if (typeof window !== "undefined") {
-      const savedWebhook = localStorage.getItem("adq_webhook_url") || "";
-      setWebhookUrl(savedWebhook);
-
-      // Lấy token Supabase hiện tại làm API Key
       const supabase = createSupabaseBrowserClient();
       supabase.auth.getSession().then(({ data }) => {
         if (data.session?.access_token) {
@@ -81,7 +79,52 @@ export function SettingsClient() {
     }
   }, [user]);
 
-  // 1. Xử lý Lưu Profile
+  // 1. Xử lý Upload Avatar trực tiếp
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setProfileStatus({ type: "error", msg: "Vui lòng chọn tệp hình ảnh hợp lệ (PNG, JPG, WEBP)." });
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setProfileStatus({ type: "error", msg: "Kích thước ảnh tối đa là 2MB." });
+      return;
+    }
+
+    setAvatarUploading(true);
+    setProfileStatus(null);
+
+    try {
+      // Chuyển file ảnh thành Data URL để lưu vào user metadata
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Url = reader.result as string;
+        const supabase = createSupabaseBrowserClient();
+        const { error } = await supabase.auth.updateUser({
+          data: {
+            avatar_url: base64Url,
+            picture: base64Url,
+          },
+        });
+
+        if (error) throw error;
+
+        setProfile((prev) => ({ ...prev, avatarUrl: base64Url }));
+        updateUser({ avatar: base64Url });
+        setProfileStatus({ type: "success", msg: "Cập nhật ảnh đại diện thành công!" });
+        setAvatarUploading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setProfileStatus({ type: "error", msg: err.message || "Không thể tải lên ảnh đại diện." });
+      setAvatarUploading(false);
+    }
+  };
+
+  // 2. Xử lý Lưu Profile
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileLoading(true);
@@ -93,7 +136,6 @@ export function SettingsClient() {
         data: {
           name: profile.name.trim(),
           full_name: profile.name.trim(),
-          company: profile.company.trim(),
           phone: profile.phone.trim(),
         },
       });
@@ -102,7 +144,7 @@ export function SettingsClient() {
 
       updateUser({
         name: profile.name.trim(),
-        ...({ company: profile.company.trim(), phone: profile.phone.trim() } as any),
+        ...({ phone: profile.phone.trim() } as any),
       });
 
       setProfileStatus({ type: "success", msg: "Cập nhật thông tin hồ sơ thành công!" });
@@ -113,7 +155,7 @@ export function SettingsClient() {
     }
   };
 
-  // 2. Xử lý Đổi Mật Khẩu
+  // 3. Xử lý Đổi Mật Khẩu
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPassStatus(null);
@@ -146,15 +188,6 @@ export function SettingsClient() {
     }
   };
 
-  // 3. Xử lý Lưu Webhook
-  const handleSaveWebhook = () => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("adq_webhook_url", webhookUrl.trim());
-      setWebhookSaved(true);
-      setTimeout(() => setWebhookSaved(false), 2500);
-    }
-  };
-
   // 4. Sao chép API Token
   const handleCopyToken = () => {
     if (!apiToken) return;
@@ -166,16 +199,16 @@ export function SettingsClient() {
   const accountSummary: { label: string; value: string; tone: "success" | "default" | "muted" }[] = [
     { label: "Trạng thái", value: user?.status ?? "ACTIVE", tone: "success" },
     { label: "Gói cước", value: user?.packageTier?.replace("_", " ") ?? "FREE", tone: "default" },
-    { label: "Xác thực OAuth", value: user?.oauthProvider === "google" ? "Google Account" : "Email & Password", tone: "muted" },
+    { label: "Xác thực", value: user?.oauthProvider === "google" ? "Google OAuth" : "Email & Password", tone: "muted" },
   ];
 
   return (
     <DashboardShell area="dashboard">
       <div className="space-y-6 max-w-7xl mx-auto font-sans text-slate-100">
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_380px]">
-          {/* CỘT TRÁI: FORM CÀI ĐẶT */}
+          {/* CỘT TRÁI */}
           <div className="space-y-6">
-            {/* 1. Form Cài Đặt Hồ Sơ */}
+            {/* 1. Form Cài Đặt Hồ Sơ & Thay Avatar */}
             <section className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6 backdrop-blur-xl shadow-xl">
               <div className="mb-5 flex items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
@@ -200,17 +233,54 @@ export function SettingsClient() {
                 </div>
               )}
 
-              <form onSubmit={handleSaveProfile} className="space-y-4">
-                <div className="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-lg font-bold">
-                    {(profile.name || user?.name || "U").slice(0, 1).toUpperCase()}
+              {/* Phần Avatar */}
+              <div className="mb-6 flex flex-col sm:flex-row items-center gap-5 rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
+                <div className="relative group">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl overflow-hidden bg-cyan-500/10 text-cyan-400 border-2 border-cyan-500/30 text-2xl font-bold shadow-lg shadow-cyan-950/40">
+                    {profile.avatarUrl ? (
+                      <img src={profile.avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+                    ) : (
+                      (profile.name || user?.name || "U").slice(0, 1).toUpperCase()
+                    )}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-base font-bold text-white">{profile.name || user?.name || "Người dùng"}</p>
-                    <p className="truncate text-xs font-mono text-slate-400">{user?.email}</p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    className="absolute -bottom-1.5 -right-1.5 p-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-lg cursor-pointer transition active:scale-95"
+                    title="Thay đổi ảnh đại diện"
+                  >
+                    {avatarUploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4 font-bold" />}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                    className="hidden"
+                  />
                 </div>
 
+                <div className="min-w-0 flex-1 text-center sm:text-left space-y-1">
+                  <p className="text-lg font-bold text-white truncate">{profile.name || user?.name || "Người dùng"}</p>
+                  <p className="text-xs font-mono text-slate-400 truncate">{user?.email}</p>
+                  <p className="text-[11px] text-slate-500">Hỗ trợ JPG, PNG, WEBP (Tối đa 2MB).</p>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={avatarUploading}
+                  className="shrink-0 h-9 border-slate-800 hover:border-cyan-500/50 bg-slate-900 text-xs font-semibold text-slate-200 rounded-xl flex items-center gap-1.5"
+                >
+                  <Camera className="h-3.5 w-3.5 text-cyan-400" />
+                  {avatarUploading ? "Đang tải ảnh..." : "Đổi avatar"}
+                </Button>
+              </div>
+
+              {/* Form Thông tin */}
+              <form onSubmit={handleSaveProfile} className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="name" className="text-xs font-semibold uppercase text-slate-400">
@@ -229,37 +299,6 @@ export function SettingsClient() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="company" className="text-xs font-semibold uppercase text-slate-400">
-                      Công ty / Đơn vị
-                    </Label>
-                    <div className="relative">
-                      <Globe2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                      <Input
-                        id="company"
-                        value={profile.company}
-                        onChange={(e) => setProfile((prev) => ({ ...prev, company: e.target.value }))}
-                        className="h-10 border-slate-800 bg-slate-950/80 pl-9 text-xs text-white focus:border-cyan-500/60 rounded-xl"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="email" className="text-xs font-semibold uppercase text-slate-400">
-                      Email (Được quản lý bởi Auth)
-                    </Label>
-                    <div className="relative">
-                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
-                      <Input
-                        id="email"
-                        type="email"
-                        value={profile.email}
-                        disabled
-                        className="h-10 border-slate-800/60 bg-slate-950/40 pl-9 text-xs text-slate-400 rounded-xl cursor-not-allowed"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
                     <Label htmlFor="phone" className="text-xs font-semibold uppercase text-slate-400">
                       Số điện thoại
                     </Label>
@@ -271,6 +310,22 @@ export function SettingsClient() {
                         onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
                         placeholder="+84 912 345 678"
                         className="h-10 border-slate-800 bg-slate-950/80 pl-9 text-xs text-white focus:border-cyan-500/60 rounded-xl"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <Label htmlFor="email" className="text-xs font-semibold uppercase text-slate-400">
+                      Email đăng nhập (Cố định bởi Auth)
+                    </Label>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
+                      <Input
+                        id="email"
+                        type="email"
+                        value={profile.email}
+                        disabled
+                        className="h-10 border-slate-800/60 bg-slate-950/40 pl-9 text-xs text-slate-400 rounded-xl cursor-not-allowed"
                       />
                     </div>
                   </div>
@@ -357,45 +412,9 @@ export function SettingsClient() {
                 </Button>
               </form>
             </section>
-
-            {/* 3. Cấu hình Webhook thông báo SOC */}
-            <section className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6 backdrop-blur-xl shadow-xl">
-              <div className="mb-4 flex items-center gap-3 border-b border-slate-800 pb-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/30">
-                  <Bell className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white">Webhook Cảnh Báo SOC</h3>
-                  <p className="text-xs text-slate-400">Nhận cảnh báo lỗ hổng nghiêm trọng về Telegram / Discord / Slack bot.</p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <Label htmlFor="webhook" className="text-xs font-semibold uppercase text-slate-400">
-                  Webhook URL
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="webhook"
-                    value={webhookUrl}
-                    onChange={(e) => setWebhookUrl(e.target.value)}
-                    placeholder="https://discord.com/api/webhooks/... hoặc Telegram Bot webhook"
-                    className="h-10 border-slate-800 bg-slate-950/80 text-xs text-white focus:border-cyan-500/60 rounded-xl flex-1"
-                  />
-                  <Button
-                    type="button"
-                    onClick={handleSaveWebhook}
-                    className="h-10 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl px-4 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    {webhookSaved ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-                    {webhookSaved ? "Đã lưu" : "Lưu Webhook"}
-                  </Button>
-                </div>
-              </div>
-            </section>
           </div>
 
-          {/* CỘT PHẢI: QUYỀN HẠN & API TOKEN */}
+          {/* CỘT PHẢI */}
           <div className="space-y-6">
             {/* Thông tin gói & trạng thái */}
             <aside className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-5 backdrop-blur-xl shadow-xl">
@@ -438,7 +457,7 @@ export function SettingsClient() {
               </div>
 
               <p className="text-xs text-slate-400 mb-3">
-                Dùng token này làm Bearer Header để gọi API tự động hóa quét DAST từ CI/CD hoặc Python CLI.
+                Dùng token Bearer này để gọi API trực tiếp từ CI/CD hoặc Python CLI.
               </p>
 
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 font-mono text-[10px] text-slate-400 break-all select-all">
@@ -446,7 +465,30 @@ export function SettingsClient() {
               </div>
             </aside>
 
-            {/* Nút Đăng xuất an toàn */}
+            {/* Card Hỗ Trợ Trực Tiếp Từ Developer */}
+            <aside className="rounded-2xl border border-cyan-500/30 bg-cyan-950/20 p-5 backdrop-blur-xl shadow-xl space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                  <Headphones className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Trung Tâm Hỗ Trợ</h3>
+                  <p className="text-[11px] text-slate-400">Liên hệ trực tiếp với Developer</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-300">
+                Gặp sự cố quét DAST, lỗi license hoặc cần tư vấn tích hợp hệ thống SOC?
+              </p>
+              <Button
+                type="button"
+                onClick={() => setShowSupportModal(true)}
+                className="w-full h-10 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-950/60"
+              >
+                <Code2 className="h-4 w-4" /> Liên hệ Developer
+              </Button>
+            </aside>
+
+            {/* Nút Đăng xuất */}
             <aside className="rounded-2xl border border-rose-900/40 bg-rose-950/10 p-5 backdrop-blur-xl">
               <h3 className="text-sm font-bold text-rose-300">Phiên làm việc</h3>
               <p className="text-xs text-slate-400 mt-1 mb-4">Đăng xuất tài khoản khỏi trình duyệt này.</p>
@@ -460,6 +502,63 @@ export function SettingsClient() {
             </aside>
           </div>
         </div>
+
+        {/* Modal Thông Tin Hỗ Trợ Developer */}
+        {showSupportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setShowSupportModal(false)} />
+            <div className="relative z-10 w-full max-w-md rounded-2xl border border-cyan-500/40 bg-slate-900 p-6 shadow-2xl space-y-5 text-slate-100">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
+                    <Code2 className="h-5 w-5" />
+                  </div>
+                  <h3 className="font-bold text-base text-white">Thông Tin Developer & SOC Lead</h3>
+                </div>
+                <button onClick={() => setShowSupportModal(false)} className="text-slate-400 hover:text-white p-1">
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+                  <p className="text-[10px] font-mono uppercase text-slate-500">Nhà phát triển / Developer</p>
+                  <p className="font-bold text-sm text-cyan-300">Nguyễn Kiến Quốc</p>
+                  <p className="text-slate-400">Lead Security Engineer & System Architect</p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Email Hỗ trợ:</span>
+                    <a href="mailto:kienquocn64@gmail.com" className="font-mono text-cyan-400 hover:underline">
+                      kienquocn64@gmail.com
+                    </a>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Hệ thống:</span>
+                    <span className="font-semibold text-emerald-400">ADQ Security Operations Center</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Thời gian phản hồi:</span>
+                    <span className="text-slate-200 font-mono">Dưới 15 phút (24/7)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <a
+                  href="mailto:kienquocn64@gmail.com?subject=[ADQ Support] Yêu cầu hỗ trợ kỹ thuật"
+                  className="flex-1 h-10 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-950/60"
+                >
+                  <Mail className="h-4 w-4" /> Gửi Email Hỗ Trợ
+                </a>
+                <Button variant="outline" onClick={() => setShowSupportModal(false)} className="h-10 border-slate-800 text-xs">
+                  Đóng
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardShell>
   );
