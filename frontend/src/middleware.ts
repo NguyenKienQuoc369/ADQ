@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+  const host = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "").toLowerCase();
   const { pathname } = request.nextUrl;
 
   // Bỏ qua static assets và API
@@ -17,17 +17,15 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Nhận diện domain quản trị riêng: adq-soc.click hoặc subdomain admin
+  // Nhận diện domain quản trị riêng: adq-soc.click
   const isAdminDomain = host.includes("adq-soc.click") || host.startsWith("admin.");
 
   if (isAdminDomain) {
-    // Nếu vào trang chủ của domain admin, rewrite sang /admin/login
     if (pathname === "/" || pathname === "") {
-      return NextResponse.rewrite(new URL("/admin/login", request.url));
+      return NextResponse.redirect(new URL("/admin/login", request.url));
     }
-    // Nếu vào các đường dẫn con mà chưa có tiền tố /admin, tự động lồng /admin
     if (!pathname.startsWith("/admin")) {
-      return NextResponse.rewrite(new URL(`/admin${pathname}`, request.url));
+      return NextResponse.redirect(new URL(`/admin${pathname}`, request.url));
     }
   }
 
