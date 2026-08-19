@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
@@ -51,6 +52,11 @@ const AuthContext = createContext<AuthContextType>({
   setupGoogleRecovery: async () => {},
   updateUser: () => {},
 });
+
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -118,9 +124,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const loginWithGoogle = async (...args: any[]) => {
+    const loginWithGoogle = async (...args: any[]) => {
     if (typeof window !== "undefined") {
-      window.location.href = "/api/auth/google";
+      if (supabase) {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: `${window.location.origin}/dashboard`,
+          },
+        });
+        if (error) console.error("Google Auth Error:", error);
+      } else {
+        // Fallback sang API backend nếu có cấu hình
+        window.location.href = `${process.env.NEXT_PUBLIC_API_URL || ""}/api/auth/google/login`;
+      }
     }
   };
 
