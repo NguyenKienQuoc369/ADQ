@@ -17,11 +17,15 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Xử lý riêng cho Subdomain admin.adq.io.vn
-  if (host.startsWith("admin.") || host.includes("admin.adq.io.vn")) {
-    if (pathname === "/") {
-      return NextResponse.rewrite(new URL("/admin", request.url));
+  // Nhận diện domain quản trị riêng: adq-soc.click hoặc subdomain admin
+  const isAdminDomain = host.includes("adq-soc.click") || host.startsWith("admin.");
+
+  if (isAdminDomain) {
+    // Nếu vào trang chủ của domain admin, rewrite sang /admin/login
+    if (pathname === "/" || pathname === "") {
+      return NextResponse.rewrite(new URL("/admin/login", request.url));
     }
+    // Nếu vào các đường dẫn con mà chưa có tiền tố /admin, tự động lồng /admin
     if (!pathname.startsWith("/admin")) {
       return NextResponse.rewrite(new URL(`/admin${pathname}`, request.url));
     }
