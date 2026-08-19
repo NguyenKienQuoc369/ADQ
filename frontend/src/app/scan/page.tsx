@@ -198,6 +198,11 @@ function ScanLandingContent() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
 
+  const userTier = user?.packageTier || "FREE";
+  const isProMaxUser = userTier === "PRO_MAX" || (userTier as string) === "ENTERPRISE";
+  const isProUser = userTier === "PRO" || isProMaxUser;
+
+
   const isFreeLimitExceeded = (user?.packageTier === "FREE" || !user?.packageTier) && (user?.scansToday ?? 0) >= 2;
 
   const userTier = (user?.packageTier || "FREE").toUpperCase();
