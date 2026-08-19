@@ -52,9 +52,9 @@ class StressOrchestrator:
         cookie_dict: Dict[str, str] = custom_cookies.copy() if custom_cookies else {}
         clean_code = bypass_code.strip() if bypass_code else ""
         norm_waf = (waf_type or "standard").lower().strip()
-        final_target_url = target_url
+        final_target_url = target_url.strip()
 
-        # NẠP MÃ BYPASS TOÀN DIỆN (TRIPLE-INJECT: HEADER + COOKIE + URL PARAMS)
+        # NẠP MÃ BYPASS 3 TẦNG (URL QUERY + HEADERS + COOKIES)
         if clean_code:
             if ":" in clean_code and not clean_code.startswith("http"):
                 k, v = clean_code.split(":", 1)
@@ -65,13 +65,17 @@ class StressOrchestrator:
             elif clean_code.startswith("eyJ") or clean_code.lower().startswith("bearer "):
                 headers_dict["Authorization"] = clean_code if clean_code.lower().startswith("bearer ") else f"Bearer {clean_code}"
             else:
-                # Vercel Deployment Protection Bypass
+                # 1. Tiêm Vercel Protection Bypass
                 headers_dict["x-vercel-protection-bypass"] = clean_code
-                headers_dict["x-vercel-set-bypass-cookie"] = "true"
+                headers_dict["x-vercel-set-bypass-cookie"] = "samesitenone"
                 cookie_dict["x-vercel-protection-bypass"] = clean_code
                 cookie_dict["_vercel_jwt"] = clean_code
 
-                # Cloudflare & AWS WAF injection
+                # 2. Tiêm URL Query Param dự phòng (Vercel chấp nhận trực tiếp trên URL)
+                sep = "&" if "?" in final_target_url else "?"
+                final_target_url += f"{sep}x-vercel-protection-bypass={clean_code}&x-vercel-set-bypass-cookie=samesitenone"
+
+                # 3. Tiêm Cloudflare & AWS WAF
                 headers_dict["CF-Access-Client-Id"] = clean_code
                 headers_dict["CF-Access-Client-Secret"] = clean_code
                 headers_dict["x-api-key"] = clean_code
@@ -167,7 +171,7 @@ class StressOrchestrator:
                         metrics["total_requests"] += 1
                         latencies.append(lat)
 
-                        if len(sample_logs) < 120:
+                        if len(sample_logs) < 100:
                             sample_logs.append(log_entry)
 
                         if code in (200, 201, 204):
