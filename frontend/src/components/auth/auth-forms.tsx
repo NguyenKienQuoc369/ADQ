@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import {
   Mail,
@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 function GoogleIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
@@ -41,13 +42,30 @@ function GoogleIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-const setUserSessionCookie = (userObj: any) => {
-  if (typeof window !== "undefined") {
-    const raw = JSON.stringify(userObj);
-    localStorage.setItem("adq_user_session", raw);
-    document.cookie = `adq_user_session=${encodeURIComponent(raw)}; path=/; max-age=604800; SameSite=Lax;`;
-    document.cookie = `adq_token=session_active_${Date.now()}; path=/; max-age=604800; SameSite=Lax;`;
-    document.cookie = `sb-access-token=session_active; path=/; max-age=604800; SameSite=Lax;`;
+const triggerGoogleOAuth = async (setLoadingState: (b: boolean) => void, setError: (msg: string | null) => void) => {
+  setLoadingState(true);
+  setError(null);
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const origin = window.location.origin;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${origin}/auth/callback?next=/dashboard`,
+        queryParams: {
+          access_type: "offline",
+          prompt: "select_account",
+        },
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoadingState(false);
+    }
+  } catch (err: any) {
+    setError(err.message || "Không thể kết nối dịch vụ Google OAuth.");
+    setLoadingState(false);
   }
 };
 
@@ -76,43 +94,15 @@ export function LoginForm() {
 
     try {
       const res = await login(cleanEmail, cleanPassword);
-      const sessionData = res?.user || {
-        id: "usr_" + Date.now(),
-        email: cleanEmail,
-        name: cleanEmail.split("@")[0],
-        role: "USER",
-        packageTier: "PRO_MAX",
-        status: "ACTIVE"
-      };
-      setUserSessionCookie(sessionData);
-      window.location.href = "/dashboard";
+      if (res?.ok || res?.user || res?.accessToken) {
+        window.location.href = "/dashboard";
+      } else {
+        setErrorMessage(res?.error || "Đăng nhập thất bại. Vui lòng kiểm tra lại tài khoản.");
+        setLoading(false);
+      }
     } catch {
-      setUserSessionCookie({
-        id: "usr_" + Date.now(),
-        email: cleanEmail,
-        name: cleanEmail.split("@")[0],
-        role: "USER",
-        packageTier: "PRO_MAX",
-        status: "ACTIVE"
-      });
       window.location.href = "/dashboard";
     }
-  };
-
-  const handleGoogleLogin = () => {
-    setGoogleLoading(true);
-    const googleSession = {
-      id: "usr_google_" + Date.now(),
-      email: "kienquocn64@gmail.com",
-      name: "Nguyễn Kiến Quốc",
-      role: "USER",
-      packageTier: "PRO_MAX",
-      status: "ACTIVE",
-      isLocked: false,
-      termsAccepted: true
-    };
-    setUserSessionCookie(googleSession);
-    window.location.href = "/dashboard";
   };
 
   return (
@@ -193,56 +183,58 @@ export function LoginForm() {
       <Button
         type="button"
         variant="outline"
-        onClick={handleGoogleLogin}
+        onClick={() => triggerGoogleOAuth(setGoogleLoading, setErrorMessage)}
         disabled={loading || googleLoading}
         className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 text-xs font-semibold text-slate-200 rounded-xl flex items-center justify-center gap-2 cursor-pointer"
       >
-        <GoogleIcon className="h-4 w-4" />
-        <span>Đăng nhập trực tiếp với Google</span>
+        {googleLoading ? (
+          <span className="flex items-center gap-2">
+            <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400" />
+            Đang chuyển tới Google OAuth...
+          </span>
+        ) : (
+          <>
+            <GoogleIcon className="h-4 w-4" />
+            <span>Đăng nhập trực tiếp với Google</span>
+          </>
+        )}
       </Button>
     </form>
   );
 }
 
 export function RegisterForm() {
+  const { register } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) return;
     setLoading(true);
 
-    const userObj = {
-      id: "usr_" + Date.now(),
-      name,
-      email,
-      role: "USER",
-      packageTier: "PRO_MAX",
-      status: "ACTIVE"
-    };
-    setUserSessionCookie(userObj);
-    window.location.href = "/dashboard";
-  };
-
-  const handleGoogleSignup = () => {
-    const googleSession = {
-      id: "usr_google_" + Date.now(),
-      email: "kienquocn64@gmail.com",
-      name: "Nguyễn Kiến Quốc",
-      role: "USER",
-      packageTier: "PRO_MAX",
-      status: "ACTIVE"
-    };
-    setUserSessionCookie(googleSession);
-    window.location.href = "/dashboard";
+    try {
+      await register({ name, email, password });
+      window.location.href = "/dashboard";
+    } catch {
+      window.location.href = "/dashboard";
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 font-sans">
+      {errorMessage && (
+        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1">{errorMessage}</div>
+        </div>
+      )}
+
       <div className="space-y-1.5">
         <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Họ và Tên *</label>
         <div className="relative">
@@ -250,7 +242,7 @@ export function RegisterForm() {
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            disabled={loading}
+            disabled={loading || googleLoading}
             placeholder="Nguyễn Kiến Quốc"
             className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 rounded-xl"
             required
@@ -266,7 +258,7 @@ export function RegisterForm() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            disabled={loading}
+            disabled={loading || googleLoading}
             placeholder="name@company.com"
             className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 rounded-xl"
             required
@@ -282,7 +274,7 @@ export function RegisterForm() {
             type={showPassword ? "text" : "password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
+            disabled={loading || googleLoading}
             placeholder="••••••••••••"
             className="h-10 pl-9 pr-10 border-slate-800 bg-slate-900/60 text-xs text-slate-100 rounded-xl"
             required
@@ -299,7 +291,7 @@ export function RegisterForm() {
 
       <Button
         type="submit"
-        disabled={loading}
+        disabled={loading || googleLoading}
         className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] rounded-xl mt-1 cursor-pointer"
       >
         {loading ? "Đang khởi tạo..." : "Tạo Tài Khoản & Vào Console"}
@@ -308,8 +300,8 @@ export function RegisterForm() {
       <Button
         type="button"
         variant="outline"
-        onClick={handleGoogleSignup}
-        disabled={loading}
+        onClick={() => triggerGoogleOAuth(setGoogleLoading, setErrorMessage)}
+        disabled={loading || googleLoading}
         className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 text-xs font-semibold text-slate-200 rounded-xl flex items-center justify-center gap-2 mt-2 cursor-pointer"
       >
         <GoogleIcon className="h-4 w-4" />
