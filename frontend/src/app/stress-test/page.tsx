@@ -209,7 +209,7 @@ function StressTestContent() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button className="h-8 text-xs border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60" disabled="{isSaving" isRunning} onClick="{handleSaveSession}" size="sm" variant="outline" ||>
+            <Button className="h-8 text-xs border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60" disabled={isSaving || isRunning} onClick={handleSaveSession} size="sm" variant="outline">
               {isSaving ? (
                 <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
               ) : isSavedSuccess ? (
@@ -220,7 +220,7 @@ function StressTestContent() {
               {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Kết Quả"}
             </Button>
 
-            <Button onClick="{()" size="sm" variant="outline"> router.push("/dashboard/projects")}
+            <Button onClick={() => router.push("/dashboard/projects")} size="sm" variant="outline"
               className="h-8 text-xs border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
             >
               <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400"/> Phiên Mới
@@ -234,14 +234,14 @@ function StressTestContent() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="md:col-span-2 relative">
                 <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
-                <Input onChange="{(e)" value="{target}"> setTarget(e.target.value)}
+                <Input onChange={(e) => setTarget(e.target.value)} value={target}
                   placeholder="URL mục tiêu (vd: [https://target.com/api/login](https://target.com/api/login))"
                   disabled={isRunning}
                   className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 text-sm h-10"
                 />
               </div>
 
-              <Button !target.trim()} className="h-10 px-6 bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-amber-950/50" disabled="{isRunning" onClick="{handleStartClick}" ||>
+              <Button className="h-10 px-6 bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-amber-950/50" disabled={isRunning || !target.trim()} onClick={handleStartClick}>
                 {isRunning ? (
                   <>
                     <LoaderCircle className="h-4 w-4 mr-2 animate-spin"/> Đang Bắn Tải...
@@ -323,7 +323,7 @@ function StressTestContent() {
         )}
 
         {/* Modal Xác Nhận Ghi Đè */}
-        <RescanConfirmModal isOpen="{showRescanModal}" onClose="{()"> setShowRescanModal(false)}
+        <RescanConfirmModal isOpen={showRescanModal} onClose={() => setShowRescanModal(false)}
           onConfirm={handleConfirmRescan}
           onCreateNewSession={() => {
             setShowRescanModal(false);
@@ -337,7 +337,7 @@ function StressTestContent() {
 
 export default function StressTestPage() {
   return (
-    <Suspense className="min-h-screen bg-[#020617]" fallback="{<div"/>}>
+    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
       <StressTestContent/>
     </Suspense>
   );

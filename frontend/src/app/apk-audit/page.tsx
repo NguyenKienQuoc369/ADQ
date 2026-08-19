@@ -42,9 +42,9 @@ function ApkAuditContent() {
   const isAllowed = user?.packageTier === "PRO_MAX" || (user?.packageTier as string) === "ENTERPRISE";
 
   const [projectName, setProjectName] = useState("");
-  const [file, setFile] = useState<File null |>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<ApkAnalysisResult null |>(null);
+  const [analysisResult, setAnalysisResult] = useState<ApkAnalysisResult | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
@@ -80,7 +80,7 @@ function ApkAuditContent() {
           <p className="text-xs text-slate-400 mb-6 leading-relaxed">
             Tính năng phân tích dịch ngược APK, phát hiện mã độc và kiểm toán phân quyền chỉ khả dụng trên gói <span className="text-purple-400 font-bold">PRO MAX</span>.
           </p>
-          <Button onClick="{()"> router.push("/dashboard/billing")}
+          <Button onClick={() => router.push("/dashboard/billing")}
             className="h-10 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-950/50"
           >
             Nâng Cấp PRO MAX Ngay
@@ -192,7 +192,7 @@ function ApkAuditContent() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button !analysisResult} className="h-8 text-xs border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60" disabled="{isSaving" isAnalyzing onClick="{handleSaveSession}" size="sm" variant="outline" ||>
+            <Button className="h-8 text-xs border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60" disabled={isSaving || isAnalyzing || !analysisResult} onClick={handleSaveSession} size="sm" variant="outline">
               {isSaving ? (
                 <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
               ) : isSavedSuccess ? (
@@ -203,7 +203,7 @@ function ApkAuditContent() {
               {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Kết Quả"}
             </Button>
 
-            <Button onClick="{()" size="sm" variant="outline"> router.push("/dashboard/projects")}
+            <Button onClick={() => router.push("/dashboard/projects")} size="sm" variant="outline"
               className="h-8 text-xs border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
             >
               <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400"/> Phiên Mới
@@ -231,7 +231,7 @@ function ApkAuditContent() {
                   <span className="text-xs font-mono text-purple-300">
                     {file.name} ({(file.size / (1024 * 1024)).toFixed(2)} MB)
                   </span>
-                  <Button className="h-8 px-4 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg" disabled="{isAnalyzing}" onClick="{handleUploadClick}">
+                  <Button className="h-8 px-4 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg" disabled={isAnalyzing} onClick={handleUploadClick}>
                     {isAnalyzing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin mr-1"/> : null}
                     {isAnalyzing ? "Đang Dịch Ngược..." : "Bắt Đầu Kiểm Toán"}
                   </Button>
@@ -291,7 +291,7 @@ function ApkAuditContent() {
                 {analysisResult.vulnerabilities.map((v, i) => (
                   <div key={i} className="p-3.5 text-xs space-y-1">
                     <div className="flex items-center gap-2">
-                      <Badge "CRITICAL" "HIGH" "danger" "default"} : ? className="text-[9px] font-mono" v.severity="==" variant="{v.severity" ||>
+                      <Badge className="text-[9px] font-mono" variant={v.severity === "CRITICAL" || v.severity === "HIGH" ? "destructive" : "default"}>
                         {v.severity}
                       </Badge>
                       <span className="font-bold text-slate-200">{v.title}</span>
@@ -305,7 +305,7 @@ function ApkAuditContent() {
         )}
 
         {/* Modal Xác Nhận Ghi Đè */}
-        <RescanConfirmModal isOpen="{showRescanModal}" onClose="{()"> setShowRescanModal(false)}
+        <RescanConfirmModal isOpen={showRescanModal} onClose={() => setShowRescanModal(false)}
           onConfirm={(dontShowAgain) => {
             if (dontShowAgain && typeof window !== "undefined") {
               localStorage.setItem("adq_suppress_rescan_warning", "true");
@@ -325,7 +325,7 @@ function ApkAuditContent() {
 
 export default function ApkAuditPage() {
   return (
-    <Suspense className="min-h-screen bg-[#020617]" fallback="{<div"/>}>
+    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
       <ApkAuditContent/>
     </Suspense>
   );
