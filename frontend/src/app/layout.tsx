@@ -23,11 +23,11 @@ export const metadata: Metadata = {
   description: "Security operations platform for asset monitoring, vulnerability management and access control.",
   icons: {
     icon: [
-      { url: "/logo.png", type: "image/png" },
-      { url: "/favicon.ico" },
+      { url: "/icon.png", sizes: "64x64", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" }
     ],
-    shortcut: "/logo.png",
-    apple: "/logo.png",
+    shortcut: "/icon.png",
+    apple: "/apple-icon.png",
   },
 };
 
