@@ -4,11 +4,11 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 export interface UserProfile {
-  id?: string;
-  email?: string;
-  name?: string;
-  role?: string;
-  packageTier?: string;
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  packageTier: string;
   isLocked?: boolean;
   termsAccepted?: boolean;
   [key: string]: any;
@@ -18,15 +18,25 @@ export interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
   lockMessage: string | null;
-  login: (email?: string, password?: string) => Promise<any>;
-  register: (payload?: any) => Promise<any>;
-  loginWithGoogle: () => Promise<any>;
-  logout: () => Promise<void>;
-  signOut: () => Promise<void>;
-  acceptTerms: () => Promise<any>;
-  setupGoogleRecovery: () => Promise<any>;
+  login: (...args: any[]) => Promise<any>;
+  register: (...args: any[]) => Promise<any>;
+  loginWithGoogle: (...args: any[]) => Promise<any>;
+  logout: (...args: any[]) => Promise<void>;
+  signOut: (...args: any[]) => Promise<void>;
+  acceptTerms: (...args: any[]) => Promise<any>;
+  setupGoogleRecovery: (...args: any[]) => Promise<any>;
   updateUser: (data: Partial<UserProfile>) => void;
 }
+
+const defaultUser: UserProfile = {
+  id: "usr_default",
+  email: "",
+  name: "",
+  role: "USER",
+  packageTier: "FREE",
+  isLocked: false,
+  termsAccepted: true,
+};
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
@@ -49,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [lockMessage, setLockMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    // NẾU LÀ ADMIN ROUTE HOẶC ADQ-SOC.CLICK -> TẮT HOÀN TOÀN AUTH CHECK CỦA USER
+    // Bỏ qua hoàn toàn Auth check nếu đang ở domain adq-soc.click hoặc /admin
     if (typeof window !== "undefined") {
       const host = window.location.hostname.toLowerCase();
       if (host.includes("adq-soc.click") || pathname?.startsWith("/admin")) {
@@ -63,9 +73,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const localUser = localStorage.getItem("adq_user_session");
         if (localUser) {
           const parsed = JSON.parse(localUser);
-          setUser(parsed);
+          setUser({ ...defaultUser, ...parsed });
           if (parsed.isLocked) {
-            setLockMessage("Tài khoản của bạn tạm thời bị khóa do vi phạm chính sách.");
+            setLockMessage("Tài khoản tạm thời bị khóa do vi phạm chính sách.");
           }
         }
       } catch {}
@@ -82,9 +92,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       const data = await res.json();
       if (res.ok && data.user) {
-        setUser(data.user);
+        const fullUser = { ...defaultUser, ...data.user };
+        setUser(fullUser);
         if (typeof window !== "undefined") {
-          localStorage.setItem("adq_user_session", JSON.stringify(data.user));
+          localStorage.setItem("adq_user_session", JSON.stringify(fullUser));
         }
         return data;
       }
@@ -107,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (...args: any[]) => {
     if (typeof window !== "undefined") {
       window.location.href = "/api/auth/google";
     }
@@ -133,7 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const setupGoogleRecovery = async () => {
+  const setupGoogleRecovery = async (...args: any[]) => {
     return { ok: true };
   };
 
