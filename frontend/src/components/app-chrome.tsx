@@ -2,7 +2,7 @@
 
 import React from "react";
 import { usePathname } from "next/navigation";
-import Navigation from "@/components/Navigation";
+import { Navigation } from "@/components/Navigation";
 
 export function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
