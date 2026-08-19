@@ -8,6 +8,7 @@ import random
 import threading
 import urllib.request
 import urllib.error
+import urllib.parse
 import concurrent.futures
 from typing import Any, Dict, Optional, List
 
@@ -28,7 +29,6 @@ class StressOrchestrator:
         custom_headers: Optional[Dict[str, str]] = None,
         custom_cookies: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        # 1. Tính toán thời gian và tốc độ
         duration_sec = 5
         if duration.endswith("s"):
             try:
@@ -44,56 +44,42 @@ class StressOrchestrator:
         total_reqs = max(5, target_requests)
         target_rps = max(1, int(total_reqs / duration_sec))
 
-        # 2. Xây dựng Headers & Cookies thích ứng theo từng loại WAF
         headers_dict: Dict[str, str] = custom_headers.copy() if custom_headers else {}
         headers_dict["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         headers_dict["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         headers_dict["Connection"] = "keep-alive"
 
-        cookie_items: List[str] = []
-        if custom_cookies:
-            for k, v in custom_cookies.items():
-                if k and v:
-                    cookie_items.append(f"{k.strip()}={v.strip()}")
-
+        cookie_dict: Dict[str, str] = custom_cookies.copy() if custom_cookies else {}
         clean_code = bypass_code.strip() if bypass_code else ""
         norm_waf = (waf_type or "standard").lower().strip()
+        final_target_url = target_url
 
+        # NẠP MÃ BYPASS TOÀN DIỆN (TRIPLE-INJECT: HEADER + COOKIE + URL PARAMS)
         if clean_code:
-            # Nếu người dùng tự gõ định dạng tùy chỉnh
             if ":" in clean_code and not clean_code.startswith("http"):
                 k, v = clean_code.split(":", 1)
                 headers_dict[k.strip()] = v.strip()
             elif "=" in clean_code and not clean_code.startswith("eyJ"):
                 k, v = clean_code.split("=", 1)
-                cookie_items.append(f"{k.strip()}={v.strip()}")
+                cookie_dict[k.strip()] = v.strip()
             elif clean_code.startswith("eyJ") or clean_code.lower().startswith("bearer "):
                 headers_dict["Authorization"] = clean_code if clean_code.lower().startswith("bearer ") else f"Bearer {clean_code}"
             else:
-                # TỰ ĐỘNG THÍCH ỨNG THEO WAF ĐÃ QUÉT
-                if norm_waf == "vercel" or clean_code.startswith("rsE") or len(clean_code) >= 20:
-                    headers_dict["x-vercel-protection-bypass"] = clean_code
-                    headers_dict["x-vercel-set-bypass-cookie"] = "true"
-                    cookie_items.append(f"x-vercel-protection-bypass={clean_code}")
-                elif norm_waf == "cloudflare":
-                    cookie_items.append(f"cf_clearance={clean_code}")
-                    headers_dict["CF-Access-Client-Id"] = clean_code
-                    headers_dict["CF-Access-Client-Secret"] = clean_code
-                elif norm_waf == "awswaf":
-                    headers_dict["x-api-key"] = clean_code
-                else:
-                    # Universal Fallback: Gán đồng thời vào các header thông dụng
-                    headers_dict["x-vercel-protection-bypass"] = clean_code
-                    headers_dict["x-vercel-set-bypass-cookie"] = "true"
-                    headers_dict["x-api-key"] = clean_code
-                    headers_dict["CF-Access-Client-Id"] = clean_code
-                    cookie_items.append(f"cf_clearance={clean_code}")
-                    cookie_items.append(f"x-vercel-protection-bypass={clean_code}")
+                # Vercel Deployment Protection Bypass
+                headers_dict["x-vercel-protection-bypass"] = clean_code
+                headers_dict["x-vercel-set-bypass-cookie"] = "true"
+                cookie_dict["x-vercel-protection-bypass"] = clean_code
+                cookie_dict["_vercel_jwt"] = clean_code
 
-        if cookie_items:
-            headers_dict["Cookie"] = "; ".join(cookie_items)
+                # Cloudflare & AWS WAF injection
+                headers_dict["CF-Access-Client-Id"] = clean_code
+                headers_dict["CF-Access-Client-Secret"] = clean_code
+                headers_dict["x-api-key"] = clean_code
+                cookie_dict["cf_clearance"] = clean_code
 
-        # 3. Khởi tạo Metrics
+        if cookie_dict:
+            headers_dict["Cookie"] = "; ".join([f"{k}={v}" for k, v in cookie_dict.items()])
+
         metrics = {
             "total_requests": 0,
             "target_requests": total_reqs,
@@ -131,7 +117,6 @@ class StressOrchestrator:
 
         def fire_single_real_request():
             req_headers = headers_dict.copy()
-            # Multi-Header IP Spoofing
             spoofed_ip = f"{random.randint(11,220)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
             req_headers["X-Forwarded-For"] = spoofed_ip
             req_headers["X-Real-IP"] = spoofed_ip
@@ -143,12 +128,12 @@ class StressOrchestrator:
 
             if session is not None:
                 try:
-                    resp = session.get(target_url, headers=req_headers, timeout=4)
+                    resp = session.get(final_target_url, headers=req_headers, cookies=cookie_dict if cookie_dict else None, timeout=4)
                     status_code = resp.status_code
                 except Exception:
                     status_code = 500
             else:
-                req = urllib.request.Request(target_url, headers=req_headers, method="GET")
+                req = urllib.request.Request(final_target_url, headers=req_headers, method="GET")
                 try:
                     with urllib.request.urlopen(req, timeout=4, context=ssl_unverified_context) as response:
                         status_code = response.getcode()
@@ -182,7 +167,7 @@ class StressOrchestrator:
                         metrics["total_requests"] += 1
                         latencies.append(lat)
 
-                        if len(sample_logs) < 80:
+                        if len(sample_logs) < 120:
                             sample_logs.append(log_entry)
 
                         if code in (200, 201, 204):
@@ -210,7 +195,7 @@ class StressOrchestrator:
 
         return {
             "ok": True,
-            "target_url": target_url,
+            "target_url": final_target_url,
             "duration": f"{duration_sec}s",
             "metrics": metrics,
             "sample_logs": sample_logs,
