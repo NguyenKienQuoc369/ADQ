@@ -718,14 +718,12 @@ function ScanLandingContent() {
                       </div>
                     ))}
                   </div>
-                ) : rawActionAdvice ? (
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-xs text-slate-300 whitespace-pre-wrap leading-5">
-                    {rawActionAdvice}
-                  </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500">
-                    Chưa có khuyến nghị bảo mật nào. Hãy bấm "Bắt đầu quét" để nhận phân tích.
-                  </div>
+                  <AiAnalysisCard 
+                    userTier={userTier} 
+                    aiSummary={rawActionAdvice} 
+                    target={target} 
+                  />
                 )}
               </CardContent>
             </Card>
