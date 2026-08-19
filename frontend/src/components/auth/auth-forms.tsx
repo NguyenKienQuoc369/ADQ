@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
 import {
   Mail,
   Lock,
@@ -44,14 +43,10 @@ function GoogleIcon({ className = "h-4 w-4" }: { className?: string }) {
 }
 
 // =========================================================================
-// 1. LOGIN FORM
+// 1. LOGIN FORM (TỰ ĐỘNG CHUYỂN HƯỚNG TỨC THÌ)
 // =========================================================================
 export function LoginForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const redirectUrl = searchParams?.get("redirect") || "/dashboard";
-
-  const { login, loginWithGoogle, lockMessage } = useAuth();
+  const { login, loginWithGoogle, lockMessage, user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -59,6 +54,13 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Tự động chuyển hướng tức thì khi phát hiện session user
+  useEffect(() => {
+    if (user && user.id !== "oauth_pending") {
+      window.location.replace("/dashboard");
+    }
+  }, [user]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -83,11 +85,12 @@ export function LoginForm() {
     setErrorMessage(null);
 
     try {
-      await login(cleanEmail, cleanPassword);
-      router.replace(redirectUrl);
+      const res = await login(cleanEmail, cleanPassword);
+      if (res?.accessToken) {
+        window.location.replace("/dashboard");
+      }
     } catch (err: any) {
       setErrorMessage(err.message || "Đăng nhập thất bại. Vui lòng kiểm tra lại tài khoản.");
-    } finally {
       setLoading(false);
     }
   };
@@ -96,7 +99,7 @@ export function LoginForm() {
     setGoogleLoading(true);
     setErrorMessage(null);
     try {
-      const targetDestination = typeof window !== "undefined" ? `${window.location.origin}${redirectUrl}` : undefined;
+      const targetDestination = typeof window !== "undefined" ? `${window.location.origin}/dashboard` : undefined;
       await loginWithGoogle(targetDestination);
     } catch (err: any) {
       setErrorMessage(err.message || "Không thể kết nối với tài khoản Google.");
@@ -136,9 +139,7 @@ export function LoginForm() {
         )}
 
         <div className="space-y-1.5">
-          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-            Email
-          </label>
+          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Email</label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <Input
@@ -150,7 +151,7 @@ export function LoginForm() {
               }}
               disabled={loading || googleLoading}
               placeholder="admin@adqsecurity.com"
-              className="h-10 pl-9 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:bg-slate-900/90 transition-all rounded-xl"
+              className="h-10 pl-9 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 rounded-xl"
               required
             />
           </div>
@@ -158,13 +159,8 @@ export function LoginForm() {
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-              Mật khẩu
-            </label>
-            <Link
-              href="/forgot-password"
-              className="text-[11px] text-cyan-400 hover:text-cyan-300 transition"
-            >
+            <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Mật khẩu</label>
+            <Link href="/forgot-password" className="text-[11px] text-cyan-400 hover:text-cyan-300 transition">
               Quên mật khẩu?
             </Link>
           </div>
@@ -179,7 +175,7 @@ export function LoginForm() {
               }}
               disabled={loading || googleLoading}
               placeholder="••••••••••••"
-              className="h-10 pl-9 pr-10 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:bg-slate-900/90 transition-all rounded-xl"
+              className="h-10 pl-9 pr-10 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
               required
             />
             <button
@@ -211,9 +207,7 @@ export function LoginForm() {
 
         <div className="relative flex items-center justify-center my-3">
           <div className="border-t border-slate-800 w-full" />
-          <span className="bg-slate-950 px-2 text-[10px] uppercase font-mono text-slate-500">
-            HOẶC
-          </span>
+          <span className="bg-slate-950 px-2 text-[10px] uppercase font-mono text-slate-500">HOẶC</span>
         </div>
 
         <Button
@@ -232,12 +226,10 @@ export function LoginForm() {
 }
 
 // =========================================================================
-// 2. REGISTER FORM (TỐI GIẢN - KHÔNG Ô TỔ CHỨC - VÀO THẲNG DASHBOARD)
+// 2. REGISTER FORM (TỰ ĐỘNG CHUYỂN HƯỚNG TỨC THÌ)
 // =========================================================================
 export function RegisterForm() {
-  const router = useRouter();
-  const { register, loginWithGoogle } = useAuth();
-
+  const { register, loginWithGoogle, user } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -247,6 +239,12 @@ export function RegisterForm() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user && user.id !== "oauth_pending") {
+      window.location.replace("/dashboard");
+    }
+  }, [user]);
 
   const passwordStrength = useMemo(() => {
     if (!password) return { score: 0, label: "Trống", color: "bg-slate-700" };
@@ -298,7 +296,7 @@ export function RegisterForm() {
       });
 
       if (res && res.accessToken) {
-        router.replace("/dashboard");
+        window.location.replace("/dashboard");
       }
     } catch (err: any) {
       const msg = err.message || "Đăng ký thất bại.";
@@ -359,9 +357,7 @@ export function RegisterForm() {
         )}
 
         <div className="space-y-1.5">
-          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-            Họ và Tên *
-          </label>
+          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Họ và Tên *</label>
           <div className="relative">
             <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <Input
@@ -376,9 +372,7 @@ export function RegisterForm() {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-            Email *
-          </label>
+          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Email *</label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <Input
@@ -395,13 +389,9 @@ export function RegisterForm() {
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-              Mật khẩu (Tối thiểu 8 ký tự) *
-            </label>
+            <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Mật khẩu (Tối thiểu 8 ký tự) *</label>
             {password && (
-              <span className="text-[10px] font-mono font-medium text-cyan-400">
-                {passwordStrength.label}
-              </span>
+              <span className="text-[10px] font-mono font-medium text-cyan-400">{passwordStrength.label}</span>
             )}
           </div>
           <div className="relative">
@@ -501,13 +491,10 @@ export function ForgotPasswordForm() {
         <div className="space-y-1">
           <h3 className="text-sm font-bold text-white">Đã gửi liên kết khôi phục</h3>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Chúng tôi đã gửi hướng dẫn đặt lại mật khẩu đến <strong className="text-cyan-400">{email}</strong>. Vui lòng kiểm tra hộp thư (bao gồm cả thư rác).
+            Chúng tôi đã gửi hướng dẫn đặt lại mật khẩu đến <strong className="text-cyan-400">{email}</strong>. Vui lòng kiểm tra hộp thư.
           </p>
         </div>
-        <Link
-          href="/login"
-          className="inline-block text-xs font-bold text-cyan-400 hover:text-cyan-300 transition pt-2"
-        >
+        <Link href="/login" className="inline-block text-xs font-bold text-cyan-400 hover:text-cyan-300 transition pt-2">
           ← Quay lại Đăng nhập
         </Link>
       </div>
@@ -524,9 +511,7 @@ export function ForgotPasswordForm() {
       )}
 
       <div className="space-y-1.5">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Email đã đăng ký
-        </label>
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Email đã đăng ký</label>
         <div className="relative">
           <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <Input
@@ -563,7 +548,6 @@ export function ForgotPasswordForm() {
 // 4. RESET PASSWORD FORM
 // =========================================================================
 export function ResetPasswordForm() {
-  const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -585,7 +569,7 @@ export function ResetPasswordForm() {
 
     try {
       await new Promise((r) => setTimeout(r, 1200));
-      router.replace("/login?reset=success");
+      window.location.replace("/login?reset=success");
     } catch {
       setErrorMessage("Không thể cập nhật mật khẩu. Vui lòng thử lại.");
     } finally {
@@ -603,9 +587,7 @@ export function ResetPasswordForm() {
       )}
 
       <div className="space-y-1.5">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Mật khẩu mới (Tối thiểu 8 ký tự)
-        </label>
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Mật khẩu mới (Tối thiểu 8 ký tự)</label>
         <div className="relative">
           <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <Input
@@ -621,9 +603,7 @@ export function ResetPasswordForm() {
       </div>
 
       <div className="space-y-1.5">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Xác nhận mật khẩu mới
-        </label>
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Xác nhận mật khẩu mới</label>
         <div className="relative">
           <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <Input

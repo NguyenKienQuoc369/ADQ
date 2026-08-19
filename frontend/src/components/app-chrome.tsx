@@ -4,7 +4,7 @@ import React from "react";
 import { usePathname } from "next/navigation";
 import { Navigation } from "./Navigation";
 
-const DASHBOARD_ROUTES = [
+const HIDE_HEADER_ROUTES = [
   "/dashboard",
   "/scan",
   "/stress-test",
@@ -13,16 +13,20 @@ const DASHBOARD_ROUTES = [
   "/settings",
   "/reports",
   "/copilot",
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
 ];
 
 export function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  const isDashboardWorkspace = DASHBOARD_ROUTES.some(
+  const hideHeader = HIDE_HEADER_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
 
-  if (isDashboardWorkspace) {
+  if (hideHeader) {
     return <main className="flex-1 w-full">{children}</main>;
   }
 

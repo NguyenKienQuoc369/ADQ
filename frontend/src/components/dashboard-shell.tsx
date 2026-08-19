@@ -28,6 +28,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TermsModal } from "@/components/auth/terms-modal";
+import { GoogleSetupModal } from "@/components/auth/google-setup-modal";
 
 type ShellArea = "dashboard" | "admin";
 
@@ -67,11 +68,11 @@ function DashboardShellContent({
   const searchParams = useSearchParams();
   const projectId = searchParams?.get("projectId") || null;
 
-  const { user, loading, logout, acceptTermsAndCompleteProfile } = useAuth();
+  const { user, loading, logout, acceptTerms, setupGoogleRecovery } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [syncPulse, setSyncPulse] = useState(99);
 
-  // KIỂM TRA ĐIỀU KHOẢN: TỰ ĐỘNG BẬT KHI USER VÀO CONSOLE LẦN ĐẦU
+  // 1. Kiểm tra cần duyệt điều khoản
   const needsTerms = useMemo(() => {
     if (loading || !user) return false;
     if (user.termsAccepted) return false;
@@ -83,11 +84,34 @@ function DashboardShellContent({
     return true;
   }, [loading, user]);
 
+  // 2. Kiểm tra cần tạo mật khẩu dự phòng cho Google User
+  const needsGoogleRecovery = useMemo(() => {
+    if (loading || !user) return false;
+    if (user.oauthProvider !== "google") return false;
+    if (user.hasRecoveryPassword) return false;
+
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`adq_recovery_setup_${user.id}`);
+      if (cached === "true") return false;
+    }
+    return true;
+  }, [loading, user]);
+
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
 
   useEffect(() => {
-    setShowTermsModal(needsTerms);
-  }, [needsTerms]);
+    if (needsTerms) {
+      setShowTermsModal(true);
+      setShowGoogleModal(false);
+    } else if (needsGoogleRecovery) {
+      setShowTermsModal(false);
+      setShowGoogleModal(true);
+    } else {
+      setShowTermsModal(false);
+      setShowGoogleModal(false);
+    }
+  }, [needsTerms, needsGoogleRecovery]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -123,8 +147,13 @@ function DashboardShellContent({
   };
 
   const handleAcceptTerms = async () => {
-    await acceptTermsAndCompleteProfile({});
+    await acceptTerms();
     setShowTermsModal(false);
+  };
+
+  const handleCompleteGoogleRecovery = async (data: { name: string; username: string; password: string }) => {
+    await setupGoogleRecovery(data);
+    setShowGoogleModal(false);
   };
 
   if (loading) {
@@ -154,6 +183,13 @@ function DashboardShellContent({
           onAccept={handleAcceptTerms}
           onDecline={handleDeclineTerms}
           userEmail={user.email}
+        />
+
+        <GoogleSetupModal
+          isOpen={showGoogleModal}
+          userEmail={user.email}
+          defaultName={user.name}
+          onComplete={handleCompleteGoogleRecovery}
         />
 
         <div
@@ -383,6 +419,13 @@ function DashboardShellContent({
         onAccept={handleAcceptTerms}
         onDecline={handleDeclineTerms}
         userEmail={user.email}
+      />
+
+      <GoogleSetupModal
+        isOpen={showGoogleModal}
+        userEmail={user.email}
+        defaultName={user.name}
+        onComplete={handleCompleteGoogleRecovery}
       />
 
       <div
