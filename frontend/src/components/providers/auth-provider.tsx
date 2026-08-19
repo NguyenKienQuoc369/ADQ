@@ -69,6 +69,51 @@ function mapSessionToAuthResponse(user: AppUser, session: Session | null): AuthR
   };
 }
 
+function getPendingOAuthUser(): AppUser {
+  return {
+    id: "oauth_pending",
+    name: "Đang đồng bộ SOC...",
+    email: "",
+    role: "USER",
+    packageTier: "FREE",
+    status: "PENDING",
+    dailyLimit: 5,
+    scansToday: 0,
+    telegramConnected: false,
+    planExpiresAt: null,
+    oauthProvider: "google",
+    lastLoginAt: new Date().toISOString(),
+    termsAccepted: false,
+  };
+}
+
+function getFriendlyAuthError(error: unknown, fallback = "Đăng nhập thất bại.") {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("error sending confirmation email") || normalized.includes("smtp") || normalized.includes("email provider") || normalized.includes("unable to send confirmation email")) {
+    return "Email xác nhận chưa được cấu hình. Vui lòng kiểm tra cài đặt trong Supabase Dashboard.";
+  }
+
+  if (normalized.includes("user not found") || normalized.includes("no user found") || normalized.includes("email not found")) {
+    return "Tài khoản chưa tồn tại";
+  }
+
+  if (normalized.includes("invalid login credentials") || normalized.includes("invalid email or password")) {
+    return "Mật khẩu không đúng";
+  }
+
+  if (normalized.includes("email not confirmed") || normalized.includes("confirm your email") || normalized.includes("not confirmed")) {
+    return "Tài khoản chưa được kích hoạt. Vui lòng kiểm tra hộp thư email.";
+  }
+
+  if (normalized.includes("already registered") || normalized.includes("user already registered") || normalized.includes("already exists")) {
+    return "Tài khoản đã tồn tại";
+  }
+
+  return fallback;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,7 +132,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = getSupabaseClient();
 
     try {
-      // 1. Đọc nhanh từ Client Session trước
       const { data: sessionData } = await supabase.auth.getSession();
       const sessionUser = sessionData?.session?.user;
 
@@ -99,7 +143,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const initialAppUser = mapSupabaseUserToAppUser(sessionUser);
       setUser(initialAppUser);
 
-      // 2. Đồng bộ ngầm với Backend (có Timeout 2.5s tránh bị treo)
       const token = sessionData?.session?.access_token;
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -141,7 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLockMessage('Tài khoản của bạn đã bị khóa');
         }
       } catch {
-        // Nếu timeout hoặc mạng chậm, giữ nguyên initialAppUser đã đọc từ session
+        // Giữ initialAppUser từ session nếu backend timeout
       }
     } finally {
       setLoading(false);
@@ -170,7 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(getFriendlyAuthError(error, 'Mật khẩu không đúng'));
 
     const nextUser = data.user ? mapSupabaseUserToAppUser(data.user) : null;
     if (!nextUser) throw new Error("Không thể lấy thông tin người dùng.");
@@ -199,7 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(getFriendlyAuthError(error, 'Không thể tạo tài khoản.'));
       const nextUser = data.user ? mapSupabaseUserToAppUser(data.user) : null;
       if (!nextUser) throw new Error('Vui lòng kiểm tra email để kích hoạt tài khoản.');
 
@@ -221,7 +264,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const { data, error } = await supabase.auth.updateUser({ data: updateData });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(getFriendlyAuthError(error, "Không thể lưu trạng thái điều khoản."));
 
     if (data.user) {
       const updatedUser = mapSupabaseUserToAppUser(data.user);
