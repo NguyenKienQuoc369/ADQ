@@ -2,7 +2,7 @@
 
 import React from "react";
 import { usePathname } from "next/navigation";
-import Navigation from "./Navigation";
+import { Navigation } from "./Navigation";
 
 const DASHBOARD_ROUTES = [
   "/dashboard",
@@ -18,7 +18,6 @@ const DASHBOARD_ROUTES = [
 export function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  // Kiểm tra nếu đang ở trang Dashboard hoặc các Module DAST
   const isDashboardWorkspace = DASHBOARD_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
