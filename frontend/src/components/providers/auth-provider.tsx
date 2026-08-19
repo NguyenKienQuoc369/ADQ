@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 
 interface AuthContextType {
   user: any;
@@ -22,7 +21,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // NẾU ĐANG Ở ADMIN HOẶC ADQ-SOC.CLICK -> TẮT TOÀN BỘ AUTH CHECK CỦA USER
+    // Nếu đang ở domain admin hoặc route /admin -> Tắt hoàn toàn auth check của user
     if (typeof window !== "undefined") {
       const host = window.location.hostname.toLowerCase();
       if (host.includes("adq-soc.click") || pathname?.startsWith("/admin")) {
@@ -31,40 +30,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Luồng Auth cho User thường trên domain chính adq.io.vn
-    const checkUser = async () => {
+    // Đọc session user từ localStorage nếu có
+    if (typeof window !== "undefined") {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
-      } catch (err) {
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkUser();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (typeof window !== "undefined") {
-          const host = window.location.hostname.toLowerCase();
-          if (host.includes("adq-soc.click") || pathname?.startsWith("/admin")) return;
+        const localUser = localStorage.getItem("adq_user_session");
+        if (localUser) {
+          setUser(JSON.parse(localUser));
         }
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
-
-    return () => {
-      authListener?.subscription.unsubscribe();
-    };
+      } catch {}
+      setLoading(false);
+    }
   }, [pathname]);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
     if (typeof window !== "undefined") {
+      localStorage.removeItem("adq_user_session");
+      setUser(null);
       window.location.href = "/login";
     }
   };
