@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import Image from "next/image";
 import {
   KeyRound,
   Lock,
@@ -11,13 +10,10 @@ import {
   CheckCircle2,
   AlertCircle,
   LoaderCircle,
-  Copy,
-  Check,
   ShieldCheck,
   LogOut,
   Camera,
   Headphones,
-  ExternalLink,
   Code2,
 } from "lucide-react";
 
@@ -46,15 +42,12 @@ export function SettingsClient() {
 
   // State Password
   const [passwords, setPasswords] = useState({
+    currentPassword: "",
     newPassword: "",
     confirmPassword: "",
   });
   const [passLoading, setPassLoading] = useState(false);
   const [passStatus, setPassStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-
-  // State API Token
-  const [apiToken, setApiToken] = useState("");
-  const [tokenCopied, setTokenCopied] = useState(false);
 
   // State Modal Hỗ Trợ Developer
   const [showSupportModal, setShowSupportModal] = useState(false);
@@ -68,18 +61,9 @@ export function SettingsClient() {
         avatarUrl: user.avatar || (user as any).avatar_url || "",
       });
     }
-
-    if (typeof window !== "undefined") {
-      const supabase = createSupabaseBrowserClient();
-      supabase.auth.getSession().then(({ data }) => {
-        if (data.session?.access_token) {
-          setApiToken(data.session.access_token);
-        }
-      });
-    }
   }, [user]);
 
-  // 1. Xử lý Upload Avatar trực tiếp
+  // 1. Xử lý Upload Avatar
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -98,7 +82,6 @@ export function SettingsClient() {
     setProfileStatus(null);
 
     try {
-      // Chuyển file ảnh thành Data URL để lưu vào user metadata
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64Url = reader.result as string;
@@ -155,10 +138,15 @@ export function SettingsClient() {
     }
   };
 
-  // 3. Xử lý Đổi Mật Khẩu
+  // 3. Xử lý Đổi Mật Khẩu (Xác thực mật khẩu hiện tại trước)
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPassStatus(null);
+
+    if (!passwords.currentPassword) {
+      setPassStatus({ type: "error", msg: "Vui lòng nhập mật khẩu hiện tại của bạn." });
+      return;
+    }
 
     if (passwords.newPassword.length < 6) {
       setPassStatus({ type: "error", msg: "Mật khẩu mới phải có ít nhất 6 ký tự." });
@@ -166,34 +154,46 @@ export function SettingsClient() {
     }
 
     if (passwords.newPassword !== passwords.confirmPassword) {
-      setPassStatus({ type: "error", msg: "Xác nhận mật khẩu không khớp." });
+      setPassStatus({ type: "error", msg: "Xác nhận mật khẩu mới không khớp." });
+      return;
+    }
+
+    if (passwords.currentPassword === passwords.newPassword) {
+      setPassStatus({ type: "error", msg: "Mật khẩu mới không được trùng với mật khẩu hiện tại." });
       return;
     }
 
     setPassLoading(true);
     try {
       const supabase = createSupabaseBrowserClient();
-      const { error } = await supabase.auth.updateUser({
+
+      // Bước 3.1: Xác thực mật khẩu cũ
+      const userEmail = user?.email || profile.email;
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: userEmail,
+        password: passwords.currentPassword,
+      });
+
+      if (verifyError) {
+        setPassStatus({ type: "error", msg: "Mật khẩu hiện tại không chính xác. Vui lòng kiểm tra lại." });
+        setPassLoading(false);
+        return;
+      }
+
+      // Bước 3.2: Cập nhật mật khẩu mới khi mật khẩu cũ đã chính xác
+      const { error: updateError } = await supabase.auth.updateUser({
         password: passwords.newPassword,
       });
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
-      setPassStatus({ type: "success", msg: "Đổi mật khẩu thành công! Hãy ghi nhớ mật khẩu mới." });
-      setPasswords({ newPassword: "", confirmPassword: "" });
+      setPassStatus({ type: "success", msg: "Đổi mật khẩu thành công! Hãy ghi nhớ mật khẩu mới của bạn." });
+      setPasswords({ currentPassword: "", newPassword: "", confirmPassword: "" });
     } catch (err: any) {
-      setPassStatus({ type: "error", msg: err.message || "Không thể đổi mật khẩu." });
+      setPassStatus({ type: "error", msg: err.message || "Không thể cập nhật mật khẩu." });
     } finally {
       setPassLoading(false);
     }
-  };
-
-  // 4. Sao chép API Token
-  const handleCopyToken = () => {
-    if (!apiToken) return;
-    navigator.clipboard.writeText(apiToken);
-    setTokenCopied(true);
-    setTimeout(() => setTokenCopied(false), 2000);
   };
 
   const accountSummary: { label: string; value: string; tone: "success" | "default" | "muted" }[] = [
@@ -206,7 +206,7 @@ export function SettingsClient() {
     <DashboardShell area="dashboard">
       <div className="space-y-6 max-w-7xl mx-auto font-sans text-slate-100">
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_380px]">
-          {/* CỘT TRÁI */}
+          {/* CỘT TRÁI: HỒ SƠ & ĐỔI MẬT KHẨU */}
           <div className="space-y-6">
             {/* 1. Form Cài Đặt Hồ Sơ & Thay Avatar */}
             <section className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6 backdrop-blur-xl shadow-xl">
@@ -344,7 +344,7 @@ export function SettingsClient() {
               </form>
             </section>
 
-            {/* 2. Form Đổi Mật Khẩu */}
+            {/* 2. Form Đổi Mật Khẩu có Xác thực Mật khẩu hiện tại */}
             <section className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6 backdrop-blur-xl shadow-xl">
               <div className="mb-4 flex items-center gap-3 border-b border-slate-800 pb-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
@@ -352,7 +352,7 @@ export function SettingsClient() {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-white">Mật khẩu & Bảo mật</h3>
-                  <p className="text-xs text-slate-400">Cập nhật mật khẩu tài khoản để tăng cường an toàn.</p>
+                  <p className="text-xs text-slate-400">Cần nhập chính xác mật khẩu hiện tại để đổi mật khẩu mới.</p>
                 </div>
               </div>
 
@@ -370,10 +370,25 @@ export function SettingsClient() {
               )}
 
               <form onSubmit={handleChangePassword} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="current-password" className="text-xs font-semibold uppercase text-slate-400">
+                    Mật khẩu hiện tại *
+                  </Label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    value={passwords.currentPassword}
+                    onChange={(e) => setPasswords((prev) => ({ ...prev, currentPassword: e.target.value }))}
+                    placeholder="Nhập mật khẩu đang dùng để xác thực"
+                    className="h-10 border-slate-800 bg-slate-950/80 text-xs text-white focus:border-cyan-500/60 rounded-xl"
+                    required
+                  />
+                </div>
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="new-password" className="text-xs font-semibold uppercase text-slate-400">
-                      Mật khẩu mới
+                      Mật khẩu mới *
                     </Label>
                     <Input
                       id="new-password"
@@ -388,14 +403,14 @@ export function SettingsClient() {
 
                   <div className="space-y-1.5">
                     <Label htmlFor="confirm-password" className="text-xs font-semibold uppercase text-slate-400">
-                      Xác nhận mật khẩu
+                      Xác nhận mật khẩu mới *
                     </Label>
                     <Input
                       id="confirm-password"
                       type="password"
                       value={passwords.confirmPassword}
                       onChange={(e) => setPasswords((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                      placeholder="Nhập lại mật khẩu"
+                      placeholder="Nhập lại mật khẩu mới"
                       className="h-10 border-slate-800 bg-slate-950/80 text-xs text-white focus:border-cyan-500/60 rounded-xl"
                       required
                     />
@@ -404,17 +419,17 @@ export function SettingsClient() {
 
                 <Button
                   type="submit"
-                  disabled={passLoading || !passwords.newPassword}
+                  disabled={passLoading || !passwords.currentPassword || !passwords.newPassword}
                   className="h-10 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold rounded-xl px-5 flex items-center gap-2 cursor-pointer"
                 >
                   {passLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-                  {passLoading ? "Đang cập nhật..." : "Đổi mật khẩu"}
+                  {passLoading ? "Đang xác thực & cập nhật..." : "Đổi mật khẩu"}
                 </Button>
               </form>
             </section>
           </div>
 
-          {/* CỘT PHẢI */}
+          {/* CỘT PHẢI: THÔNG TIN TÀI KHOẢN & HỖ TRỢ */}
           <div className="space-y-6">
             {/* Thông tin gói & trạng thái */}
             <aside className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-5 backdrop-blur-xl shadow-xl">
@@ -435,33 +450,6 @@ export function SettingsClient() {
                     </Badge>
                   </div>
                 ))}
-              </div>
-            </aside>
-
-            {/* Quản lý Personal API Token */}
-            <aside className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-5 backdrop-blur-xl shadow-xl">
-              <div className="mb-3 border-b border-slate-800 pb-3 flex items-center justify-between">
-                <div>
-                  <h3 className="text-[10px] font-mono uppercase tracking-widest text-cyan-400">Developer API</h3>
-                  <p className="text-base font-bold text-white mt-0.5">Personal Access Token</p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleCopyToken}
-                  className="h-8 border-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 rounded-lg cursor-pointer"
-                >
-                  {tokenCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                  {tokenCopied ? "Đã copy" : "Sao chép"}
-                </Button>
-              </div>
-
-              <p className="text-xs text-slate-400 mb-3">
-                Dùng token Bearer này để gọi API trực tiếp từ CI/CD hoặc Python CLI.
-              </p>
-
-              <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 font-mono text-[10px] text-slate-400 break-all select-all">
-                {apiToken ? `${apiToken.slice(0, 48)}...` : "Đang nạp access token..."}
               </div>
             </aside>
 
