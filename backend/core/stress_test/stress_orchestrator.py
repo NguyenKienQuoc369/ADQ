@@ -4,11 +4,10 @@ import time
 import json
 import logging
 import random
-import queue
 import threading
 import urllib.parse
 import concurrent.futures
-from typing import Any, Dict, Optional, List, Generator
+from typing import Any, Dict, Optional, List
 import requests
 import urllib3
 
@@ -70,7 +69,7 @@ class StressOrchestrator:
             s = requests.Session()
             s.headers.update(headers)
             s.cookies.update(cookies)
-            adapter = requests.adapters.HTTPAdapter(pool_connections=40, pool_maxsize=40, max_retries=0)
+            adapter = requests.adapters.HTTPAdapter(pool_connections=30, pool_maxsize=30, max_retries=0)
             s.mount("https://", adapter)
             s.mount("http://", adapter)
             return s, False
@@ -119,14 +118,16 @@ class StressOrchestrator:
             "target": clean_url
         }
 
-    def execute_stress_test_stream(
+    def execute_stress_test(
         self,
         target_url: str,
         target_requests: int = 1000,
         duration: str = "5s",
         bypass_code: str = "",
         waf_type: str = "standard",
-    ) -> Generator[Dict[str, Any], None, None]:
+        custom_headers: Optional[Dict[str, str]] = None,
+        custom_cookies: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
         duration_sec = 5
         if duration.endswith("s"):
             try:
@@ -142,7 +143,7 @@ class StressOrchestrator:
         total_reqs = max(5, target_requests)
         target_rps = max(1, int(total_reqs / duration_sec))
 
-        final_url, headers_dict, cookie_dict = self._prepare_request_config(target_url, bypass_code, waf_type)
+        final_url, headers_dict, cookie_dict = self._prepare_request_config(target_url, bypass_code, waf_type, custom_headers, custom_cookies)
 
         metrics = {
             "total_requests": 0,
@@ -157,8 +158,8 @@ class StressOrchestrator:
             "p95_latency": "0ms",
         }
 
-        event_q: queue.Queue = queue.Queue()
         latencies: List[int] = []
+        sample_logs: List[Dict[str, Any]] = []
         start_time = time.time()
         end_time = start_time + duration_sec
         lock = threading.Lock()
@@ -212,6 +213,9 @@ class StressOrchestrator:
                         metrics["total_requests"] += 1
                         latencies.append(lat)
 
+                        if len(sample_logs) < 80:
+                            sample_logs.append(log_entry)
+
                         if code in (200, 201, 204, 304, 301, 302, 307, 308):
                             metrics["status_200"] += 1
                         elif code == 403:
@@ -223,42 +227,24 @@ class StressOrchestrator:
                         else:
                             metrics["other_status"] += 1
 
-                        if event_q.qsize() < 100:
-                            event_q.put(log_entry)
+        concurrency = min(40, max(8, int(target_rps * 0.2)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = [executor.submit(worker_batch) for _ in range(concurrency)]
+            concurrent.futures.wait(futures, timeout=duration_sec + 3)
 
-        concurrency = min(120, max(10, int(target_rps * 0.3)))
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=concurrency)
-        for _ in range(concurrency):
-            executor.submit(worker_batch)
+        elapsed = max(0.1, time.time() - start_time)
+        metrics["rps"] = round(metrics["total_requests"] / elapsed, 1)
+        if latencies:
+            sorted_l = sorted(latencies)
+            p95_idx = int(len(sorted_l) * 0.95)
+            metrics["p95_latency"] = f"{sorted_l[min(p95_idx, len(sorted_l)-1)]}ms"
 
-        while time.time() < end_time + 1 or not event_q.empty():
-            batch_logs = []
-            while not event_q.empty() and len(batch_logs) < 15:
-                batch_logs.append(event_q.get())
-
-            elapsed = max(0.1, time.time() - start_time)
-            with lock:
-                metrics["rps"] = round(metrics["total_requests"] / elapsed, 1)
-                if latencies:
-                    sorted_l = sorted(latencies)
-                    p95_idx = int(len(sorted_l) * 0.95)
-                    metrics["p95_latency"] = f"{sorted_l[min(p95_idx, len(sorted_l)-1)]}ms"
-
-            if batch_logs or metrics["total_requests"] > 0:
-                yield {
-                    "type": "update",
-                    "metrics": metrics.copy(),
-                    "logs": batch_logs
-                }
-
-            if metrics["total_requests"] >= total_reqs and event_q.empty():
-                break
-
-            time.sleep(0.08)
-
-        executor.shutdown(wait=False)
-        yield {
-            "type": "done",
+        return {
+            "ok": True,
+            "target_url": final_target_url,
+            "duration": f"{duration_sec}s",
             "metrics": metrics,
-            "target_url": final_url
+            "sample_logs": sample_logs,
+            "bypass_active": bool(clean_code),
+            "waf_applied": (waf_type or "standard").lower().strip(),
         }
