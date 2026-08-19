@@ -36,7 +36,6 @@ try:
 except Exception:
     redis_client = None
 
-
 class ScanService:
     @staticmethod
     def create_scan_job(req: ScanRequest) -> Dict[str, Any]:
@@ -114,11 +113,11 @@ class ScanService:
         # Cào thêm Next.js manifest
         try:
             import requests
-            resp = requests.get(clean, timeout=4)
+            resp = requests.get(clean, timeout=4, verify=False)
             manifests = re.findall(r'src=["\'](/_next/static/[^"\']+/_buildManifest\.js)["\']', resp.text)
             for mf in manifests:
                 mf_url = f"{clean.rstrip('/')}{mf}"
-                mf_resp = requests.get(mf_url, timeout=3)
+                mf_resp = requests.get(mf_url, timeout=3, verify=False)
                 routes = re.findall(r'["\'](/[a-zA-Z0-9_\-\/]+)["\']', mf_resp.text)
                 for route in routes:
                     if not any(route.endswith(ext) for ext in [".js", ".css", ".json"]):
@@ -139,26 +138,22 @@ class ScanService:
         primary_waf = detected_wafs[0] if detected_wafs else "No WAF / Generic Server"
         primary_lower = primary_waf.lower()
 
-        input_label = "Authorized test credential"
-        input_placeholder = "header.Authorization=Bearer ..."
+        input_label = "Mã Bypass / Secret Token"
+        input_placeholder = "Nhập mã bypass hoặc token xác thực"
         detected_slug = "standard"
-        credential_help = "Use an explicit header/cookie key-value pair for your own test environment."
 
         if "vercel" in primary_lower:
             detected_slug = "vercel"
-            input_label = "Vercel Automation Bypass Secret"
-            input_placeholder = "Paste the project automation bypass secret"
-            credential_help = "Requires Vercel Protection Bypass for Automation to be enabled for this project."
+            input_label = "Vercel Protection Bypass Secret"
+            input_placeholder = "rsE... (Chỉ cần dán chuỗi Secret)"
         elif "cloudflare" in primary_lower:
             detected_slug = "cloudflare"
-            input_label = "Cloudflare Access Service Token"
-            input_placeholder = "client_id=...;client_secret=..."
-            credential_help = "Requires a Cloudflare Access Service Auth policy that accepts this service token."
+            input_label = "Cloudflare cf_clearance / Token"
+            input_placeholder = "Dán chuỗi cf_clearance hoặc Service Token"
         elif "aws" in primary_lower or "api gateway" in primary_lower:
             detected_slug = "awswaf"
-            input_label = "AWS API Gateway API key"
-            input_placeholder = "Paste x-api-key value"
-            credential_help = "Only works when the tested API method/stage accepts this API key."
+            input_label = "AWS API Key (x-api-key)"
+            input_placeholder = "Dán chuỗi API Key x-api-key"
 
         return {
             "ok": True,
@@ -167,7 +162,6 @@ class ScanService:
             "waf_name": primary_waf,
             "input_label": input_label,
             "input_placeholder": input_placeholder,
-            "credential_help": credential_help,
         }
 
     @staticmethod
@@ -185,8 +179,6 @@ class ScanService:
                 custom_headers=req.custom_headers,
                 custom_cookies=req.custom_cookies,
             )
-            return {"ok": bool(result.get("ok", False)), "result": result}
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            return {"ok": True, "result": result}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Stress test error: {str(exc)}")
