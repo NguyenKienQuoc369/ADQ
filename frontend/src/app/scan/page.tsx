@@ -198,8 +198,7 @@ function ScanLandingContent() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
 
-  const userTier = user?.packageTier || "FREE";
-  const isProMaxUser = userTier === "PRO_MAX" || (userTier as string) === "ENTERPRISE";
+    const isProMaxUser = userTier === "PRO_MAX" || (userTier as string) === "ENTERPRISE";
   const isProUser = userTier === "PRO" || isProMaxUser;
 
 
