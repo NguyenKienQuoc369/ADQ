@@ -27,9 +27,15 @@ export function normaliseStatus(value?: string | null): AppStatus {
 }
 
 export function getDailyLimitForPackage(packageTier: AppPackageTier) {
-  if (packageTier === "PRO") return 25;
-  if (packageTier === "PRO_MAX") return 100;
-  return 5;
+  if (packageTier === "PRO" || packageTier === "PRO_MAX") return 999999;
+  return 2; // Gói FREE: đúng 2 lượt duy nhất
+}
+
+export function computePlanExpiry(durationDays?: number | null, baseDate = new Date()): Date | null {
+  const days = durationDays && durationDays > 0 ? durationDays : 30; // Mặc định 30 ngày cho gói trả phí
+  const expiry = new Date(baseDate);
+  expiry.setDate(expiry.getDate() + days);
+  return expiry;
 }
 
 export function toUserRecord(row: any) {

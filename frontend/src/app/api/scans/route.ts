@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getPrismaClient } from "@/lib/prisma";
+import { syncAdminUserFromAuthUser } from "@/lib/admin";
 
 export const runtime = "nodejs";
 
@@ -81,6 +81,37 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Vui lòng nhập domain/website hợp lệ." }, { status: 400 });
   }
 
+  // 1. Lấy thông tin tài khoản người dùng từ DB
+  const userRecord = await syncAdminUserFromAuthUser(data.user);
+
+  let currentTier = userRecord.packageTier;
+  const isExpired = userRecord.planExpiresAt ? new Date(userRecord.planExpiresAt) < new Date() : false;
+
+  // Nếu gói trả phí (PRO, PRO_MAX) đã hết hạn 30 ngày -> hạ về FREE
+  if (currentTier !== "FREE" && isExpired) {
+    currentTier = "FREE";
+    await prisma.adminUser.update({
+      where: { id: userRecord.id },
+      data: { packageTier: "FREE", planExpiresAt: null },
+    });
+  }
+
+  // 2. Ràng buộc gói FREE: Đúng 2 lượt duy nhất không hồi lại
+  if (currentTier === "FREE") {
+    const totalScans = userRecord.scansToday ?? 0;
+    if (totalScans >= 2) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Tài khoản Dùng Thử Miễn Phí đã sử dụng hết 2 lượt quét vĩnh viễn. Vui lòng nâng cấp lên gói PRO hoặc PRO MAX để quét không giới hạn.",
+          code: "FREE_TIER_LIMIT_REACHED",
+        },
+        { status: 403 }
+      );
+    }
+  }
+
+  // 3. Khởi tạo Scan Job
   const targetRecord = await prisma.target.upsert({
     where: { domain: target },
     update: { updatedAt: new Date() },
@@ -99,7 +130,16 @@ export async function POST(req: Request) {
     },
   });
 
-  // Nếu có backend python, thử trigger (không bắt buộc).
+  // 4. Tăng số lượt quét đã dùng của người dùng
+  await prisma.adminUser.update({
+    where: { id: userRecord.id },
+    data: {
+      scansToday: { increment: 1 },
+      lastScanAt: new Date(),
+    },
+  });
+
+  // Gửi lệnh sang SOC Engine Python (nếu có)
   const backendUrl = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
   try {
     await fetch(`${backendUrl}/api/scan`, {
@@ -125,4 +165,3 @@ export async function POST(req: Request) {
     },
   });
 }
-
