@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
   const host = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "").toLowerCase();
   const { pathname } = request.nextUrl;
 
-  // Bỏ qua static assets và API
+  // Bỏ qua static files, api và assets
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
@@ -17,7 +17,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Nhận diện domain quản trị riêng: adq-soc.click
+  // Bắt tất cả request từ adq-soc.click hoặc admin subdomain
   const isAdminDomain = host.includes("adq-soc.click") || host.startsWith("admin.");
 
   if (isAdminDomain) {
