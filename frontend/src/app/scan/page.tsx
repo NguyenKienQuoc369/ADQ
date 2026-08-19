@@ -206,7 +206,7 @@ const projectId = searchParams.get("projectId");
 
   const [projectName, setProjectName] = useState("");
   const [target, setTarget] = useState("");
-  const [tier, setTier] = useState("DEVSEC PRO");
+  const [tier, setTier] = useState("STARTER");
   const [jobId, setJobId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isChatExpanded, setIsChatExpanded] = useState(false);
@@ -535,25 +535,35 @@ const projectId = searchParams.get("projectId");
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Gói SaaS Engine</label>
                 <div className="flex gap-2">
-                  {(["STARTER", "DEVSEC PRO", "FINTECH MAX"] as string[]).map((t) => (
-                    <Button
-                      key={t}
-                      type="button"
-                      variant={tier === t ? "default" : "outline"}
-                      disabled={isScanning}
-                      onClick={() => setTier(t)}
-                      className={
-                        tier === t
-                          ? "h-12 border border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium hover:bg-cyan-500/30"
-                          : "h-12 border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-800 hover:text-white"
-                      }
-                    >
-                      {t}
-                    </Button>
-                  ))}
+                  {(["STARTER", "DEVSEC PRO", "FINTECH MAX"] as string[]).map((t) => {
+                    const isAllowed = 
+                      t === "STARTER" ||
+                      (t === "DEVSEC PRO" && (isProUser || isProMaxUser)) ||
+                      (t === "FINTECH MAX" && isProMaxUser);
+
+                    return (
+                      <Button
+                        key={t}
+                        type="button"
+                        variant={tier === t ? "default" : "outline"}
+                        disabled={isScanning || !isAllowed}
+                        onClick={() => isAllowed && setTier(t)}
+                        className={
+                          !isAllowed
+                            ? "h-12 border-slate-900 bg-slate-950/40 text-slate-600 cursor-not-allowed opacity-50 relative"
+                            : tier === t
+                            ? "h-12 border border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium hover:bg-cyan-500/30"
+                            : "h-12 border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-800 hover:text-white"
+                        }
+                      >
+                        {!isAllowed && <Lock className="h-3 w-3 mr-1 text-slate-600" />}
+                        {t}
+                      </Button>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
+            </div></div>
 
             <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
               {scanError ? (
