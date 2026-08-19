@@ -289,23 +289,21 @@ function StressTestContent() {
 
   if (isFree) {
     return (
-      <DashboardShell area="dashboard">
-        <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center max-w-lg mx-auto font-sans">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mb-4 shadow-lg shadow-amber-950/50">
-            <Zap className="h-8 w-8" />
-          </div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-500/30 text-amber-300 text-xs font-mono mb-3">
-            TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO & PRO MAX
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">Kiểm Thử Tải & Stress Test L7</h2>
-          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-            Gói Dùng Thử Miễn Phí không hỗ trợ tính năng Stress Test. Vui lòng nâng cấp lên gói <span className="text-cyan-400 font-bold">PRO</span> hoặc <span className="text-purple-400 font-bold">PRO MAX</span> để mở khóa.
-          </p>
-          <Button onClick={() => router.push("/dashboard/billing")} className="h-10 px-6 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-950/50">
-            Nâng Cấp Gói Ngay
-          </Button>
+      <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center max-w-lg mx-auto font-sans">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mb-4 shadow-lg shadow-amber-950/50">
+          <Zap className="h-8 w-8" />
         </div>
-      </DashboardShell>
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-500/30 text-amber-300 text-xs font-mono mb-3">
+          TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO & PRO MAX
+        </div>
+        <h2 className="text-xl font-bold text-white mb-2">Kiểm Thử Tải & Stress Test L7</h2>
+        <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+          Gói Dùng Thử Miễn Phí không hỗ trợ tính năng Stress Test. Vui lòng nâng cấp lên gói <span className="text-cyan-400 font-bold">PRO</span> hoặc <span className="text-purple-400 font-bold">PRO MAX</span> để mở khóa.
+        </p>
+        <Button onClick={() => router.push("/dashboard/billing")} className="h-10 px-6 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-950/50">
+          Nâng Cấp Gói Ngay
+        </Button>
+      </div>
     );
   }
 
