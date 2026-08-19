@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -16,7 +16,6 @@ import {
   Menu,
   X,
   Radio,
-  Sparkles,
   BadgeCheck,
   ArrowLeft,
   Shield,
@@ -31,7 +30,6 @@ import { cn } from "@/lib/utils";
 
 type ShellArea = "dashboard" | "admin";
 
-// Sidebar chính: Chỉ giữ lại quản lý tổng thể
 const workspaceSections = [
   {
     title: "Không gian chính",
@@ -56,7 +54,7 @@ const adminSections = [
 
 const PROJECT_ROUTES = ["/scan", "/stress-test", "/apk-audit", "/copilot"];
 
-export function DashboardShell({
+function DashboardShellContent({
   area,
   children,
 }: {
@@ -66,7 +64,7 @@ export function DashboardShell({
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const projectId = searchParams.get("projectId");
+  const projectId = searchParams?.get("projectId") || null;
 
   const { user, loading, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -90,7 +88,6 @@ export function DashboardShell({
     }
   }, [area, loading, router, user]);
 
-  // Kiểm tra nếu đang ở trong không gian làm việc của một Dự án
   const isProjectWorkspace = PROJECT_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
@@ -114,13 +111,10 @@ export function DashboardShell({
     );
   }
 
-  // =========================================================================
-  // GIAO DIỆN DỰ ÁN (PROJECT WORKSPACE): TẮT SIDEBAR, TỐI ƯU TOÀN MÀN HÌNH
-  // =========================================================================
+  // 1. PROJECT WORKSPACE (ẨN SIDEBAR HOÀN TOÀN)
   if (isProjectWorkspace) {
     return (
       <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
-        {/* Background Grid */}
         <div
           className="fixed inset-0 pointer-events-none opacity-15"
           style={{
@@ -132,10 +126,8 @@ export function DashboardShell({
           }}
         />
 
-        {/* Floating Minimal Project Header Bar */}
         <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-slate-950/85 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-4 px-4 py-2 sm:px-6">
-            {/* Nút Quay Lại Dự Án & Module Indicator */}
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
@@ -166,7 +158,6 @@ export function DashboardShell({
               </div>
             </div>
 
-            {/* Thanh chuyển đổi nhanh giữa các module (Giữ nguyên Session ProjectId) */}
             {projectId && (
               <div className="hidden lg:flex items-center gap-1 p-1 rounded-xl bg-slate-900/80 border border-white/[0.08] backdrop-blur-md">
                 <Link
@@ -220,7 +211,6 @@ export function DashboardShell({
               </div>
             )}
 
-            {/* Trạng thái Kết nối & Phân quyền */}
             <div className="flex items-center gap-2.5">
               <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1 backdrop-blur-md">
                 <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
@@ -239,19 +229,15 @@ export function DashboardShell({
           </div>
         </header>
 
-        {/* Nội dung Project Full-Screen */}
         <main className="w-full">{children}</main>
       </div>
     );
   }
 
-  // =========================================================================
-  // GIAO DIỆN QUẢN LÝ CHÍNH (/dashboard, /settings, /admin): CÓ SIDEBAR TỐI GIẢN
-  // =========================================================================
+  // 2. DASHBOARD & ADMIN WORKSPACE (SIDEBAR HIỂN THỊ)
   const sidebarContent = (
     <div className="relative flex h-full flex-col justify-between border-r border-white/[0.07] bg-slate-950/80 p-4 backdrop-blur-2xl">
       <div className="space-y-5">
-        {/* Brand Banner */}
         <Link
           href="/dashboard"
           className="group flex items-center gap-3 rounded-xl border border-white/[0.06] bg-slate-900/40 p-2.5 transition-all duration-300 hover:border-cyan-500/40 hover:bg-cyan-950/20 hover:shadow-[0_0_20px_rgba(6,182,212,0.15)]"
@@ -274,7 +260,6 @@ export function DashboardShell({
           </div>
         </Link>
 
-        {/* Navigation Sections */}
         <div className="space-y-4">
           {navGroups.map((group) => (
             <div key={group.title} className="space-y-1">
@@ -323,7 +308,6 @@ export function DashboardShell({
         </div>
       </div>
 
-      {/* User Status Card */}
       <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 p-3 backdrop-blur-xl">
         <div className="mb-2.5 flex items-center gap-2.5">
           <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-500/10 border border-cyan-500/30 font-mono font-bold text-xs text-cyan-300">
@@ -431,5 +415,13 @@ export function DashboardShell({
         </div>
       </div>
     </div>
+  );
+}
+
+export function DashboardShell(props: { area: ShellArea; children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
+      <DashboardShellContent {...props} />
+    </Suspense>
   );
 }
