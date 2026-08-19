@@ -172,6 +172,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [getSupabaseClient]);
 
   useEffect(() => {
+    // Bỏ qua toàn bộ auth check của user nếu đang ở admin
+    if (typeof window !== "undefined") {
+      const host = window.location.hostname.toLowerCase();
+      const path = window.location.pathname.toLowerCase();
+      if (host.includes("adq-soc.click") || path.startsWith("/admin")) {
+        return;
+      }
+    }
+    
     const supabase = getSupabaseClient();
     void refreshUser(false);
 
