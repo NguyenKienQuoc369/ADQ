@@ -1,29 +1,26 @@
 "use client";
+
+import { DashboardShell } from "@/components/dashboard-shell";
 import { useAuth } from "@/components/providers/auth-provider";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Bot, Sparkles, Lock, Send, MessageSquare, ShieldAlert, Sparkle, RefreshCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { MarkdownRenderer } from "@/components/ui/markdown-renderer";
+import { copilotAnalyze, copilotChat, copilotPatch } from "@/lib/api";
+import { Bot, Check, Copy, LoaderCircle, Lock, MessageSquare, RefreshCw, Send, ShieldAlert, Sparkle, Sparkles } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import React, { useState, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { DashboardShell } from "@/components/dashboard-shell";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Bot, Check, Copy, LoaderCircle, Lock, Send, Sparkles } from "lucide-react";
-import {
-  copilotChat,
-  copilotAnalyze,
-  copilotPatch,
-} from "@/lib/api";
-import { MarkdownRenderer } from "@/components/ui/markdown-renderer";
+
+
+
+
+
+
+
+
+
 
 function safeString(val: any): string {
   if (val === null || val === undefined) return "";
