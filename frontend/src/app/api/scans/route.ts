@@ -135,7 +135,7 @@ export async function POST(req: Request) {
     where: { id: userRecord.id },
     data: {
       scansToday: { increment: 1 },
-      lastScanAt: new Date(),
+      
     },
   });
 
