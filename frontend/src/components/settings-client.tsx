@@ -182,7 +182,7 @@ export function SettingsClient() {
                   <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400">Tài khoản & Cá nhân</p>
                   <h2 className="text-xl font-bold tracking-tight text-white mt-0.5">Cài đặt hồ sơ</h2>
                 </div>
-                <Badge variant="muted" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-xs font-semibold px-3 py-1">
+                <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-xs font-semibold px-3 py-1">
                   Đã xác thực
                 </Badge>
               </div>
@@ -427,7 +427,7 @@ export function SettingsClient() {
                 </div>
                 <Button
                   size="sm"
-                  variant="muted"
+                  variant="outline"
                   onClick={handleCopyToken}
                   className="h-8 border-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 rounded-lg cursor-pointer"
                 >
@@ -451,7 +451,7 @@ export function SettingsClient() {
               <p className="text-xs text-slate-400 mt-1 mb-4">Đăng xuất tài khoản khỏi trình duyệt này.</p>
               <Button
                 onClick={() => logout()}
-                variant="muted"
+                variant="outline"
                 className="w-full h-10 border-rose-800/60 bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 cursor-pointer"
               >
                 <LogOut className="h-4 w-4" /> Đăng xuất phiên làm việc
