@@ -16,7 +16,7 @@ const APP_VERSION = "2.0.0";
 if (typeof window !== "undefined") {
   const currentVer = localStorage.getItem("adq_app_version");
   if (currentVer !== APP_VERSION) {
-    localStorage.clear();
+    // localStorage.clear();
     localStorage.setItem("adq_app_version", APP_VERSION);
   }
 }
@@ -235,7 +235,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (res.status === 401 && typeof window !== "undefined") {
-    localStorage.clear();
+    // localStorage.clear();
     window.location.href = "/login?error=session_expired";
     throw new Error("UNAUTHORIZED: Session expired");
   }
