@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { AdminShell } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { KeyRound, Plus, Copy, Check } from "lucide-react";
@@ -19,7 +19,7 @@ export default function AdminRedeemCodesPage() {
   useEffect(() => {
     getRedeemCodes()
       .then((res: any) => {
-        if (res && res.codes) setCodes(res.codes);
+        if (res && res.codes && res.codes.length > 0) setCodes(res.codes);
       })
       .catch(() => {});
   }, []);
@@ -56,13 +56,13 @@ export default function AdminRedeemCodesPage() {
   };
 
   return (
-    <DashboardShell area="admin">
+    <AdminShell>
       <div className="space-y-6 max-w-6xl mx-auto font-sans">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <KeyRound className="h-5 w-5 text-cyan-400" /> Quản Lý & Phát Hành Mã License Redeem
+            <KeyRound className="h-5 w-5 text-rose-400" /> Quản Lý & Phát Hành Mã License Redeem
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">Sinh mã kích hoạt nâng cấp gói PRO và PRO MAX cho khách hàng</p>
+          <p className="text-xs text-slate-400 mt-0.5">Sinh mã kích hoạt nâng cấp gói PRO (Gói 2) và PRO MAX (Gói 3) cho khách hàng</p>
         </div>
 
         <Card className="border border-white/[0.08] bg-slate-950/80 p-5">
@@ -71,7 +71,7 @@ export default function AdminRedeemCodesPage() {
             <select
               value={tier}
               onChange={(e: any) => setTier(e.target.value)}
-              className="h-9 px-3 rounded-xl border border-slate-800 bg-slate-900 text-xs text-white"
+              className="h-9 px-3 rounded-xl border border-slate-800 bg-slate-900 text-xs text-white focus:border-rose-500/60"
             >
               <option value="PRO">Gói 2: PRO (199K/tháng)</option>
               <option value="PRO_MAX">Gói 3: PRO MAX (499K/tháng)</option>
@@ -80,7 +80,7 @@ export default function AdminRedeemCodesPage() {
             <select
               value={duration}
               onChange={(e) => setDuration(e.target.value)}
-              className="h-9 px-3 rounded-xl border border-slate-800 bg-slate-900 text-xs text-white"
+              className="h-9 px-3 rounded-xl border border-slate-800 bg-slate-900 text-xs text-white focus:border-rose-500/60"
             >
               <option value="30 Ngày">Thời hạn: 30 Ngày</option>
               <option value="90 Ngày">Thời hạn: 90 Ngày</option>
@@ -88,17 +88,18 @@ export default function AdminRedeemCodesPage() {
               <option value="Vĩnh viễn">Vĩnh viễn (Lifetime)</option>
             </select>
 
-            <Button onClick={handleGenerate} className="h-9 px-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl">
+            <Button onClick={handleGenerate} className="h-9 px-4 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-950/40">
               <Plus className="h-4 w-4 mr-1" /> Phát Hành Mã
             </Button>
           </div>
         </Card>
 
+        {/* Danh Sách Mã Đã Tạo */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {codes.map((c) => (
             <div key={c.id || c.code} className="p-4 rounded-2xl border border-slate-800 bg-slate-900/60 flex items-center justify-between">
               <div>
-                <div className="font-mono text-sm font-bold text-cyan-300 tracking-wider">{c.code}</div>
+                <div className="font-mono text-sm font-bold text-rose-300 tracking-wider">{c.code}</div>
                 <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
                   <span className="font-bold text-white">{c.packageTier}</span> • <span>{c.durationLabel}</span> • <span className="text-emerald-400">{c.status}</span>
                 </div>
@@ -110,6 +111,6 @@ export default function AdminRedeemCodesPage() {
           ))}
         </div>
       </div>
-    </DashboardShell>
+    </AdminShell>
   );
 }
