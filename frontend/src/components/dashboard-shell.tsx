@@ -72,6 +72,7 @@ function DashboardShellContent({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [syncPulse, setSyncPulse] = useState(99);
 
+  // 1. Kiểm tra cần duyệt điều khoản
   const needsTerms = useMemo(() => {
     if (loading || !user) return false;
     if (user.termsAccepted) return false;
@@ -83,6 +84,7 @@ function DashboardShellContent({
     return true;
   }, [loading, user]);
 
+  // 2. Kiểm tra cần tạo mật khẩu dự phòng cho Google User
   const needsGoogleRecovery = useMemo(() => {
     if (loading || !user) return false;
     if (user.oauthProvider !== "google") return false;
@@ -172,46 +174,114 @@ function DashboardShellContent({
     return <div className="min-h-screen bg-[#020617]" />;
   }
 
-  // 1. PROJECT WORKSPACE (ẨN SIDEBAR HOÀN TOÀN)
+  // =========================================================================
+  // 1. PROJECT WORKSPACE (KHÔNG OVERLAP, HEADER STICKY GỌN GÀNG)
+  // =========================================================================
   if (isProjectWorkspace) {
     return (
-      <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
-        <TermsModal isOpen={showTermsModal} onAccept={handleAcceptTerms} onDecline={handleDeclineTerms} userEmail={user.email} />
-        <GoogleSetupModal isOpen={showGoogleModal} userEmail={user.email} defaultName={user.name} onComplete={handleCompleteGoogleRecovery} />
-        
-        {/* Transparent header in project view */}
-        <header className="absolute top-0 left-0 z-30 w-full flex items-center justify-between p-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push("/dashboard")}
-            className="h-8 px-2.5 rounded-lg border border-white/[0.08] bg-slate-900/60 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:bg-cyan-950/30 hover:text-cyan-300 transition-all active:scale-98 flex items-center gap-1.5"
-          >
-            <ArrowLeft className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Quay lại Dự án</span>
-          </Button>
+      <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black font-sans flex flex-col">
+        <TermsModal
+          isOpen={showTermsModal}
+          onAccept={handleAcceptTerms}
+          onDecline={handleDeclineTerms}
+          userEmail={user.email}
+        />
+
+        <GoogleSetupModal
+          isOpen={showGoogleModal}
+          userEmail={user.email}
+          defaultName={user.name}
+          onComplete={handleCompleteGoogleRecovery}
+        />
+
+        <div
+          className="fixed inset-0 pointer-events-none opacity-15"
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, rgba(6, 182, 212, 0.08) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(6, 182, 212, 0.08) 1px, transparent 1px)
+            `,
+            backgroundSize: "36px 36px",
+          }}
+        />
+
+        {/* Header Sticky - Có Flow tự nhiên, không đè lên nội dung */}
+        <header className="sticky top-0 z-30 shrink-0 border-b border-white/[0.08] bg-slate-950/80 backdrop-blur-xl px-4 py-2 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/dashboard")}
+              className="h-8 px-2.5 rounded-lg border border-white/[0.08] bg-slate-900/60 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:bg-cyan-950/30 hover:text-cyan-300 transition-all active:scale-98 flex items-center gap-1.5"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Quay lại Dự án</span>
+            </Button>
+          </div>
 
           {projectId && (
-            <div className="hidden lg:flex items-center gap-1 p-1 rounded-xl bg-slate-900/40 border border-white/[0.08] backdrop-blur-md">
-              <Link href={`/scan?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/scan" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" : "text-slate-400 hover:text-slate-200")}>
-                <Shield className="h-3 w-3" /> Quét DAST
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/60 border border-white/[0.08] backdrop-blur-md">
+              <Link
+                href={`/scan?projectId=${projectId}`}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                  pathname === "/scan"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+                    : "text-slate-400 hover:text-slate-200"
+                )}
+              >
+                <Shield className="h-3 w-3" />
+                Quét DAST
               </Link>
-              <Link href={`/stress-test?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/stress-test" ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "text-slate-400 hover:text-slate-200")}>
-                <Zap className="h-3 w-3" /> Stress Test
+              <Link
+                href={`/stress-test?projectId=${projectId}`}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                  pathname === "/stress-test"
+                    ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_12px_rgba(244,63,94,0.2)]"
+                    : "text-slate-400 hover:text-slate-200"
+                )}
+              >
+                <Zap className="h-3 w-3" />
+                Stress Test
               </Link>
-              <Link href={`/apk-audit?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/apk-audit" ? "bg-amber-500/20 text-amber-300 border border-amber-500/40" : "text-slate-400 hover:text-slate-200")}>
-                <Smartphone className="h-3 w-3" /> APK Audit
+              <Link
+                href={`/apk-audit?projectId=${projectId}`}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                  pathname === "/apk-audit"
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+                    : "text-slate-400 hover:text-slate-200"
+                )}
+              >
+                <Smartphone className="h-3 w-3" />
+                APK Audit
+              </Link>
+              <Link
+                href={`/copilot?projectId=${projectId}`}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                  pathname === "/copilot"
+                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.2)]"
+                    : "text-slate-400 hover:text-slate-200"
+                )}
+              >
+                <Bot className="h-3 w-3" />
+                AI Copilot
               </Link>
             </div>
           )}
         </header>
 
-        <main className="w-full">{children}</main>
+        {/* Nội dung trang chảy tự nhiên dưới Header */}
+        <main className="w-full flex-1 min-h-0">{children}</main>
       </div>
     );
   }
 
-  // 2. DASHBOARD / SETTINGS / ADMIN (CÓ SIDEBAR, KHÔNG HEADER)
+  // =========================================================================
+  // 2. DASHBOARD / SETTINGS / ADMIN (CÓ SIDEBAR, KHÔNG HEADER THỪA)
+  // =========================================================================
   const sidebarContent = (
     <div className="relative flex h-full flex-col justify-between border-r border-white/[0.07] bg-slate-950/80 p-4 backdrop-blur-2xl">
       <div className="space-y-5">
@@ -294,7 +364,6 @@ function DashboardShellContent({
         </AnimatePresence>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Mobile Menu Button only */}
           <div className="p-4 xl:hidden">
             <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)} className="h-8 w-8 text-slate-300 border border-slate-800 bg-slate-900">
               <Menu className="h-4 w-4" />
