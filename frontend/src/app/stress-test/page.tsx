@@ -12,13 +12,16 @@ import {
   LoaderCircle,
   Lock,
   Flame,
-  Activity,
   Search,
   ShieldCheck,
   KeyRound,
   Zap,
   CheckCircle2,
   AlertTriangle,
+  X,
+  RotateCcw,
+  Check,
+  ShieldAlert,
 } from "lucide-react";
 import { getProjectById, saveProjectDetail, detectWaf, discoverEndpoints, verifyBypass, API_BASE_URL } from "@/lib/api";
 
@@ -74,40 +77,39 @@ function HologramWarRoomCanvas({
   const ipClustersRef = useRef<Array<{ ip: string; y: number; count: number }>>([]);
   const shieldHitRef = useRef<number>(0);
 
-  // Đẩy beam ngay lập tức khi nhận được logs streaming
   useEffect(() => {
     if (!logs.length) return;
-    const latest = logs.slice(0, 8);
+    const latest = logs.slice(0, 10);
 
     latest.forEach((l) => {
       const isBlocked = l.status === 403 || l.status === 429;
-      let color = "#10b981"; // Green 200
-      if (l.status === 403) color = "#f43f5e"; // Red 403
-      else if (l.status === 429) color = "#f59e0b"; // Amber 429
-      else if (l.status >= 500) color = "#a855f7"; // Purple 500
+      let color = "#10b981";
+      if (l.status === 403) color = "#f43f5e";
+      else if (l.status === 429) color = "#f59e0b";
+      else if (l.status >= 500) color = "#a855f7";
 
       const canvas = canvasRef.current;
-      const w = canvas ? canvas.width : 780;
-      const h = canvas ? canvas.height : 280;
+      const w = canvas ? canvas.width : 1100;
+      const h = canvas ? canvas.height : 480;
 
       let existingIp = ipClustersRef.current.find((item) => item.ip === l.ip);
       if (!existingIp) {
-        const randomY = Math.floor(Math.random() * (h - 40)) + 20;
+        const randomY = Math.floor(Math.random() * (h - 60)) + 30;
         existingIp = { ip: l.ip, y: randomY, count: 1 };
-        ipClustersRef.current = [existingIp, ...ipClustersRef.current.slice(0, 12)];
+        ipClustersRef.current = [existingIp, ...ipClustersRef.current.slice(0, 16)];
       } else {
         existingIp.count += 1;
       }
 
-      const targetCoreX = w - 80;
-      const shieldX = targetCoreX - 60;
+      const targetCoreX = w - 90;
+      const shieldX = targetCoreX - 70;
 
       beamsRef.current.push({
-        x: 170,
+        x: 190,
         y: existingIp.y,
         targetX: isBlocked ? shieldX : targetCoreX,
         targetY: h / 2,
-        speed: Math.random() * 6 + 8,
+        speed: Math.random() * 6 + 9,
         color,
         radius: Math.random() * 2 + 2,
         isBlocked,
@@ -131,41 +133,41 @@ function HologramWarRoomCanvas({
       ctx.fillRect(0, 0, w, h);
 
       // Grid
-      ctx.strokeStyle = "rgba(30, 41, 59, 0.35)";
+      ctx.strokeStyle = "rgba(30, 41, 59, 0.3)";
       ctx.lineWidth = 1;
-      for (let x = 0; x < w; x += 40) {
+      for (let x = 0; x < w; x += 45) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, h);
         ctx.stroke();
       }
 
-      const targetCoreX = w - 80;
+      const targetCoreX = w - 90;
       const targetCoreY = h / 2;
-      const shieldX = targetCoreX - 60;
+      const shieldX = targetCoreX - 70;
 
       // 1. TẤM KHIÊN NĂNG LƯỢNG WAF
-      const shieldPulse = Math.sin(Date.now() / 150) * 2;
+      const shieldPulse = Math.sin(Date.now() / 150) * 3;
       const shieldHitActive = shieldHitRef.current > 0;
-      if (shieldHitRef.current > 0) shieldHitRef.current -= 0.05;
+      if (shieldHitRef.current > 0) shieldHitRef.current -= 0.04;
 
       ctx.save();
       ctx.beginPath();
-      ctx.arc(shieldX + 50, targetCoreY, 78 + shieldPulse, Math.PI * 0.72, Math.PI * 1.28);
-      ctx.lineWidth = shieldHitActive ? 5 : 3;
+      ctx.arc(shieldX + 60, targetCoreY, 95 + shieldPulse, Math.PI * 0.72, Math.PI * 1.28);
+      ctx.lineWidth = shieldHitActive ? 6 : 3.5;
       ctx.strokeStyle = shieldHitActive ? "rgba(244, 63, 94, 0.95)" : "rgba(6, 182, 212, 0.85)";
       ctx.shadowColor = shieldHitActive ? "#f43f5e" : "#06b6d4";
-      ctx.shadowBlur = 18;
+      ctx.shadowBlur = 20;
       ctx.stroke();
       ctx.restore();
 
       ctx.fillStyle = shieldHitActive ? "#f43f5e" : "#38bdf8";
-      ctx.font = "bold 9px monospace";
+      ctx.font = "bold 10px monospace";
       ctx.textAlign = "center";
-      ctx.fillText("WAF SHIELD", shieldX - 5, targetCoreY - 50);
+      ctx.fillText("WAF SHIELD", shieldX - 5, targetCoreY - 65);
 
       // 2. TARGET CORE
-      const radGrad = ctx.createRadialGradient(targetCoreX, targetCoreY, 4, targetCoreX, targetCoreY, 30);
+      const radGrad = ctx.createRadialGradient(targetCoreX, targetCoreY, 4, targetCoreX, targetCoreY, 36);
       radGrad.addColorStop(0, "rgba(255, 255, 255, 0.95)");
       radGrad.addColorStop(0.3, "rgba(16, 185, 129, 0.8)");
       radGrad.addColorStop(0.8, "rgba(6, 182, 212, 0.2)");
@@ -173,29 +175,29 @@ function HologramWarRoomCanvas({
 
       ctx.fillStyle = radGrad;
       ctx.beginPath();
-      ctx.arc(targetCoreX, targetCoreY, 30, 0, Math.PI * 2);
+      ctx.arc(targetCoreX, targetCoreY, 36, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
-      ctx.arc(targetCoreX, targetCoreY, 10, 0, Math.PI * 2);
+      ctx.arc(targetCoreX, targetCoreY, 12, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "#10b981";
-      ctx.font = "bold 10px monospace";
+      ctx.font = "bold 11px monospace";
       ctx.textAlign = "center";
-      ctx.fillText("TARGET CORE", targetCoreX, targetCoreY + 28);
+      ctx.fillText("TARGET CORE", targetCoreX, targetCoreY + 36);
 
       // 3. IP NGUỒN
       ctx.textAlign = "left";
       ipClustersRef.current.forEach((node) => {
         ctx.fillStyle = "rgba(148, 163, 184, 0.9)";
-        ctx.font = "10px monospace";
-        ctx.fillText(node.ip, 16, node.y + 3);
+        ctx.font = "11px monospace";
+        ctx.fillText(node.ip, 18, node.y + 4);
 
         ctx.fillStyle = running ? "#06b6d4" : "#64748b";
         ctx.beginPath();
-        ctx.arc(160, node.y, 3, 0, Math.PI * 2);
+        ctx.arc(175, node.y, 3.5, 0, Math.PI * 2);
         ctx.fill();
       });
 
@@ -205,15 +207,15 @@ function HologramWarRoomCanvas({
         const dy = beam.targetY - beam.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist < 10) {
+        if (dist < 12) {
           if (beam.isBlocked) {
             shieldHitRef.current = 1.0;
-            for (let s = 0; s < 4; s++) {
+            for (let s = 0; s < 5; s++) {
               sparksRef.current.push({
                 x: beam.targetX,
-                y: beam.targetY + (Math.random() - 0.5) * 20,
-                vx: -(Math.random() * 4 + 2),
-                vy: (Math.random() - 0.5) * 4,
+                y: beam.targetY + (Math.random() - 0.5) * 25,
+                vx: -(Math.random() * 5 + 2),
+                vy: (Math.random() - 0.5) * 5,
                 color: beam.color,
                 alpha: 1,
               });
@@ -222,7 +224,7 @@ function HologramWarRoomCanvas({
             ctx.strokeStyle = "#10b981";
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(targetCoreX, targetCoreY, 16, 0, Math.PI * 2);
+            ctx.arc(targetCoreX, targetCoreY, 20, 0, Math.PI * 2);
             ctx.stroke();
           }
 
@@ -231,7 +233,7 @@ function HologramWarRoomCanvas({
           beam.x += (dx / dist) * beam.speed;
           beam.y += (dy / dist) * beam.speed;
 
-          const trailLength = 22;
+          const trailLength = 26;
           const trailX = beam.x - (dx / dist) * trailLength;
           const trailY = beam.y - (dy / dist) * trailLength;
 
@@ -248,7 +250,7 @@ function HologramWarRoomCanvas({
 
           ctx.fillStyle = "#ffffff";
           ctx.beginPath();
-          ctx.arc(beam.x, beam.y, beam.radius * 0.7, 0, Math.PI * 2);
+          ctx.arc(beam.x, beam.y, beam.radius * 0.8, 0, Math.PI * 2);
           ctx.fill();
         }
       });
@@ -257,7 +259,7 @@ function HologramWarRoomCanvas({
       sparksRef.current.forEach((sp, sIdx) => {
         sp.x += sp.vx;
         sp.y += sp.vy;
-        sp.alpha -= 0.05;
+        sp.alpha -= 0.04;
 
         if (sp.alpha <= 0) {
           sparksRef.current.splice(sIdx, 1);
@@ -265,7 +267,7 @@ function HologramWarRoomCanvas({
           ctx.fillStyle = sp.color;
           ctx.globalAlpha = sp.alpha;
           ctx.beginPath();
-          ctx.arc(sp.x, sp.y, 2, 0, Math.PI * 2);
+          ctx.arc(sp.x, sp.y, 2.5, 0, Math.PI * 2);
           ctx.fill();
           ctx.globalAlpha = 1.0;
         }
@@ -279,22 +281,22 @@ function HologramWarRoomCanvas({
   }, [running]);
 
   return (
-    <div className="relative w-full h-[270px] rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-2xl shrink-0">
-      <canvas ref={canvasRef} width={780} height={270} className="w-full h-full block" />
+    <div className="relative w-full flex-1 rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-2xl min-h-[300px]">
+      <canvas ref={canvasRef} width={1100} height={460} className="w-full h-full block" />
 
-      <div className="absolute top-2.5 left-3 flex items-center gap-2">
-        <Badge className="bg-slate-900/90 border-slate-700 text-cyan-300 font-mono text-[10px] backdrop-blur-md">
-          <Zap className="h-3 w-3 mr-1 text-cyan-400 fill-cyan-400" />
-          {metrics ? `${metrics.actualRps} req/s` : running ? "Executing Live..." : "War Room Ready"}
+      <div className="absolute top-3 left-4 flex items-center gap-2">
+        <Badge className="bg-slate-900/90 border-slate-700 text-cyan-300 font-mono text-xs backdrop-blur-md px-2.5 py-1">
+          <Zap className="h-3.5 w-3.5 mr-1 text-cyan-400 fill-cyan-400" />
+          {metrics ? `${metrics.actualRps.toLocaleString()} req/s` : running ? "Executing Live Traffic..." : "War Room Ready"}
         </Badge>
       </div>
 
-      <div className="absolute top-2.5 right-3 flex items-center gap-2 text-[10px] font-mono">
-        <span className="flex items-center gap-1 text-emerald-400 font-bold">
-          <span className="h-2 w-2 rounded-full bg-emerald-400" /> 200 OK (Thủng Khiên)
+      <div className="absolute top-3 right-4 flex items-center gap-3 text-xs font-mono bg-slate-900/80 px-3 py-1 rounded-lg border border-slate-800 backdrop-blur-md">
+        <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" /> 200 OK (Thủng Khiên)
         </span>
-        <span className="flex items-center gap-1 text-rose-400 font-bold">
-          <span className="h-2 w-2 rounded-full bg-rose-400" /> 403 WAF (Khiên Chặn)
+        <span className="flex items-center gap-1.5 text-rose-400 font-bold">
+          <span className="h-2.5 w-2.5 rounded-full bg-rose-400" /> 403 WAF (Khiên Chặn)
         </span>
       </div>
     </div>
@@ -316,11 +318,10 @@ function StressTestContent() {
   const [detectingWaf, setDetectingWaf] = useState(false);
   const [detectedWaf, setDetectedWaf] = useState<string>("standard");
   const [detectedWafName, setDetectedWafName] = useState<string | null>(null);
-  const [inputLabel, setInputLabel] = useState<string>("Mã Bypass / Secret Token");
-  const [inputPlaceholder, setInputPlaceholder] = useState<string>("Nhập mã bypass");
+  const [inputLabel, setInputLabel] = useState<string>("Mã Bypass Secret");
+  const [inputPlaceholder, setInputPlaceholder] = useState<string>("Dán mã Secret (rsE...)");
   const [bypassCode, setBypassCode] = useState<string>("");
 
-  // Trạng thái kiểm tra mã Bypass
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{ is_valid: boolean; message: string } | null>(null);
 
@@ -328,6 +329,9 @@ function StressTestContent() {
   const [metrics, setMetrics] = useState<StressMetrics | null>(null);
   const [liveLogs, setLiveLogs] = useState<LogEntry[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Modal tổng kết sau khi hoàn thành
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
 
   const calculatedRps = Math.round(targetRequests / Math.max(1, duration));
 
@@ -374,7 +378,7 @@ function StressTestContent() {
       const res = await detectWaf(target);
       setDetectedWaf(res.detected_waf || "standard");
       setDetectedWafName(res.waf_name);
-      setInputLabel(res.input_label || "Mã Bypass / Secret Token");
+      setInputLabel(res.input_label || "Mã Bypass Secret");
       setInputPlaceholder(res.input_placeholder || "Nhập mã bypass");
     } catch {
       setErrorMsg("Không thể kiểm tra WAF.");
@@ -383,7 +387,6 @@ function StressTestContent() {
     }
   };
 
-  // NÚT KIỂM TRA MÃ BYPASS TRỰC TIẾP
   const handleVerifyBypass = async () => {
     const target = selectedEndpoint || baseDomain;
     if (!target || !bypassCode.trim() || running) return;
@@ -400,7 +403,7 @@ function StressTestContent() {
         is_valid: res.is_valid,
         message: res.message,
       });
-    } catch (err: any) {
+    } catch {
       setVerifyResult({
         is_valid: false,
         message: "Không thể kết nối đến máy chủ mục tiêu.",
@@ -410,7 +413,6 @@ function StressTestContent() {
     }
   };
 
-  // KÍCH HOẠT STRESS TEST VỚI REAL-TIME STREAMING
   const handleStartStress = async () => {
     const finalUrl = selectedEndpoint || baseDomain;
     if (!finalUrl || running) return;
@@ -419,6 +421,7 @@ function StressTestContent() {
     setRunning(true);
     setMetrics(null);
     setLiveLogs([]);
+    setShowSummaryModal(false);
 
     const payload = {
       target_url: finalUrl,
@@ -462,6 +465,8 @@ function StressTestContent() {
                 }
               } else if (data.type === "done") {
                 setMetrics(data.metrics);
+                setShowSummaryModal(true);
+
                 if (projectId) {
                   await saveProjectDetail(projectId, {
                     title: baseDomain,
@@ -485,245 +490,271 @@ function StressTestContent() {
     }
   };
 
+  const totalSent = metrics ? metrics.totalRequests : 0;
+  const successCount = metrics ? metrics.status200 : 0;
+  const failCount = metrics ? (metrics.status403WafBlocked + metrics.status429RateLimited + metrics.status500Crashed) : 0;
+
   return (
-    <div className="h-[calc(100vh-5.5rem)] max-h-[calc(100vh-5.5rem)] overflow-hidden flex flex-col justify-between p-2.5 bg-slate-950 text-slate-100 font-sans">
-      {/* 1. Header Bar Tối Giản */}
-      <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30">
-            <Flame className="h-4 w-4 fill-rose-500 text-rose-500" />
+    <div className="h-[calc(100vh-4.2rem)] max-h-[calc(100vh-4.2rem)] overflow-hidden flex flex-col justify-between p-3 bg-slate-950 text-slate-100 font-sans">
+      {/* 1. THANH ĐIỀU KHIỂN COMPACT TRÊN CÙNG (TOP CONTROL BAR) */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-2.5 shadow-lg shrink-0">
+        <div className="grid gap-2.5 lg:grid-cols-12 items-center">
+          {/* Target & Endpoint Selector (4 cols) */}
+          <div className="lg:col-span-4 flex items-center gap-1.5">
+            <div className="relative flex-1">
+              <Globe className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <select
+                value={selectedEndpoint}
+                onChange={(e) => setSelectedEndpoint(e.target.value)}
+                disabled={running}
+                className="w-full h-8 pl-8 pr-2 rounded-lg border border-slate-800 bg-slate-950 text-xs text-cyan-300 font-mono outline-none focus:border-rose-500 disabled:opacity-60"
+              >
+                {endpoints.map((ep, idx) => (
+                  <option key={idx} value={ep}>
+                    {ep}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              size="sm"
+              type="button"
+              onClick={handleScanEndpoints}
+              disabled={running || scanningEndpoints || !baseDomain}
+              className="h-8 px-2.5 text-xs bg-cyan-600/90 hover:bg-cyan-500 text-white font-medium shrink-0"
+            >
+              {scanningEndpoints ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+            </Button>
           </div>
-          <div>
-            <h2 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
-              L7 Stress Test & War Room Hologram
-              {projectId && (
-                <span className="text-[10px] font-mono text-cyan-400 font-normal">
-                  [{projectId.slice(0, 10)}]
+
+          {/* Volume Config: Requests / Duration (2.5 cols) */}
+          <div className="lg:col-span-3 flex items-center gap-2">
+            <div className="flex items-center gap-1 flex-1">
+              <span className="text-[10px] text-slate-400 uppercase font-semibold">Req:</span>
+              <Input
+                type="number"
+                min={10}
+                max={50000}
+                step={100}
+                value={targetRequests}
+                onChange={(e) => setTargetRequests(Math.max(1, Number(e.target.value)))}
+                disabled={running}
+                className="h-8 border-slate-800 bg-slate-950 text-xs font-bold text-white font-mono disabled:opacity-60"
+              />
+            </div>
+            <div className="flex items-center gap-1 w-24">
+              <span className="text-[10px] text-slate-400 uppercase font-semibold">Giây:</span>
+              <Input
+                type="number"
+                min={1}
+                max={120}
+                value={duration}
+                onChange={(e) => setDuration(Math.max(1, Number(e.target.value)))}
+                disabled={running}
+                className="h-8 border-slate-800 bg-slate-950 text-xs font-bold text-white font-mono disabled:opacity-60"
+              />
+            </div>
+          </div>
+
+          {/* Bypass Code & Verification Probe (3.5 cols) */}
+          <div className="lg:col-span-3 flex items-center gap-1.5">
+            <Input
+              value={bypassCode}
+              onChange={(e) => {
+                setBypassCode(e.target.value);
+                setVerifyResult(null);
+              }}
+              disabled={running}
+              placeholder={inputPlaceholder}
+              className="h-8 border-slate-800 bg-slate-950 font-mono text-xs text-amber-300 placeholder:text-slate-600 disabled:opacity-60 flex-1"
+            />
+            <Button
+              size="sm"
+              type="button"
+              onClick={handleVerifyBypass}
+              disabled={running || verifying || !bypassCode.trim()}
+              className="h-8 px-2 text-xs bg-amber-600/90 hover:bg-amber-500 text-white font-medium shrink-0"
+              title="Kiểm tra mã bypass với server"
+            >
+              {verifying ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={handleDetectWaf}
+              disabled={running || detectingWaf}
+              className="h-8 px-2 text-xs border-slate-700 bg-slate-800 text-slate-300 shrink-0"
+              title="Quét WAF"
+            >
+              {detectingWaf ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <ShieldAlert className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+
+          {/* Action Launch Button (2 cols) */}
+          <div className="lg:col-span-2">
+            <Button
+              onClick={handleStartStress}
+              disabled={running || !baseDomain}
+              className="h-8 w-full bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white font-bold shadow-md shadow-rose-900/30 text-xs transition"
+            >
+              {running ? (
+                <span className="flex items-center gap-1.5">
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin text-white" />
+                  Đang bắn...
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <Flame className="h-3.5 w-3.5 fill-white" />
+                  Bắn Tải ({calculatedRps.toLocaleString()} r/s)
                 </span>
               )}
-            </h2>
+            </Button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {detectedWafName ? (
-            <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-300 font-mono text-[10px]" variant="muted">
-              <ShieldCheck className="h-3 w-3 mr-1" /> {detectedWafName}
-            </Badge>
-          ) : null}
-          <Badge className="border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono text-[10px]" variant="muted">
-            Tốc độ: {calculatedRps.toLocaleString()} req/sec
-          </Badge>
-        </div>
+        {/* Thông báo xác minh Bypass */}
+        {verifyResult && (
+          <div
+            className={`mt-2 p-1.5 px-3 rounded-lg text-xs flex items-center justify-between border font-medium ${
+              verifyResult.is_valid
+                ? "bg-emerald-950/50 border-emerald-500/40 text-emerald-300"
+                : "bg-rose-950/50 border-rose-500/40 text-rose-300"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {verifyResult.is_valid ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className="h-4 w-4 text-rose-400" />}
+              <span>{verifyResult.message}</span>
+            </div>
+            <button onClick={() => setVerifyResult(null)} className="text-slate-400 hover:text-white">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* 2. Bố Cục 2 Cột Vừa Khít 1 Màn Hình Không Cần Cuộn */}
-      <div className="grid gap-3 lg:grid-cols-12 flex-1 my-1.5 min-h-0 overflow-hidden">
-        {/* CỘT TRÁI (45% - 5.5 cols): Cấu hình & Ô Nhập Khóa Khi Bắn */}
-        <div className="lg:col-span-5 flex flex-col justify-between gap-2 min-h-0">
-          <Card className="border-slate-800 bg-slate-900/90 shadow-md">
-            <CardContent className="p-3 space-y-2">
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-slate-400 flex items-center justify-between">
-                  <span>Domain Gốc</span>
-                  {projectId && (
-                    <span className="text-[9px] text-cyan-400 flex items-center gap-1">
-                      <Lock className="h-2.5 w-2.5" /> Cố định
-                    </span>
-                  )}
-                </label>
-                <div className="relative mt-1">
-                  <Globe className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <Input
-                    value={baseDomain}
-                    onChange={(e) => setBaseDomain(e.target.value)}
-                    disabled={running || Boolean(projectId && baseDomain)}
-                    placeholder="https://example.com"
-                    className="h-8 pl-8 border-slate-800 bg-slate-950 font-mono text-xs text-cyan-300 disabled:opacity-80"
-                  />
-                </div>
-              </div>
+      {/* 2. WAR ROOM HOLOGRAM CANVAS KHỔNG LỒ (CHIẾM TRỌN KHÔNG GIAN CHÍNH) */}
+      <div className="flex-1 my-2 flex flex-col min-h-0 overflow-hidden">
+        <HologramWarRoomCanvas
+          logs={liveLogs}
+          running={running}
+          metrics={metrics}
+        />
+      </div>
 
-              <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold uppercase text-slate-400">
-                    Endpoint Bắn Tải ({endpoints.length})
-                  </label>
-                  <Button
-                    size="sm"
-                    type="button"
-                    onClick={handleScanEndpoints}
-                    disabled={running || scanningEndpoints || !baseDomain}
-                    className="h-5 px-2 text-[9px] bg-cyan-600/90 hover:bg-cyan-500 text-white font-medium"
-                  >
-                    {scanningEndpoints ? <LoaderCircle className="h-2.5 w-2.5 animate-spin mr-1" /> : <Search className="h-2.5 w-2.5 mr-1" />}
-                    Quét Endpoint
-                  </Button>
-                </div>
-                <select
-                  value={selectedEndpoint}
-                  onChange={(e) => setSelectedEndpoint(e.target.value)}
-                  disabled={running}
-                  className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 outline-none focus:border-rose-500 font-mono disabled:opacity-60"
-                >
-                  {endpoints.map((ep, idx) => (
-                    <option key={idx} value={ep}>
-                      {ep}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-0.5">
-                <div>
-                  <label className="text-[9px] uppercase text-slate-400 font-semibold">Tổng Requests</label>
-                  <Input
-                    type="number"
-                    min={10}
-                    max={50000}
-                    step={100}
-                    value={targetRequests}
-                    onChange={(e) => setTargetRequests(Math.max(1, Number(e.target.value)))}
-                    disabled={running}
-                    className="mt-0.5 h-7 border-slate-800 bg-slate-950 text-xs font-bold text-white disabled:opacity-60"
-                  />
-                </div>
-                <div>
-                  <label className="text-[9px] uppercase text-slate-400 font-semibold">Thời gian (Giây)</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={120}
-                    value={duration}
-                    onChange={(e) => setDuration(Math.max(1, Number(e.target.value)))}
-                    disabled={running}
-                    className="mt-0.5 h-7 border-slate-800 bg-slate-950 text-xs font-bold text-white disabled:opacity-60"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Quét WAF & Kiểm Tra Mã Bypass */}
-          <Card className="border-slate-800 bg-slate-900/90 shadow-md flex-1 flex flex-col justify-between">
-            <CardContent className="p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-semibold uppercase text-slate-400 flex items-center gap-1">
-                  <KeyRound className="h-3 w-3 text-amber-400" /> {inputLabel}
-                </label>
-                <div className="flex gap-1.5">
-                  <Button
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                    onClick={handleDetectWaf}
-                    disabled={running || detectingWaf}
-                    className="h-5 px-2 text-[9px] border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
-                  >
-                    {detectingWaf ? <LoaderCircle className="h-2.5 w-2.5 animate-spin mr-1" /> : <Activity className="h-2.5 w-2.5 mr-1" />}
-                    Quét WAF
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex gap-1.5">
-                <Input
-                  value={bypassCode}
-                  onChange={(e) => {
-                    setBypassCode(e.target.value);
-                    setVerifyResult(null);
-                  }}
-                  disabled={running}
-                  placeholder={inputPlaceholder}
-                  className="h-8 border-slate-800 bg-slate-950 font-mono text-xs text-cyan-300 placeholder:text-slate-600 disabled:opacity-60 flex-1"
-                />
-                <Button
-                  size="sm"
-                  type="button"
-                  onClick={handleVerifyBypass}
-                  disabled={running || verifying || !bypassCode.trim()}
-                  className="h-8 px-2.5 text-[10px] bg-amber-600/90 hover:bg-amber-500 text-white font-medium shrink-0"
-                >
-                  {verifying ? <LoaderCircle className="h-3 w-3 animate-spin mr-1" /> : <ShieldCheck className="h-3 w-3 mr-1" />}
-                  Kiểm Tra
-                </Button>
-              </div>
-
-              {/* Thông báo kết quả kiểm tra mã bypass */}
-              {verifyResult && (
-                <div
-                  className={`p-2 rounded-lg text-[10px] flex items-center gap-1.5 border font-medium ${
-                    verifyResult.is_valid
-                      ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
-                      : "bg-rose-950/40 border-rose-500/40 text-rose-300"
-                  }`}
-                >
-                  {verifyResult.is_valid ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0" />}
-                  <span className="truncate">{verifyResult.message}</span>
-                </div>
-              )}
-
-              <div className="pt-1">
-                {errorMsg && <p className="mb-1 text-[10px] text-rose-400">{errorMsg}</p>}
-                <Button
-                  onClick={handleStartStress}
-                  disabled={running || !baseDomain}
-                  className="h-9 w-full bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white font-bold shadow-lg shadow-rose-900/30 transition text-xs"
-                >
-                  {running ? (
-                    <span className="flex items-center gap-1.5">
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin text-white" />
-                      Đang bắn tải Real-Time ({calculatedRps.toLocaleString()} req/s)...
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5">
-                      <Flame className="h-3.5 w-3.5 fill-white" />
-                      Kích Hoạt Stress Test ({calculatedRps.toLocaleString()} req/s)
-                    </span>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+      {/* 3. BẢNG HUD CHỈ SỐ THỰC TẾ CỐ ĐỊNH BÊN DƯỚI (BOTTOM METRICS BAR) */}
+      <div className="grid grid-cols-5 gap-2.5 shrink-0">
+        <div className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
+          <div className="text-[10px] text-slate-400 uppercase font-semibold">Tổng Request Đã Bắn</div>
+          <div className="mt-0.5 text-xl font-bold text-cyan-300 font-mono">
+            {totalSent.toLocaleString()}
+          </div>
         </div>
 
-        {/* CỘT PHẢI (55% - 7 cols): War Room Hologram Canvas & Thẻ HTTP */}
-        <div className="lg:col-span-7 flex flex-col justify-between gap-2 min-h-0">
-          <HologramWarRoomCanvas
-            logs={liveLogs}
-            running={running}
-            metrics={metrics}
-          />
+        <div className="p-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-center">
+          <div className="text-[10px] text-emerald-400 uppercase font-semibold">Thành Công (200 OK)</div>
+          <div className="mt-0.5 text-xl font-bold text-emerald-400 font-mono">
+            {successCount.toLocaleString()}
+          </div>
+        </div>
 
-          {/* 4 Thẻ Trạng Thái HTTP Thực Tế */}
-          <div className="grid grid-cols-4 gap-2 shrink-0">
-            <div className="p-2 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-              <div className="text-[9px] text-slate-400 font-medium">200 OK (Thành công)</div>
-              <div className="text-sm font-bold text-emerald-400 font-mono">
-                {metrics ? metrics.status200 : 0}
-              </div>
-            </div>
-            <div className="p-2 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-              <div className="text-[9px] text-slate-400 font-medium">403 (Khiên Chặn)</div>
-              <div className="text-sm font-bold text-rose-400 font-mono">
-                {metrics ? metrics.status403WafBlocked : 0}
-              </div>
-            </div>
-            <div className="p-2 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-              <div className="text-[9px] text-slate-400 font-medium">429 (Giới hạn tải)</div>
-              <div className="text-sm font-bold text-amber-400 font-mono">
-                {metrics ? metrics.status429RateLimited : 0}
-              </div>
-            </div>
-            <div className="p-2 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-              <div className="text-[9px] text-slate-400 font-medium">Latency p95</div>
-              <div className="text-sm font-bold text-cyan-300 font-mono">
-                {metrics ? metrics.p95LatencyMs : "-"}
-              </div>
-            </div>
+        <div className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-950/20 text-center">
+          <div className="text-[10px] text-rose-400 uppercase font-semibold">Bị Chặn (403 / 429)</div>
+          <div className="mt-0.5 text-xl font-bold text-rose-400 font-mono">
+            {failCount.toLocaleString()}
+          </div>
+        </div>
+
+        <div className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
+          <div className="text-[10px] text-slate-400 uppercase font-semibold">Tốc Độ Thực Tế (RPS)</div>
+          <div className="mt-0.5 text-xl font-bold text-amber-300 font-mono">
+            {metrics ? `${metrics.actualRps} r/s` : "-"}
+          </div>
+        </div>
+
+        <div className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
+          <div className="text-[10px] text-slate-400 uppercase font-semibold">Độ Trễ (p95)</div>
+          <div className="mt-0.5 text-xl font-bold text-purple-300 font-mono">
+            {metrics ? metrics.p95LatencyMs : "-"}
           </div>
         </div>
       </div>
+
+      {/* 4. MODAL TỔNG KẾT BÁO CÁO SAU KHI QUÉT (POST-ATTACK SUMMARY MODAL) */}
+      {showSummaryModal && metrics && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Check className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Báo Cáo Tổng Kết Bắn Tải L7</h3>
+                  <p className="text-xs text-slate-400">Target: {selectedEndpoint || baseDomain}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="rounded-lg p-1 text-slate-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Bảng Chỉ Số Toàn Diện */}
+            <div className="grid grid-cols-3 gap-2.5 text-center">
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <div className="text-[10px] text-slate-400">Tổng Request</div>
+                <div className="text-lg font-bold text-cyan-300 font-mono">{metrics.totalRequests.toLocaleString()}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30">
+                <div className="text-[10px] text-emerald-400">Thành Công</div>
+                <div className="text-lg font-bold text-emerald-400 font-mono">{metrics.status200.toLocaleString()}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-rose-500/30">
+                <div className="text-[10px] text-rose-400">Bị Chặn</div>
+                <div className="text-lg font-bold text-rose-400 font-mono">
+                  {(metrics.status403WafBlocked + metrics.status429RateLimited + metrics.status500Crashed).toLocaleString()}
+                </div>
+              </div>
+            </div>
+
+            {/* Chi Tiết Mã Lỗi HTTP */}
+            <div className="rounded-xl bg-slate-950 p-3.5 border border-slate-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">HTTP 200 OK (Thành công / Bypass):</span>
+                <span className="font-bold text-emerald-400 font-mono">{metrics.status200}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">HTTP 403 Forbidden (WAF Chặn):</span>
+                <span className="font-bold text-rose-400 font-mono">{metrics.status403WafBlocked}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">HTTP 429 Rate Limited:</span>
+                <span className="font-bold text-amber-400 font-mono">{metrics.status429RateLimited}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">HTTP 500 Server Error:</span>
+                <span className="font-bold text-purple-400 font-mono">{metrics.status500Crashed}</span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-slate-800/80">
+                <span className="text-slate-400">Tốc độ thực tế / Độ trễ p95:</span>
+                <span className="font-bold text-cyan-300 font-mono">{metrics.actualRps} req/s | {metrics.p95LatencyMs}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                onClick={() => setShowSummaryModal(false)}
+                className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold px-4"
+              >
+                Đóng & Xem War Room
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -731,7 +762,7 @@ function StressTestContent() {
 export default function StressTestPage() {
   return (
     <DashboardShell area="dashboard">
-      <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading war room suite...</div>}>
+      <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading War Room...</div>}>
         <StressTestContent />
       </Suspense>
     </DashboardShell>

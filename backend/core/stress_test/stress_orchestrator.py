@@ -9,10 +9,7 @@ import threading
 import urllib.parse
 import concurrent.futures
 from typing import Any, Dict, Optional, List, Generator
-import requests
-import urllib3
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 class StressOrchestrator:
@@ -25,11 +22,19 @@ class StressOrchestrator:
 
         headers = custom_headers.copy() if custom_headers else {}
         headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
         headers["Accept-Language"] = "en-US,en;q=0.9"
+        headers["Sec-Ch-Ua"] = '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"'
+        headers["Sec-Ch-Ua-Mobile"] = "?0"
+        headers["Sec-Ch-Ua-Platform"] = '"Windows"'
+        headers["Sec-Fetch-Dest"] = "document"
+        headers["Sec-Fetch-Mode"] = "navigate"
+        headers["Sec-Fetch-Site"] = "none"
+        headers["Sec-Fetch-User"] = "?1"
+        headers["Upgrade-Insecure-Requests"] = "1"
 
         cookies = custom_cookies.copy() if custom_cookies else {}
-        clean_code = bypass_code.strip() if bypass_code else ""
+        clean_code = bypass_code.strip().strip('"').strip("'")
 
         if clean_code:
             if ":" in clean_code and not clean_code.startswith("http"):
@@ -41,50 +46,64 @@ class StressOrchestrator:
             elif clean_code.startswith("eyJ") or clean_code.lower().startswith("bearer "):
                 headers["Authorization"] = clean_code if clean_code.lower().startswith("bearer ") else f"Bearer {clean_code}"
             else:
-                # Vercel Deployment Protection
+                # 1. Header Injection
                 headers["x-vercel-protection-bypass"] = clean_code
-                headers["x-vercel-set-bypass-cookie"] = "samesitenone"
-                cookies["x-vercel-protection-bypass"] = clean_code
-                cookies["_vercel_jwt"] = clean_code
-                cookies["_vercel_protection_bypass"] = clean_code
-
-                # Tiêm URL Query Params
-                sep = "&" if "?" in final_url else "?"
-                final_url += f"{sep}_vercel_protection_bypass={clean_code}&x-vercel-protection-bypass={clean_code}&x-vercel-set-bypass-cookie=samesitenone"
-
-                # Cloudflare & AWS WAF
+                headers["x-vercel-set-bypass-cookie"] = "true"
                 headers["CF-Access-Client-Id"] = clean_code
                 headers["CF-Access-Client-Secret"] = clean_code
                 headers["x-api-key"] = clean_code
+
+                # 2. Cookie Injection
+                cookies["x-vercel-protection-bypass"] = clean_code
+                cookies["_vercel_jwt"] = clean_code
                 cookies["cf_clearance"] = clean_code
+
+                # 3. URL Query Parameter Injection (Vercel hỗ trợ trực tiếp trên Query)
+                sep = "&" if "?" in final_url else "?"
+                final_url += f"{sep}x-vercel-protection-bypass={clean_code}&_vercel_protection_bypass={clean_code}&x-vercel-set-bypass-cookie=true"
 
         return final_url, headers, cookies
 
+    def _get_client_session(self, headers: dict, cookies: dict):
+        try:
+            from curl_cffi import requests as curl_requests
+            s = curl_requests.Session(impersonate="chrome120", timeout=4)
+            s.headers.update(headers)
+            s.cookies.update(cookies)
+            return s, True
+        except ImportError:
+            import requests
+            s = requests.Session()
+            s.headers.update(headers)
+            s.cookies.update(cookies)
+            adapter = requests.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50, max_retries=0)
+            s.mount("https://", adapter)
+            s.mount("http://", adapter)
+            return s, False
+
     def verify_bypass(self, target_url: str, bypass_code: str = "", waf_type: str = "standard") -> Dict[str, Any]:
-        """Gửi 2 probe request để kiểm tra hiệu quả mã bypass"""
         clean_url = target_url.strip() if target_url.strip().startswith(("http://", "https://")) else f"https://{target_url.strip()}"
         
-        # Probe 1: Không dùng Bypass
+        # Probe 1: Kiểm tra khi KHÔNG có Bypass
         status_no_bypass = 0
         try:
-            r1 = requests.get(clean_url, timeout=4, verify=False, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
+            s_raw, _ = self._get_client_session({"User-Agent": "Mozilla/5.0"}, {})
+            r1 = s_raw.get(clean_url, timeout=4, verify=False, allow_redirects=True)
             status_no_bypass = r1.status_code
         except Exception:
             status_no_bypass = 500
 
-        # Probe 2: Dùng Bypass
+        # Probe 2: Kiểm tra khi CÓ Bypass
         final_url, headers, cookies = self._prepare_request_config(clean_url, bypass_code, waf_type)
         status_with_bypass = 0
         try:
-            s = requests.Session()
-            s.headers.update(headers)
-            s.cookies.update(cookies)
-            r2 = s.get(final_url, timeout=4, verify=False, allow_redirects=True)
+            s_bypass, _ = self._get_client_session(headers, cookies)
+            r2 = s_bypass.get(final_url, timeout=4, verify=False, allow_redirects=True)
             status_with_bypass = r2.status_code
         except Exception:
             status_with_bypass = 500
 
-        is_valid = status_with_bypass in (200, 201, 204, 304)
+        is_valid = status_with_bypass in (200, 201, 204, 304, 301, 302, 307, 308)
         msg = ""
         if is_valid:
             if status_no_bypass == 403:
@@ -93,7 +112,7 @@ class StressOrchestrator:
                 msg = f"Mục tiêu phản hồi thành công (HTTP {status_with_bypass} OK)."
         else:
             if status_with_bypass == 403:
-                msg = "Mã Bypass KHÔNG HỢP LỆ (Server vẫn chặn với HTTP 403 Forbidden)."
+                msg = "Server vẫn trả về HTTP 403. Hãy kiểm tra lại chuỗi Secret hoặc cấu hình Vercel."
             elif status_with_bypass == 429:
                 msg = "Server đang kích hoạt Rate Limit (HTTP 429 Too Many Requests)."
             else:
@@ -155,12 +174,7 @@ class StressOrchestrator:
 
         def get_worker_session():
             if not getattr(thread_local, "session", None):
-                s = requests.Session()
-                s.headers.update(headers_dict)
-                s.cookies.update(cookie_dict)
-                adapter = requests.adapters.HTTPAdapter(pool_connections=40, pool_maxsize=40, max_retries=0)
-                s.mount("https://", adapter)
-                s.mount("http://", adapter)
+                s, _ = self._get_client_session(headers_dict, cookie_dict)
                 thread_local.session = s
             return thread_local.session
 
@@ -178,8 +192,6 @@ class StressOrchestrator:
             try:
                 resp = session.get(final_url, headers=req_headers, timeout=3.5, verify=False, allow_redirects=True)
                 status_code = resp.status_code
-            except requests.exceptions.HTTPError as he:
-                status_code = he.response.status_code if he.response else 500
             except Exception:
                 status_code = 500
 
@@ -208,7 +220,7 @@ class StressOrchestrator:
                         metrics["total_requests"] += 1
                         latencies.append(lat)
 
-                        if code in (200, 201, 204):
+                        if code in (200, 201, 204, 304, 301, 302, 307, 308):
                             metrics["status_200"] += 1
                         elif code == 403:
                             metrics["status_403_waf_blocked"] += 1
@@ -226,10 +238,9 @@ class StressOrchestrator:
         for _ in range(concurrency):
             executor.submit(worker_batch)
 
-        # Phát event stream liên tục ra generator
         while time.time() < end_time + 1 or not event_q.empty():
             batch_logs = []
-            while not event_q.empty() and len(batch_logs) < 20:
+            while not event_q.empty() and len(batch_logs) < 25:
                 batch_logs.append(event_q.get())
 
             elapsed = max(0.1, time.time() - start_time)
@@ -250,7 +261,7 @@ class StressOrchestrator:
             if metrics["total_requests"] >= total_reqs and event_q.empty():
                 break
 
-            time.sleep(0.06)
+            time.sleep(0.05)
 
         executor.shutdown(wait=False)
         yield {
