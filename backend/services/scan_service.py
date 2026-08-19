@@ -38,7 +38,7 @@ except Exception:
 
 class ScanService:
     @staticmethod
-    def create_scan_job(req: ScanRequest) -> Dict[str, Any]:
+    def create_scan_job(req: ScanRequest, skip_ai: bool = False) -> Dict[str, Any]:
         if not req.target or not req.target.strip():
             raise HTTPException(status_code=400, detail="Target URL is required")
 
@@ -49,6 +49,7 @@ class ScanService:
             "request": req.model_dump(),
             "created_at": time.time(),
             "status": "QUEUED",
+            "skip_ai": skip_ai,
         }
         JOBS_STORAGE[job_id] = job_data
         if redis_client:
@@ -110,7 +111,6 @@ class ScanService:
                 if clean_path.startswith(("http://", "https://")) and clean_path not in discovered:
                     discovered.append(clean_path)
 
-        # Cào thêm Next.js manifest
         try:
             import requests
             resp = requests.get(clean, timeout=4, verify=False)
@@ -163,22 +163,3 @@ class ScanService:
             "input_label": input_label,
             "input_placeholder": input_placeholder,
         }
-
-    @staticmethod
-    def run_stress_test(req: StressRequest) -> Dict[str, Any]:
-        try:
-            from backend.core.stress_test.stress_orchestrator import StressOrchestrator
-
-            orchestrator = StressOrchestrator()
-            result = orchestrator.execute_stress_test(
-                target_url=req.target_url,
-                target_requests=req.target_requests or 1000,
-                duration=req.duration or "5s",
-                bypass_code=req.bypass_code or "",
-                waf_type=req.waf_type or "standard",
-                custom_headers=req.custom_headers,
-                custom_cookies=req.custom_cookies,
-            )
-            return {"ok": True, "result": result}
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Stress test error: {str(exc)}")

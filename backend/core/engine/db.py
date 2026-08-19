@@ -1,5 +1,6 @@
 import json
 import importlib
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 try:
@@ -34,6 +35,7 @@ def get_supabase_client() -> SupabaseClient:
 
 def save_scan_job(scan_id: str, target: str, status: str, started_at: str, ended_at: Optional[str], score: int) -> Dict[str, Any]:
     client = get_supabase_client()
+    now_iso = datetime.now(timezone.utc).isoformat()
     payload = {
         "scan_id": scan_id,
         "target_domain": target,
@@ -41,10 +43,10 @@ def save_scan_job(scan_id: str, target: str, status: str, started_at: str, ended
         "started_at": started_at,
         "ended_at": ended_at,
         "priority_score": score,
+        "updated_at": now_iso,  # <-- Thêm dòng này
     }
     response = client.table("scan_jobs").insert(payload).execute()
     return response
-
 
 def save_live_hosts(scan_id: str, hosts_list: List[Dict[str, Any]]) -> Dict[str, Any]:
     client = get_supabase_client()
@@ -129,12 +131,15 @@ def update_scan_status(scan_id: str, status: str) -> Dict[str, Any]:
 
     try:
         client = get_supabase_client()
+        now_iso = datetime.now(timezone.utc).isoformat()
         response = (
             client.table("scan_jobs")
-            .update({"status": status_value})
+            .update({
+                "status": status_value,
+                "updated_at": now_iso,  # <-- Bổ sung trường này
+            })
             .eq("scan_id", scan_id)
-            .execute()
-        )
+            .execute()        )
         return {
             "updated": True,
             "scan_id": scan_id,

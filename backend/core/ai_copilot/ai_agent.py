@@ -138,38 +138,64 @@ def _build_messages(target: str, vulnerabilities: List[Dict[str, Any]], live_hos
 
 
 def _call_llm_analysis(target: str, vulnerabilities: List[Dict[str, Any]], live_hosts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if not config.AI_API_URL or not config.AI_API_KEY:
+    api_key = getattr(config, "GEMINI_API_KEY", None) or getattr(config, "AI_API_KEY", None)
+    if not api_key:
         return None
 
-    headers = {
-        "Authorization": f"Bearer {config.AI_API_KEY}",
-        "Content-Type": "application/json",
+    model = getattr(config, "GEMINI_MODEL", None) or getattr(config, "AI_MODEL", "gemini-3.5-flash-lite")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+    system_prompt = (
+        "Bạn là Security Triage AI trong môi trường pentest có ủy quyền. "
+        "Nhiệm vụ: phân tích kết quả quét tự động, xếp hạng mức độ nguy hiểm, lọc cảnh báo giả, "
+        "và đề xuất hành động xử lý. Bắt buộc chỉ trả về định dạng JSON hợp lệ."
+    )
+
+    user_data = {
+        "target": target,
+        "live_hosts": [{"url": h.get("url"), "status_code": h.get("status_code")} for h in live_hosts[:25]],
+        "vulnerabilities": vulnerabilities[:25],
+        "schema_output": {
+            "risk_level": "critical|high|medium|low",
+            "confidence": "number (0-100)",
+            "summary": "string",
+            "false_positive_candidates": [{"source": "string", "reason": "string", "ref": "string"}],
+            "top_findings": [{"source": "string", "severity": "string", "host": "string", "endpoint": "string", "template_id": "string"}],
+            "recommended_actions": ["string"],
+        },
     }
+
     payload = {
-        "model": config.AI_MODEL,
-        "temperature": 0.1,
-        "messages": _build_messages(target, vulnerabilities, live_hosts),
-        "response_format": {"type": "json_object"},
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": json.dumps(user_data, ensure_ascii=False)}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.1,
+            "maxOutputTokens": 2048,
+        },
     }
 
     response = requests.post(
-        config.AI_API_URL,
-        headers=headers,
+        url,
+        headers={"Content-Type": "application/json"},
         json=payload,
-        timeout=config.AI_TIMEOUT,
+        timeout=getattr(config, "AI_TIMEOUT", 30),
     )
     response.raise_for_status()
     data = response.json()
-    content = (
-        data.get("choices", [{}])[0]
-        .get("message", {})
-        .get("content", "")
-    )
+
+    candidates = data.get("candidates", [])
+    if not candidates:
+        return None
+
+    content = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+    if not content:
+        return None
+
     parsed = json.loads(content)
-    parsed["engine"] = "llm"
+    parsed["engine"] = "gemini_native"
     parsed["target"] = target
     return parsed
-
 
 def analyze_security_findings(
     scan_id: str,

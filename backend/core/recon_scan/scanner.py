@@ -1,10 +1,11 @@
 from typing import Any, Dict, List, Optional, Union
-from typing import Any, Dict, List, Optional
+import re
 import shlex
+import socket
 import subprocess
 import time
+import urllib.parse
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
 
 try:
     from config import config
@@ -38,7 +39,7 @@ class ToolResult:
 def run_command(
     name: str,
     args: List[str],
-    timeout: int = None,
+    timeout: Optional[int] = None,
     retries: int = 0,
     backoff: float = 2.0,
     input_text: Optional[str] = None,
@@ -49,6 +50,7 @@ def run_command(
     stdout_lines: List[str] = []
     stderr_lines: List[str] = []
     start_time = time.time()
+    returncode = 0
 
     while True:
         attempt += 1
@@ -56,6 +58,7 @@ def run_command(
         try:
             if input_file:
                 stdin_handle = open(input_file, "r")
+
             process = subprocess.Popen(
                 args,
                 stdin=subprocess.PIPE if input_text is not None else stdin_handle,
@@ -64,17 +67,21 @@ def run_command(
                 text=True,
             )
 
-            if input_text is not None and process.stdin:
-                process.stdin.write(input_text)
-                process.stdin.close()
+            out, err = process.communicate(input=input_text, timeout=timeout)
+            if out:
+                stdout_lines.extend(out.splitlines())
+            if err:
+                stderr_lines.extend(err.splitlines())
+            returncode = process.returncode
 
-            out, err = process.communicate(timeout=timeout)
-            stdout_lines.extend(out.splitlines())
-            stderr_lines.extend(err.splitlines())
-
-            if process.returncode == 0 or attempt > retries:
+            if returncode == 0 or attempt > retries:
                 break
-
+            time.sleep(backoff * attempt)
+        except Exception as e:
+            stderr_lines.append(str(e))
+            returncode = 1
+            if attempt > retries:
+                break
             time.sleep(backoff * attempt)
         finally:
             if stdin_handle:
@@ -86,7 +93,7 @@ def run_command(
         command=args,
         stdout="\n".join(stdout_lines),
         stderr="\n".join(stderr_lines),
-        returncode=process.returncode,
+        returncode=returncode,
         duration_seconds=round(duration, 2),
     )
 
@@ -97,14 +104,14 @@ def run_subfinder(target: str) -> ToolResult:
 
 
 def run_httpx(targets: List[str], scan_type: str = "httpx-toolkit", json_mode: bool = True, input_text: Optional[str] = None) -> ToolResult:
-    args = [scan_type, "-l", "-", "-silent", "-mc", "200,301,302,403"]
+    args = [scan_type, "-silent", "-mc", "200,301,302,403"]
     if json_mode:
         args.append("-json")
     return run_command("HTTPX", args, input_text=input_text)
 
 
 def run_nuclei(targets: List[str], tags: Optional[List[str]] = None, json_mode: bool = True, input_text: Optional[str] = None) -> ToolResult:
-    args = ["nuclei", "-l", "-", "-silent"]
+    args = ["nuclei", "-silent"]
     if json_mode:
         args.append("-json")
     if tags:
@@ -131,15 +138,6 @@ def collect_tool_result(tool_result: ToolResult) -> Dict[str, object]:
 
 
 def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, Any]:
-    """
-    Real Dynamic Target Security Scanner for ADQ Engine.
-    Performs live DNS resolution, real TCP socket port probing, real HTTP/HTTPS request inspecting,
-    CORS testing, missing security headers checks, exposed endpoint/directory probing,
-    and JS Secret analysis on the provided target.
-    """
-    import re
-    import socket
-    import urllib.parse
     import requests
     import urllib3
 
@@ -155,18 +153,15 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
     domain = parsed.netloc.split(":")[0]
     scheme = parsed.scheme or "https"
 
-    # 1. Real IP Address Resolution
     ip_addr = "N/A"
     try:
         ip_addr = socket.gethostbyname(domain)
     except Exception:
         pass
 
-    # 2. Real TCP Port Probing (Only reports ports that are ACTUALLY open)
     ports_to_check = [80, 443, 8080, 8443, 3000, 8000, 5000]
     if tier_choice >= 2:
         ports_to_check.extend([21, 22, 25, 53, 3306, 5432, 6379, 8888, 27017])
-
     open_ports = []
     if ip_addr != "N/A":
         for p in ports_to_check:
@@ -177,7 +172,6 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
                 open_ports.append(p)
             s.close()
 
-    # 3. Real HTTP Response & Security Banner / Header Inspection
     live_hosts = [target_url]
     server_banner = "Unknown"
     title = ""
@@ -187,7 +181,6 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
     vulns = []
     resp_text = ""
 
-    # Realistic browser headers to bypass automated bot checks (Cloudflare, Akamai, AWS WAF, etc.)
     browser_headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -214,12 +207,10 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
         resp_text = resp.text
         server_banner = resp.headers.get("Server", resp.headers.get("X-Powered-By", "Web Server"))
 
-        # Extract Title
         match_title = re.search(r"<title>(.*?)</title>", resp_text, re.IGNORECASE)
         if match_title:
             title = match_title.group(1).strip()
 
-        # Security Headers Check
         if "Strict-Transport-Security" not in resp.headers and scheme == "https":
             missing_headers.append("HSTS")
         if "Content-Security-Policy" not in resp.headers:
@@ -227,7 +218,6 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
         if "X-Content-Type-Options" not in resp.headers:
             missing_headers.append("X-Content-Type-Options")
 
-        # CORS Testing
         try:
             cors_headers = dict(browser_headers)
             cors_headers["Origin"] = "https://evil-attacker-adq.com"
@@ -248,7 +238,6 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
     except Exception:
         status_code = 0
 
-    # 4. Probing Real Sensitive Endpoints
     endpoints_to_probe = [
         "/.git/HEAD",
         "/.env",
@@ -291,7 +280,6 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
     if missing_headers:
         vulns.append({"severity": "LOW", "title": f"Missing Security Headers ({', '.join(missing_headers)})", "endpoint": target_url, "cve": "CWE-693"})
 
-    # 5. Real JS Code Secret Analysis
     secrets = []
     if resp_text:
         try:
@@ -302,7 +290,6 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
         except Exception:
             pass
 
-    # 6. Real Subdomain Probing
     subdomains = []
     sub_prefixes = ["www", "api", "app", "dev", "admin", "mail", "cdn", "staging"]
     for sub in sub_prefixes:
@@ -315,10 +302,9 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
         except Exception:
             pass
 
-    # 7. Priority Risk Score Calculation
     score = 10
     if not vulns and not missing_headers:
-        score = 15  # Secure target
+        score = 15
     else:
         for v in vulns:
             if v.get("severity") == "CRITICAL":
@@ -331,7 +317,6 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
                 score += 5
     score = min(score, 100)
 
-    # Format open ports strings
     port_strings = []
     port_descriptions = {
         80: "HTTP Web",
@@ -379,4 +364,3 @@ def perform_real_dynamic_scan(target: str, tier_choice: int = 2) -> Dict[str, An
         "exposed_paths": exposed_paths,
         "priority_score": score,
     }
-

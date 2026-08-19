@@ -1,5 +1,8 @@
 # File: web/Dockerfile.web
-FROM node:22-alpine AS builder
+FROM node:20-alpine AS builder
+
+# Cài đặt OpenSSL và libc tương thích cho Prisma Engine trên Alpine
+RUN apk add --no-cache openssl libc6-compat
 
 WORKDIR /app
 COPY package*.json ./
@@ -12,7 +15,7 @@ RUN npx prisma generate
 # Copy toàn bộ source code web
 COPY . .
 
-# Nhận DATABASE_URL từ docker-compose build args để Next.js không lỗi khi collect page data
+# Build arguments
 ARG DATABASE_URL
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_SUPABASE_URL
@@ -26,6 +29,9 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
 RUN npm run build
 
 FROM node:20-alpine AS runner
+# Cài đặt OpenSSL ở runtime để chạy lệnh npx prisma db push
+RUN apk add --no-cache openssl libc6-compat
+
 WORKDIR /app
 
 COPY --from=builder /app/node_modules ./node_modules
@@ -34,8 +40,6 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/prisma ./prisma
 
-# Expose port Next.js
 EXPOSE 3000
 
-# Chạy push db và start Next.js server
 CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm run start"]
