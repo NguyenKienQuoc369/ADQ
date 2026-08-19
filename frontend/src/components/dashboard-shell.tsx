@@ -13,7 +13,6 @@ import {
   KeyRound,
   LogOut,
   Menu,
-  X,
   Shield,
   Zap,
   Smartphone,
@@ -66,41 +65,46 @@ function DashboardShellContent({
   const searchParams = useSearchParams();
   const projectId = searchParams?.get("projectId") || null;
 
-  const { user: authUser, loading, logout, acceptTerms, setupGoogleRecovery } = useAuth();
+  const { user, loading, logout, acceptTerms, setupGoogleRecovery } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [localUser, setLocalUser] = useState<any>(null);
-
-  // Fallback lấy session từ localStorage nếu Context chưa nạp kịp
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const cached = localStorage.getItem("adq_user_session");
-        if (cached) {
-          setLocalUser(JSON.parse(cached));
-        } else {
-          setLocalUser({
-            id: "usr_active",
-            name: "Nguyễn Kiến Quốc",
-            email: "kienquocn64@gmail.com",
-            role: "USER",
-            packageTier: "PRO_MAX",
-          });
-        }
-      } catch {}
-    }
-  }, []);
-
-  const activeUser = authUser || localUser;
 
   const needsTerms = useMemo(() => {
-    if (!activeUser) return false;
-    if (activeUser.termsAccepted) return false;
-    return false;
-  }, [activeUser]);
+    if (loading || !user) return false;
+    if ((user as any).termsAccepted) return false;
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`adq_terms_accepted_${user.id}`);
+      if (cached === "true") return false;
+    }
+    return true;
+  }, [loading, user]);
+
+  const needsGoogleRecovery = useMemo(() => {
+    if (loading || !user) return false;
+    if (user.oauthProvider !== "google") return false;
+    if ((user as any).hasRecoveryPassword) return false;
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`adq_recovery_setup_${user.id}`);
+      if (cached === "true") return false;
+    }
+    return true;
+  }, [loading, user]);
 
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [showPlansModal, setShowPlansModal] = useState(false);
+
+  useEffect(() => {
+    if (needsTerms) {
+      setShowTermsModal(true);
+      setShowGoogleModal(false);
+    } else if (needsGoogleRecovery) {
+      setShowTermsModal(false);
+      setShowGoogleModal(true);
+    } else {
+      setShowTermsModal(false);
+      setShowGoogleModal(false);
+    }
+  }, [needsTerms, needsGoogleRecovery]);
 
   const isProjectWorkspace = PROJECT_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
@@ -123,15 +127,37 @@ function DashboardShellContent({
     setShowPlansModal(true);
   };
 
-  const handleCompleteGoogleRecovery = async (data: any) => {
+  const handleCompleteGoogleRecovery = async (data: { name: string; username: string; password: string }) => {
     await setupGoogleRecovery(data);
     setShowGoogleModal(false);
   };
 
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#020617] text-cyan-400 font-sans">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-cyan-500/20 bg-slate-950/80 p-8 backdrop-blur-2xl shadow-2xl">
+          <div className="relative flex h-12 w-12 items-center justify-center">
+            <span className="absolute h-full w-full animate-ping rounded-full bg-cyan-400/20" />
+            <Image src="/logo.png" alt="ADQ logo" width={48} height={48} className="h-full w-full object-contain animate-pulse" />
+          </div>
+          <p className="font-mono text-xs tracking-widest text-slate-400 uppercase mt-2">Đang kết nối SOC Cluster...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user && typeof window !== "undefined") {
+    const host = window.location.hostname.toLowerCase();
+    if (!host.includes("adq-soc.click") && !pathname?.startsWith("/admin")) {
+      window.location.href = "/login";
+      return null;
+    }
+  }
+
   return (
     <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
-      <TermsModal isOpen={showTermsModal} onAccept={handleAcceptTerms} onDecline={handleDeclineTerms} userEmail={activeUser?.email || ""} />
-      <GoogleSetupModal isOpen={showGoogleModal} userEmail={activeUser?.email || ""} defaultName={activeUser?.name || ""} onComplete={handleCompleteGoogleRecovery} />
+      <TermsModal isOpen={showTermsModal} onAccept={handleAcceptTerms} onDecline={handleDeclineTerms} userEmail={user?.email || ""} />
+      <GoogleSetupModal isOpen={showGoogleModal} userEmail={user?.email || ""} defaultName={user?.name || ""} onComplete={handleCompleteGoogleRecovery} />
       <PlansModal isOpen={showPlansModal} onClose={() => setShowPlansModal(false)} />
 
       {isProjectWorkspace ? (
@@ -175,7 +201,7 @@ function DashboardShellContent({
                   <Image src="/logo.png" alt="ADQ logo" width={32} height={32} className="object-contain" />
                   <div>
                     <span className="font-bold text-sm tracking-wide text-white">ADQ<span className="text-cyan-400">.SEC</span></span>
-                    <p className="text-[10px] font-mono text-slate-400">{activeUser?.packageTier || "PRO_MAX"}</p>
+                    <p className="text-[10px] font-mono text-slate-400">{user?.packageTier || "FREE"}</p>
                   </div>
                 </Link>
                 <div className="space-y-1">
