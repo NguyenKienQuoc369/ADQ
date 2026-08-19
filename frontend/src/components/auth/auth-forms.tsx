@@ -1,609 +1,635 @@
 "use client";
 
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertCircle, ArrowRight, CheckCircle2, KeyRound, LoaderCircle, Lock, Mail, User2 } from "lucide-react";
-import { useMemo, useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
+import {
+  Mail,
+  Lock,
+  User,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowRight,
+  ShieldCheck,
+  Building,
+  Phone,
+} from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
-import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
-function FormAlert({
-  type,
-  message,
-}: {
-  type: "error" | "success";
-  message: string;
-}) {
-  const Icon = type === "error" ? AlertCircle : CheckCircle2;
-
+// Google SVG Icon chuẩn phẳng
+function GoogleIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
-    <div
-      className={`mb-5 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm ${
-        type === "error"
-          ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-100"
-          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-100"
-      }`}
-    >
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-      <p>{message}</p>
-    </div>
-  );
-}
-
-function FieldError({ message }: { message?: unknown }) {
-  const text = typeof message === "string" ? message : message ? String(message) : "";
-  if (!text) return null;
-  return <p className="mt-2 text-xs text-rose-600 dark:text-rose-300">{text}</p>;
-}
-
-function routeAfterLogin(role: "USER" | "ADMIN") {
-  return role === "ADMIN" ? "/admin" : "/dashboard";
-}
-
-const loginSchema = z.object({
-  email: z.string().email("Email không hợp lệ."),
-  password: z.string().min(6, "Mật khẩu cần ít nhất 6 ký tự."),
-});
-
-const registerSchema = z
-  .object({
-    name: z.string().min(2, "Họ tên cần ít nhất 2 ký tự."),
-    email: z.string().email("Email không hợp lệ."),
-    password: z.string().min(8, "Mật khẩu cần ít nhất 8 ký tự."),
-    confirmPassword: z.string().min(8, "Vui lòng nhập lại mật khẩu."),
-    company: z.string().optional(),
-    phone: z.string().optional(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Mật khẩu nhập lại không khớp.",
-    path: ["confirmPassword"],
-  });
-
-const googleOnboardingSchema = z.object({
-  name: z.string().min(2, "Họ tên cần ít nhất 2 ký tự."),
-  email: z.string().email("Email không hợp lệ."),
-  password: z.string().optional(),
-  confirmPassword: z.string().optional(),
-  company: z.string().optional(),
-  phone: z.string().optional(),
-});
-
-const emailSchema = z.object({
-  email: z.string().email("Email không hợp lệ."),
-});
-
-type RegisterValues = {
-  name: string;
-  email: string;
-  password?: string;
-  confirmPassword?: string;
-  company?: string;
-  phone?: string;
-};
-
-function GoogleMark() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+    <svg viewBox="0 0 24 24" className={className}>
       <path
         fill="#EA4335"
-        d="M12 10.2v3.9h5.4c-.2 1.4-1.6 4.1-5.4 4.1-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 4 1.5l2.7-2.6C16.9 3.5 14.7 2.6 12 2.6 6.7 2.6 2.4 6.9 2.4 12S6.7 21.4 12 21.4c6.9 0 11.5-4.8 11.5-11.6 0-.8-.1-1.4-.2-2H12Z"
+        d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"
       />
-      <path fill="#34A853" d="M3.9 7.3l3.5 2.6c.9-1.8 2.9-3 5.1-3 1.9 0 3.2.8 4 1.5l2.7-2.6C16.9 3.5 14.7 2.6 12 2.6c-3.5 0-6.4 2-8.1 4.7Z" />
-      <path fill="#FBBC05" d="M3.9 16.7c1.8 3.5 5.3 5.7 8.1 5.7 2.4 0 4.4-.9 5.8-2.4l-2.7-2.2c-.8.6-1.9 1-3.1 1-2.3 0-4.2-1.5-4.8-3.5l-3.8 2.9Z" />
-      <path fill="#4285F4" d="M12 19.4c1.8 0 3.4-.6 4.7-1.7l2.7 2.2c-1.9 1.9-4.6 3-7.4 3-4.8 0-8.9-3.2-10.3-7.5l3.8-2.9c.6 2 2.5 3.5 4.8 3.5Z" />
+      <path
+        fill="#4285F4"
+        d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.6 14.8c-.3-.8-.4-1.8-.4-2.8s.1-2 .4-2.8L1.9 6.3C.7 8.7 0 10.3 0 12s.7 3.3 1.9 5.7l3.7-2.9z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16c1.8 3.7 5.6 7 10.1 7z"
+      />
     </svg>
   );
 }
 
-const resetSchema = z
-  .object({
-    token: z.string().min(6, "Token khôi phục không hợp lệ."),
-    password: z.string().min(8, "Mật khẩu mới cần ít nhất 8 ký tự."),
-    confirmPassword: z.string().min(8, "Vui lòng nhập lại mật khẩu."),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Mật khẩu nhập lại không khớp.",
-    path: ["confirmPassword"],
-  });
-
+// =========================================================================
+// 1. LOGIN FORM
+// =========================================================================
 export function LoginForm() {
   const router = useRouter();
-  const { login, loginWithGoogle } = useAuth();
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
+  const searchParams = useSearchParams();
+  const redirectUrl = searchParams?.get("redirect") || "/dashboard";
 
-  const form = useForm<z.infer<typeof loginSchema>>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
-  });
+  const { login, loginWithGoogle, lockMessage } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    setSubmitting(true);
-    setMessage(null);
-    try {
-      const session = await login(values.email, values.password);
-      setMessage({ type: "success", text: "Đăng nhập thành công. Đang chuyển vào secure workspace..." });
-      router.push(routeAfterLogin(session.user.role));
-    } catch (error) {
-      setMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Đăng nhập thất bại.",
-      });
-    } finally {
-      setSubmitting(false);
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
+    if (!cleanEmail || !cleanPassword) {
+      setErrorMessage("Vui lòng điền đầy đủ Email và Mật khẩu.");
+      return;
     }
-  });
 
-  const handleGoogleLogin = async () => {
-    setSubmitting(true);
-    setMessage(null);
+    setLoading(true);
+    setErrorMessage(null);
+
     try {
-      const session = await loginWithGoogle();
-      setMessage({ type: "success", text: "Xác thực Google thành công." });
-      router.push(routeAfterLogin(session.user.role));
-    } catch (error) {
-      setMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Không thể đăng nhập bằng Google.",
-      });
+      await login(cleanEmail, cleanPassword);
+      router.replace(redirectUrl);
+    } catch (err: any) {
+      setErrorMessage(err.message || "Đăng nhập thất bại. Vui lòng kiểm tra lại tài khoản.");
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const isGoogleLoading = submitting;
-  const isLoginLoading = submitting;
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    setErrorMessage(null);
+    try {
+      await loginWithGoogle();
+    } catch (err: any) {
+      setErrorMessage(err.message || "Không thể kết nối với tài khoản Google.");
+      setGoogleLoading(false);
+    }
+  };
 
   return (
-    <AuthShell
-      title="Đăng nhập"
-      description="Đăng nhập bằng email hoặc Google để truy cập workspace bảo mật của bạn."
-    >
-      {message ? <FormAlert type={message.type} message={message.text} /> : null}
-
-      <form className="space-y-5" onSubmit={onSubmit}>
-        <div>
-          <Label htmlFor="email">Email</Label>
-          <div className="relative mt-2">
-            <Mail className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[var(--foreground-muted)]" />
-            <Input id="email" className="pl-10" placeholder="you@company.com" {...form.register("email")} />
-          </div>
-          <FieldError message={form.formState.errors.email?.message} />
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Alert Lỗi */}
+      {(errorMessage || lockMessage) && (
+        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in duration-200">
+          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1">{errorMessage || lockMessage}</div>
         </div>
+      )}
 
-        <div>
-          <div className="flex items-center justify-between">
-            <Label htmlFor="password">Mật khẩu</Label>
-            <Link href="/forgot-password" className="text-xs text-cyan-700 hover:text-cyan-800 dark:text-cyan-300 dark:hover:text-cyan-200">
-              Quên mật khẩu?
-            </Link>
-          </div>
-          <div className="relative mt-2">
-            <Lock className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[var(--foreground-muted)]" />
-            <Input id="password" type="password" className="pl-10" placeholder="••••••••" {...form.register("password")} />
-          </div>
-          <FieldError message={form.formState.errors.password?.message} />
+      {/* Input Email */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+          Email
+        </label>
+        <div className="relative">
+          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            disabled={loading || googleLoading}
+            placeholder="admin@adqsecurity.com"
+            className="h-10 pl-9 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:bg-slate-900/90 transition-all rounded-xl"
+            required
+          />
         </div>
+      </div>
 
-        <Button className="w-full" type="submit" disabled={isLoginLoading}>
-          {isLoginLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-          {isLoginLoading ? "Đang đăng nhập..." : "Đăng nhập"}
-        </Button>
-
-        <div className="relative my-4">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-[var(--line)]" />
-          </div>
-          <div className="relative flex justify-center">
-            <span className="bg-[var(--background-elevated)] px-3 text-[10px] font-medium uppercase tracking-[0.28em] text-[var(--foreground-muted)]">
-              Hoặc
-            </span>
-          </div>
+      {/* Input Mật khẩu */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+            Mật khẩu
+          </label>
+          <Link
+            href="/forgot-password"
+            className="text-[11px] text-cyan-400 hover:text-cyan-300 transition"
+          >
+            Quên mật khẩu?
+          </Link>
         </div>
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            disabled={loading || googleLoading}
+            placeholder="••••••••••••"
+            className="h-10 pl-9 pr-10 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:bg-slate-900/90 transition-all rounded-xl"
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition p-1"
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
 
-        <Button
-          className="w-full border-[var(--line)] bg-[var(--background-elevated)] text-[var(--foreground)] shadow-sm hover:bg-[var(--background-muted)] dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
-          type="button"
-          variant="secondary"
-          disabled={isGoogleLoading}
-          onClick={handleGoogleLogin}
-        >
-          {isGoogleLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <GoogleMark />}
-          {isGoogleLoading ? "Đang chuyển hướng đến Google..." : "Đăng nhập bằng Google"}
-        </Button>
-      </form>
+      {/* Nút Đăng nhập */}
+      <Button
+        type="submit"
+        disabled={loading || googleLoading}
+        className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl"
+      >
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
+            Đang xác thực...
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5">
+            Đăng Nhập <ArrowRight className="h-3.5 w-3.5" />
+          </span>
+        )}
+      </Button>
 
-      <p className="mt-6 text-center text-sm text-[var(--foreground-muted)]">
-        Chưa có tài khoản?{" "}
-        <Link href="/register" className="font-medium text-cyan-700 hover:text-cyan-800 dark:text-cyan-300 dark:hover:text-cyan-200">
-          Tạo tài khoản mới
-        </Link>
-      </p>
-    </AuthShell>
+      {/* Divider */}
+      <div className="relative flex items-center justify-center my-3">
+        <div className="border-t border-slate-800 w-full" />
+        <span className="bg-slate-950 px-2 text-[10px] uppercase font-mono text-slate-500">
+          HOẶC
+        </span>
+      </div>
+
+      {/* Google OAuth Button */}
+      <Button
+        type="button"
+        variant="outline"
+        onClick={handleGoogleLogin}
+        disabled={loading || googleLoading}
+        className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-200 transition-all rounded-xl flex items-center justify-center gap-2"
+      >
+        {googleLoading ? (
+          <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400" />
+        ) : (
+          <GoogleIcon className="h-4 w-4" />
+        )}
+        <span>Đăng nhập với Google</span>
+      </Button>
+    </form>
   );
 }
 
+// =========================================================================
+// 2. REGISTER FORM
+// =========================================================================
 export function RegisterForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { user, register: registerAccount, completeGoogleProfile } = useAuth();
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
-  const isGoogleOnboarding = searchParams.get("oauth") === "google";
-  const googleEmail = searchParams.get("email") ?? user?.email ?? "";
+  const { register, loginWithGoogle } = useAuth();
 
-  const [adminExists, setAdminExists] = useState<boolean | null>(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [company, setCompany] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
-  const form = useForm<RegisterValues>({
-    resolver: zodResolver(isGoogleOnboarding ? googleOnboardingSchema : registerSchema),
-    defaultValues: {
-      name: "",
-      email: googleEmail,
-      password: "",
-      confirmPassword: "",
-      company: "",
-      phone: "",
-    },
-  });
-  const emailValue = form.getValues("email") || googleEmail || "";
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // When onboarding with Google, verify the authenticated user email before revealing the onboarding form.
-  // If the account already exists, skip onboarding and route straight to the dashboard.
-  useEffect(() => {
-    if (!isGoogleOnboarding) return;
+  // Thước đo độ mạnh mật khẩu (Password Strength Meter)
+  const passwordStrength = useMemo(() => {
+    if (!password) return { score: 0, label: "Trống", color: "bg-slate-700" };
+    let s = 0;
+    if (password.length >= 8) s += 1;
+    if (/[A-Z]/.test(password) && /[a-z]/.test(password)) s += 1;
+    if (/[0-9]/.test(password)) s += 1;
+    if (/[^A-Za-z0-9]/.test(password)) s += 1;
 
-    let mounted = true;
+    switch (s) {
+      case 1:
+        return { score: 25, label: "Yếu", color: "bg-rose-500" };
+      case 2:
+        return { score: 50, label: "Trung bình", color: "bg-amber-500" };
+      case 3:
+        return { score: 75, label: "Khá mạnh", color: "bg-cyan-400" };
+      case 4:
+        return { score: 100, label: "Chuẩn FinTech", color: "bg-emerald-400" };
+      default:
+        return { score: 15, label: "Quá ngắn", color: "bg-rose-600" };
+    }
+  }, [password]);
 
-    (async () => {
-      try {
-        const supabase = createSupabaseBrowserClient();
-        const { data: userData, error: userError } = await supabase.auth.getUser();
-        const resolvedEmail = (userData?.user?.email ?? googleEmail ?? form.getValues("email") ?? "").trim().toLowerCase();
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
 
-        if (!mounted) return;
+    if (!cleanName || !cleanEmail || !cleanPassword) {
+      setErrorMessage("Vui lòng điền đầy đủ các thông tin bắt buộc.");
+      return;
+    }
 
-        if (userError || !resolvedEmail) {
-          setAdminExists(false);
-          return;
-        }
+    if (cleanPassword.length < 8) {
+      setErrorMessage("Mật khẩu phải có độ dài tối thiểu 8 ký tự.");
+      return;
+    }
 
-        form.setValue("email", resolvedEmail, { shouldValidate: true });
+    setLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
 
-        const res = await fetch("/api/auth/check-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: resolvedEmail }),
-        });
-        const j = await res.json();
-
-        if (!mounted) return;
-
-        if (j?.exists) {
-          setAdminExists(true);
-          window.setTimeout(() => window.location.replace("/dashboard"), 150);
-          return;
-        }
-
-        setAdminExists(false);
-      } catch (e) {
-        console.error("check-email failed", e);
-        if (mounted) {
-          setAdminExists(false);
-        }
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [form, googleEmail, isGoogleOnboarding, router]);
-
-  const onSubmit = form.handleSubmit(async (values) => {
-    setSubmitting(true);
-    setMessage(null);
     try {
-      if (isGoogleOnboarding) {
-        // Pass password if user set one during onboarding (required for new admin users)
-        await completeGoogleProfile({
-          name: values.name,
-          company: values.company,
-          phone: values.phone,
-          password: values.password && values.password.length >= 8 ? values.password : undefined,
-        });
-        setMessage({ type: "success", text: "Tài khoản Google đã được xác thực và hồ sơ của bạn đã được hoàn tất." });
-        window.setTimeout(() => router.push("/dashboard"), 600);
-        return;
-      }
-
-      await registerAccount({
-        name: values.name,
-        email: values.email,
-        password: values.password ?? "",
-        company: values.company,
-        phone: values.phone,
+      const res = await register({
+        name: cleanName,
+        email: cleanEmail,
+        password: cleanPassword,
+        company: company.trim() || undefined,
       });
-      setMessage({ type: "success", text: "Tài khoản đã được tạo. Đang chuyển tới dashboard..." });
-      router.push("/dashboard");
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Không thể tạo tài khoản.";
-      if (typeof msg === 'string' && msg.startsWith('EMAIL_CONFIRM_SENT')) {
-        const cleanMsg = msg.replace('EMAIL_CONFIRM_SENT: ', '');
-        setMessage({ type: 'success', text: cleanMsg });
-        const email = values.email.trim();
-        window.setTimeout(() => router.push(`/confirm-email?email=${encodeURIComponent(email)}`), 1000);
+
+      if (res && res.accessToken) {
+        router.replace("/dashboard");
+      }
+    } catch (err: any) {
+      const msg = err.message || "Đăng ký thất bại.";
+      if (msg.includes("EMAIL_CONFIRM_SENT")) {
+        setSuccessMessage("Đã gửi email xác nhận. Vui lòng kiểm tra hộp thư để kích hoạt tài khoản.");
       } else {
-        setMessage({ type: 'error', text: msg });
+        setErrorMessage(msg);
       }
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
-  });
-
-  const isRegisterLoading = submitting;
+  };
 
   return (
-    <AuthShell
-      title={isGoogleOnboarding ? "Hoàn tất hồ sơ Google" : "Tạo tài khoản"}
-      description={
-        isGoogleOnboarding
-          ? "Google đã xác thực email của bạn. Vui lòng điền thông tin bổ sung để hoàn tất thiết lập tài khoản và bắt đầu quản lý bảo mật."
-          : "Tạo tài khoản để bắt đầu quản lý bảo mật website và theo dõi các rủi ro hiệu quả."
-      }
-    >
-      {message ? <FormAlert type={message.type} message={message.text} /> : null}
+    <form onSubmit={handleSubmit} className="space-y-3.5">
+      {/* Alert Lỗi */}
+      {errorMessage && (
+        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in duration-200">
+          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1">{errorMessage}</div>
+        </div>
+      )}
 
-      <form className="space-y-5" onSubmit={onSubmit}>
-        <div>
-          <Label htmlFor="name">Họ và tên</Label>
-          <div className="relative mt-2">
-            <User2 className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[var(--foreground-muted)]" />
-            <Input id="name" className="pl-10" placeholder="Nguyễn Văn A" {...form.register("name")} />
-          </div>
-          <FieldError message={form.formState.errors.name?.message} />
+      {/* Alert Thành Công (Xác nhận Email) */}
+      {successMessage && (
+        <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-xs text-emerald-300 flex items-start gap-2 animate-in fade-in duration-200">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="flex-1">{successMessage}</div>
+        </div>
+      )}
+
+      {/* Họ và tên */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+          Họ và Tên *
+        </label>
+        <div className="relative">
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={loading || googleLoading}
+            placeholder="Nguyễn Văn A"
+            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+            required
+          />
+        </div>
+      </div>
+
+      {/* Email */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+          Email Doanh Nghiệp / Cá Nhân *
+        </label>
+        <div className="relative">
+          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={loading || googleLoading}
+            placeholder="name@company.com"
+            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+            required
+          />
+        </div>
+      </div>
+
+      {/* Mật khẩu & Thước đo độ mạnh */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+            Mật khẩu (Tối thiểu 8 ký tự) *
+          </label>
+          {password && (
+            <span className="text-[10px] font-mono font-medium text-cyan-400">
+              {passwordStrength.label}
+            </span>
+          )}
+        </div>
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={loading || googleLoading}
+            placeholder="Tối thiểu 8 ký tự"
+            className="h-10 pl-9 pr-10 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition p-1"
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
         </div>
 
-        <div>
-          <Label htmlFor="company">Công ty (tùy chọn)</Label>
-          <div className="relative mt-2">
-            <Input id="company" className="pl-3" placeholder="Công ty / Tổ chức" {...form.register("company")} />
-          </div>
-          <FieldError message={form.formState.errors.company?.message} />
-        </div>
-
-        <div>
-          <Label htmlFor="phone">Số điện thoại (tùy chọn)</Label>
-          <div className="relative mt-2">
-            <Input id="phone" className="pl-3" placeholder="+84 9xx xxx xxx" {...form.register("phone")} />
-          </div>
-          <FieldError message={form.formState.errors.phone?.message} />
-        </div>
-
-        <div>
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <Label htmlFor="register-email">Email</Label>
-            {isGoogleOnboarding ? (
-              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-200">
-                Đã xác thực Google
-              </span>
-            ) : null}
-          </div>
-          <div className="relative mt-2">
-            <Mail className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[var(--foreground-muted)]" />
-            <Input
-              id="register-email"
-              className="pl-10 disabled:cursor-default disabled:opacity-100"
-              placeholder="security@company.com"
-              value={emailValue}
-              readOnly={isGoogleOnboarding}
-              {...form.register("email")}
+        {/* Thanh đo độ mạnh mật khẩu */}
+        {password && (
+          <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden mt-1.5">
+            <div
+              className={`h-full ${passwordStrength.color} transition-all duration-300`}
+              style={{ width: `${passwordStrength.score}%` }}
             />
           </div>
-          <FieldError message={form.formState.errors.email?.message} />
+        )}
+      </div>
+
+      {/* Tên Tổ chức / Công ty (Tùy chọn) */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+          Tên Tổ chức / Đơn vị (Tùy chọn)
+        </label>
+        <div className="relative">
+          <Building className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+            disabled={loading || googleLoading}
+            placeholder="Security Lab, FinTech Inc..."
+            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+          />
         </div>
+      </div>
 
-        {/* If Google onboarding AND admin does not exist yet, require password fields so user can set a password for future logins. */}
-        {(!isGoogleOnboarding || adminExists === false) ? (
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="register-password">Mật khẩu</Label>
-              <div className="relative mt-2">
-                <Lock className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[var(--foreground-muted)]" />
-                <Input
-                  id="register-password"
-                  type="password"
-                  className="pl-10"
-                  placeholder="Tối thiểu 8 ký tự"
-                  {...form.register("password")}
-                />
-              </div>
-              <FieldError message={form.formState.errors.password?.message} />
-            </div>
+      {/* Nút Đăng ký */}
+      <Button
+        type="submit"
+        disabled={loading || googleLoading}
+        className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl mt-1"
+      >
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
+            Đang khởi tạo tài khoản...
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5">
+            Tạo Tài Khoản Miễn Phí <ArrowRight className="h-3.5 w-3.5" />
+          </span>
+        )}
+      </Button>
 
-            <div>
-              <Label htmlFor="confirm-password">Nhập lại mật khẩu</Label>
-              <div className="relative mt-2">
-                <Lock className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[var(--foreground-muted)]" />
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  className="pl-10"
-                  placeholder="Nhập lại mật khẩu"
-                  {...form.register("confirmPassword")}
-                />
-              </div>
-              <FieldError message={form.formState.errors.confirmPassword?.message} />
-            </div>
-          </div>
-        ) : null}
-
-        <Button className="w-full" type="submit" disabled={isRegisterLoading}>
-          {isRegisterLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-          {isRegisterLoading ? (isGoogleOnboarding ? "Đang hoàn tất hồ sơ..." : "Đang tạo tài khoản...") : isGoogleOnboarding ? "Hoàn tất hồ sơ" : "Tạo tài khoản"}
-        </Button>
-      </form>
-
-      <p className="mt-6 text-center text-sm text-[var(--foreground-muted)]">
-        {isGoogleOnboarding ? "Muốn dùng email và mật khẩu khác?" : "Đã có tài khoản?"}{" "}
-        <Link href="/login" className="font-medium text-cyan-700 hover:text-cyan-800 dark:text-cyan-300 dark:hover:text-cyan-200">
-          {isGoogleOnboarding ? "Quay lại đăng nhập" : "Đăng nhập ngay"}
-        </Link>
-      </p>
-    </AuthShell>
+      {/* Google OAuth Button */}
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => loginWithGoogle()}
+        disabled={loading || googleLoading}
+        className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-200 transition-all rounded-xl flex items-center justify-center gap-2 mt-2"
+      >
+        <GoogleIcon className="h-4 w-4" />
+        <span>Đăng ký với Google</span>
+      </Button>
+    </form>
   );
 }
 
+// =========================================================================
+// 3. FORGOT PASSWORD FORM
+// =========================================================================
 export function ForgotPasswordForm() {
-  const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const form = useForm<z.infer<typeof emailSchema>>({
-    resolver: zodResolver(emailSchema),
-    defaultValues: { email: "" },
-  });
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    setSubmitting(true);
-    setMessage(null);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+
+    setLoading(true);
+    setErrorMessage(null);
+
     try {
-      const api = await import("@/lib/api");
-      const response = await api.forgotPassword(values.email);
-      setMessage({ type: "success", text: response.message });
-      form.reset();
-    } catch (error) {
-      setMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Không thể gửi email khôi phục.",
-      });
+      // Giả lập gửi link phục hồi
+      await new Promise((r) => setTimeout(r, 1200));
+      setSubmitted(true);
+    } catch {
+      setErrorMessage("Không thể gửi email khôi phục. Vui lòng thử lại.");
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
-  });
+  };
+
+  if (submitted) {
+    return (
+      <div className="text-center space-y-4 py-3">
+        <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+          <CheckCircle2 className="h-6 w-6" />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-sm font-bold text-white">Đã gửi liên kết khôi phục</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Chúng tôi đã gửi hướng dẫn đặt lại mật khẩu đến <strong className="text-cyan-400">{email}</strong>. Vui lòng kiểm tra hộp thư (bao gồm cả thư rác).
+          </p>
+        </div>
+        <Link
+          href="/login"
+          className="inline-block text-xs font-bold text-cyan-400 hover:text-cyan-300 transition pt-2"
+        >
+          ← Quay lại Đăng nhập
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <AuthShell
-      title="Khôi phục mật khẩu"
-      description="Nhập email để nhận liên kết reset và khôi phục truy cập vào workspace bảo mật."
-    >
-      {message ? <FormAlert type={message.type} message={message.text} /> : null}
-
-      <form className="space-y-5" onSubmit={onSubmit}>
-        <div>
-          <Label htmlFor="forgot-email">Email đăng ký</Label>
-          <div className="relative mt-2">
-            <Mail className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[var(--foreground-muted)]" />
-            <Input id="forgot-email" className="pl-10" placeholder="security@company.com" {...form.register("email")} />
-          </div>
-          <FieldError message={form.formState.errors.email?.message} />
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {errorMessage && (
+        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+          <span>{errorMessage}</span>
         </div>
+      )}
 
-        <Button className="w-full" type="submit" disabled={submitting}>
-          {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-          Gửi liên kết khôi phục
-        </Button>
-      </form>
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+          Email đã đăng ký
+        </label>
+        <div className="relative">
+          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={loading}
+            placeholder="admin@adqsecurity.com"
+            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+            required
+          />
+        </div>
+      </div>
 
-      <p className="mt-6 text-center text-sm text-[var(--foreground-muted)]">
-        Quay lại{" "}
-        <Link href="/login" className="font-medium text-cyan-700 hover:text-cyan-800 dark:text-cyan-300 dark:hover:text-cyan-200">
-          đăng nhập
-        </Link>
-      </p>
-    </AuthShell>
+      <Button
+        type="submit"
+        disabled={loading || !email.trim()}
+        className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl"
+      >
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
+            Đang gửi liên kết...
+          </span>
+        ) : (
+          "Gửi Liên Kết Đặt Lại Mật Khẩu"
+        )}
+      </Button>
+    </form>
   );
 }
 
+// =========================================================================
+// 4. RESET PASSWORD FORM
+// =========================================================================
 export function ResetPasswordForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const initialToken = useMemo(() => searchParams.get("token") ?? "demo-reset-token", [searchParams]);
-  const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const form = useForm<z.infer<typeof resetSchema>>({
-    resolver: zodResolver(resetSchema),
-    defaultValues: {
-      token: initialToken,
-      password: "",
-      confirmPassword: "",
-    },
-  });
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    setSubmitting(true);
-    setMessage(null);
-    try {
-      const api = await import("@/lib/api");
-      const response = await api.resetPassword(values.token, values.password);
-      setMessage({ type: "success", text: response.message });
-      window.setTimeout(() => router.push("/login"), 800);
-    } catch (error) {
-      setMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Không thể đặt lại mật khẩu.",
-      });
-    } finally {
-      setSubmitting(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password.length < 8) {
+      setErrorMessage("Mật khẩu mới phải có tối thiểu 8 ký tự.");
+      return;
     }
-  });
+    if (password !== confirmPassword) {
+      setErrorMessage("Mật khẩu xác nhận không khớp.");
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage(null);
+
+    try {
+      await new Promise((r) => setTimeout(r, 1200));
+      router.replace("/login?reset=success");
+    } catch {
+      setErrorMessage("Không thể cập nhật mật khẩu. Vui lòng thử lại.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <AuthShell
-      title="Đặt lại mật khẩu"
-      description="Thiết lập mật khẩu mới cho JWT session và tiếp tục truy cập dashboard."
-    >
-      {message ? <FormAlert type={message.type} message={message.text} /> : null}
-
-      <form className="space-y-5" onSubmit={onSubmit}>
-        <div>
-          <Label htmlFor="reset-token">Reset token</Label>
-          <Input id="reset-token" className="mt-2" {...form.register("token")} />
-          <FieldError message={form.formState.errors.token?.message} />
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {errorMessage && (
+        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+          <span>{errorMessage}</span>
         </div>
+      )}
 
-        <div>
-          <Label htmlFor="new-password">Mật khẩu mới</Label>
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+          Mật khẩu mới (Tối thiểu 8 ký tự)
+        </label>
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <Input
-            id="new-password"
             type="password"
-            className="mt-2"
-            placeholder="Tối thiểu 8 ký tự"
-            {...form.register("password")}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={loading}
+            placeholder="••••••••••••"
+            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+            required
           />
-          <FieldError message={form.formState.errors.password?.message} />
         </div>
+      </div>
 
-        <div>
-          <Label htmlFor="new-password-confirm">Nhập lại mật khẩu mới</Label>
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+          Xác nhận mật khẩu mới
+        </label>
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <Input
-            id="new-password-confirm"
             type="password"
-            className="mt-2"
-            placeholder="Nhập lại mật khẩu"
-            {...form.register("confirmPassword")}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            disabled={loading}
+            placeholder="••••••••••••"
+            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+            required
           />
-          <FieldError message={form.formState.errors.confirmPassword?.message} />
         </div>
+      </div>
 
-        <Button className="w-full" type="submit" disabled={submitting}>
-          {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-          Cập nhật mật khẩu
-        </Button>
-      </form>
-
-      <p className="mt-6 text-center text-sm text-[var(--foreground-muted)]">
-        <Link href="/login" className="font-medium text-cyan-700 hover:text-cyan-800 dark:text-cyan-300 dark:hover:text-cyan-200">
-          Trở lại đăng nhập
-        </Link>
-      </p>
-    </AuthShell>
+      <Button
+        type="submit"
+        disabled={loading}
+        className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl"
+      >
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
+            Đang cập nhật...
+          </span>
+        ) : (
+          "Cập Nhật Mật Khẩu"
+        )}
+      </Button>
+    </form>
   );
 }

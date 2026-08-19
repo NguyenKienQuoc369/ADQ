@@ -1,11 +1,16 @@
-import { Suspense } from "react";
-
+import { AuthShell } from "@/components/auth/auth-shell";
 import { RegisterForm } from "@/components/auth/auth-forms";
 
 export default function RegisterPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-sm text-[var(--foreground-muted)]">Loading…</div>}>
+    <AuthShell
+      title="Khởi Tạo Tài Khoản ADQ"
+      subtitle="Trải nghiệm hệ thống quét bảo mật DAST và kiểm toán mã độc tự động"
+      footerText="Đã có tài khoản?"
+      footerLinkText="Đăng nhập ngay"
+      footerLinkHref="/login"
+    >
       <RegisterForm />
-    </Suspense>
+    </AuthShell>
   );
 }
