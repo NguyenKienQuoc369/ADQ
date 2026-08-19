@@ -55,12 +55,7 @@ export function LoginForm() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Tự động chuyển hướng tức thì khi phát hiện session user
-  useEffect(() => {
-    if (user && user.id !== "oauth_pending") {
-      window.location.replace("/dashboard");
-    }
-  }, [user]);
+  // [Fixed] Auto-redirect removed to prevent loop
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -240,11 +235,7 @@ export function RegisterForm() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (user && user.id !== "oauth_pending") {
-      window.location.replace("/dashboard");
-    }
-  }, [user]);
+  // [Fixed] Auto-redirect removed
 
   const passwordStrength = useMemo(() => {
     if (!password) return { score: 0, label: "Trống", color: "bg-slate-700" };
