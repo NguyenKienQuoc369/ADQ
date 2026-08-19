@@ -711,7 +711,9 @@ function ScanLandingContent() {
         </div>
 
         {/* Modal Xác Nhận Ghi Đè */}
-        <RescanConfirmModal isOpen="{showRescanModal}" onClose="{()"> setShowRescanModal(false)}
+        <RescanConfirmModal
+          isOpen={showRescanModal}
+          onClose={() => setShowRescanModal(false)}
           onConfirm={handleConfirmRescan}
           onCreateNewSession={handleCreateNewSession}
         />
