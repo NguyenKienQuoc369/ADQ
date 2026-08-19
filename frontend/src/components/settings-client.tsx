@@ -163,7 +163,7 @@ export function SettingsClient() {
     setTimeout(() => setTokenCopied(false), 2000);
   };
 
-  const accountSummary = [
+  const accountSummary: { label: string; value: string; tone: "success" | "default" | "muted" }[] = [
     { label: "Trạng thái", value: user?.status ?? "ACTIVE", tone: "success" },
     { label: "Gói cước", value: user?.packageTier?.replace("_", " ") ?? "FREE", tone: "default" },
     { label: "Xác thực OAuth", value: user?.oauthProvider === "google" ? "Google Account" : "Email & Password", tone: "muted" },
@@ -182,7 +182,7 @@ export function SettingsClient() {
                   <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400">Tài khoản & Cá nhân</p>
                   <h2 className="text-xl font-bold tracking-tight text-white mt-0.5">Cài đặt hồ sơ</h2>
                 </div>
-                <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-xs font-semibold px-3 py-1">
+                <Badge variant="success" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-xs font-semibold px-3 py-1">
                   Đã xác thực
                 </Badge>
               </div>
@@ -383,6 +383,7 @@ export function SettingsClient() {
                     className="h-10 border-slate-800 bg-slate-950/80 text-xs text-white focus:border-cyan-500/60 rounded-xl flex-1"
                   />
                   <Button
+                    type="button"
                     onClick={handleSaveWebhook}
                     className="h-10 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl px-4 flex items-center gap-1.5 cursor-pointer"
                   >
@@ -408,7 +409,7 @@ export function SettingsClient() {
                   <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-800/80 bg-slate-950/60 px-3.5 py-2.5">
                     <span className="text-xs text-slate-400">{item.label}</span>
                     <Badge
-                      variant={item.tone === "success" ? "success" : item.tone === "default" ? "default" : "muted"}
+                      variant={item.tone}
                       className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-0.5 text-[11px] font-mono uppercase"
                     >
                       {item.value}
