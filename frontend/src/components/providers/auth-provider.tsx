@@ -6,18 +6,22 @@ import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
 import type { AuthResponse, User } from "@/lib/api";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
+export type AppUser = User & {
+  termsAccepted?: boolean;
+};
+
 type AuthContextValue = {
-  user: User | null;
+  user: AppUser | null;
   loading: boolean;
   isAuthenticated: boolean;
   lockMessage: string | null;
   login: (email: string, password: string) => Promise<AuthResponse>;
   register: (payload: { name: string; email: string; password: string; company?: string; phone?: string }) => Promise<AuthResponse>;
-  completeGoogleProfile: (payload: { name: string; company?: string; phone?: string; password?: string }) => Promise<User>;
+  acceptTermsAndCompleteProfile: (payload: { company?: string }) => Promise<void>;
   loginWithGoogle: (redirectTo?: string) => Promise<AuthResponse>;
   logout: () => Promise<void>;
   refreshUser: (showLoader?: boolean) => Promise<void>;
-  updateUser: (user: User) => void;
+  updateUser: (user: AppUser) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -28,7 +32,7 @@ function normalizeRole(rawRole: unknown): User["role"] {
   return value === "ADMIN" ? "ADMIN" : "USER";
 }
 
-function mapSupabaseUserToAppUser(user: SupabaseUser): User {
+function mapSupabaseUserToAppUser(user: SupabaseUser): AppUser {
   const metadata = user.user_metadata ?? {};
   const role = normalizeRole(metadata.role ?? (user.app_metadata as Record<string, unknown> | undefined)?.role);
   const packageTier = (metadata.packageTier === "PRO_MAX"
@@ -36,6 +40,8 @@ function mapSupabaseUserToAppUser(user: SupabaseUser): User {
     : metadata.packageTier === "PRO"
       ? "PRO"
       : "FREE") as User["packageTier"];
+
+  const termsAccepted = Boolean(metadata.terms_accepted || metadata.terms_accepted_at);
 
   return {
     id: user.id,
@@ -51,10 +57,11 @@ function mapSupabaseUserToAppUser(user: SupabaseUser): User {
     planExpiresAt: null,
     oauthProvider: metadata.provider === "google" || user.app_metadata?.provider === "google" ? "google" : null,
     lastLoginAt: new Date().toISOString(),
+    termsAccepted,
   };
 }
 
-function mapSessionToAuthResponse(user: User, session: Session | null): AuthResponse {
+function mapSessionToAuthResponse(user: AppUser, session: Session | null): AuthResponse {
   return {
     accessToken: session?.access_token ?? "",
     refreshToken: session?.refresh_token ?? "",
@@ -67,7 +74,7 @@ function getFriendlyAuthError(error: unknown, fallback = "Đăng nhập thất b
   const normalized = message.toLowerCase();
 
   if (normalized.includes("error sending confirmation email") || normalized.includes("smtp") || normalized.includes("email provider") || normalized.includes("unable to send confirmation email")) {
-    return "Email xác nhận chưa được cấu hình. Vui lòng kiểm tra cài đặt xác nhận email trong Supabase Dashboard.";
+    return "Email xác nhận chưa được cấu hình. Vui lòng kiểm tra cài đặt trong Supabase Dashboard.";
   }
 
   if (normalized.includes("user not found") || normalized.includes("no user found") || normalized.includes("email not found")) {
@@ -89,7 +96,7 @@ function getFriendlyAuthError(error: unknown, fallback = "Đăng nhập thất b
   return fallback;
 }
 
-function getPendingOAuthUser(): User {
+function getPendingOAuthUser(): AppUser {
   return {
     id: "oauth_pending",
     name: "Đang đồng bộ SOC...",
@@ -103,11 +110,12 @@ function getPendingOAuthUser(): User {
     planExpiresAt: null,
     oauthProvider: "google",
     lastLoginAt: new Date().toISOString(),
+    termsAccepted: false,
   };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lockMessage, setLockMessage] = useState<string | null>(null);
   const supabaseRef = useRef<ReturnType<typeof createSupabaseBrowserClient> | null>(null);
@@ -148,6 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               planExpiresAt: payload.user.planExpiresAt,
               oauthProvider: payload.user.oauthProvider,
               lastLoginAt: payload.user.lastLoginAt,
+              termsAccepted: payload.user.termsAccepted ?? Boolean(payload.user.user_metadata?.terms_accepted),
             });
             setLockMessage(null);
             return;
@@ -163,7 +172,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
       } catch {
-        // Fallback đọc trực tiếp từ Supabase Session
         const { data, error } = await supabase.auth.getUser();
         if (error) {
           setUser(null);
@@ -207,7 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const nextUser = data.user ? mapSupabaseUserToAppUser(data.user) : null;
-    if (!nextUser) throw new Error("Không thể lấy thông tin người dùng sau khi đăng nhập.");
+    if (!nextUser) throw new Error("Không thể lấy thông tin người dùng.");
 
     setUser(nextUser);
     setLockMessage(null);
@@ -227,6 +235,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             phone: payload.phone ?? null,
             role: 'USER',
             packageTier: 'FREE',
+            terms_accepted: true,
+            terms_accepted_at: new Date().toISOString(),
           },
           emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined,
         },
@@ -237,12 +247,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!data.session) {
-        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận. Vui lòng kiểm tra hộp thư để kích hoạt tài khoản.');
+        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận. Vui lòng kiểm tra hộp thư.');
       }
 
       const nextUser = data.user ? mapSupabaseUserToAppUser(data.user) : null;
       if (!nextUser) {
-        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận. Vui lòng kiểm tra hộp thư để kích hoạt tài khoản.');
+        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận.');
       }
 
       setUser(nextUser);
@@ -251,59 +261,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [getSupabaseClient],
   );
 
-  const completeGoogleProfile = useCallback(async (payload: { name: string; company?: string; phone?: string; password?: string }) => {
+  // CHẤP THUẬN ĐIỀU KHOẢN & LƯU VĨNH VIỄN VÀO USER METADATA
+  const acceptTermsAndCompleteProfile = useCallback(async (payload: { company?: string }) => {
     const supabase = getSupabaseClient();
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const { data: userData } = await supabase.auth.getUser();
 
-    if (userError) {
-      throw new Error("Phiên đăng nhập Google chưa sẵn sàng. Vui lòng thử lại.");
-    }
-
-    const nextName = payload.name.trim();
-    if (!nextName) {
-      throw new Error("Vui lòng nhập họ và tên.");
-    }
-
-    let updateArgs: {
-      data: {
-        name: string;
-        company: string | null;
-        phone: string | null;
-        role: string;
-        packageTier: string;
-        onboarding_complete: boolean;
-      };
-      password?: string;
-    } = {
-      data: {
-        name: nextName,
-        company: payload.company?.trim() || null,
-        phone: payload.phone?.trim() || null,
-        role: "USER",
-        packageTier: "FREE",
-        onboarding_complete: true,
-      },
+    const updateData: Record<string, any> = {
+      terms_accepted: true,
+      terms_accepted_at: new Date().toISOString(),
     };
 
-    if (payload.password && payload.password.trim().length >= 8) {
-      updateArgs = { ...updateArgs, password: payload.password };
+    if (payload.company && payload.company.trim()) {
+      updateData.company = payload.company.trim();
     }
 
-    const { data, error } = await supabase.auth.updateUser(updateArgs);
+    const { data, error } = await supabase.auth.updateUser({
+      data: updateData,
+    });
+
     if (error) {
-      throw new Error(getFriendlyAuthError(error, "Không thể cập nhật hồ sơ Google."));
+      throw new Error(getFriendlyAuthError(error, "Không thể lưu trạng thái điều khoản."));
     }
 
-    const nextUser = data.user ? mapSupabaseUserToAppUser(data.user) : null;
-    if (!nextUser) {
-      throw new Error("Không thể cập nhật thông tin người dùng Google.");
-    }
+    if (data.user) {
+      const updatedUser = mapSupabaseUserToAppUser(data.user);
+      updatedUser.termsAccepted = true;
+      setUser(updatedUser);
 
-    setUser(nextUser);
-    return nextUser;
+      if (typeof window !== "undefined") {
+        localStorage.setItem(`adq_terms_accepted_${data.user.id}`, "true");
+      }
+    }
   }, [getSupabaseClient]);
 
-  // ĐĂNG NHẬP GOOGLE: CHUYỂN THẲNG VÀO CONSOLE (/dashboard HOẶC URL ĐÍCH)
   const loginWithGoogle = useCallback(async (targetRedirect?: string) => {
     const supabase = getSupabaseClient();
     const destination = targetRedirect || `${window.location.origin}/dashboard`;
@@ -332,7 +322,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLockMessage(null);
   }, [getSupabaseClient]);
 
-  const updateUser = useCallback((nextUser: User) => {
+  const updateUser = useCallback((nextUser: AppUser) => {
     setUser(nextUser);
   }, []);
 
@@ -344,13 +334,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       lockMessage,
       login,
       register,
-      completeGoogleProfile,
+      acceptTermsAndCompleteProfile,
       loginWithGoogle,
       logout,
       refreshUser,
       updateUser,
     }),
-    [user, loading, lockMessage, login, register, completeGoogleProfile, loginWithGoogle, logout, refreshUser, updateUser],
+    [user, loading, lockMessage, login, register, acceptTermsAndCompleteProfile, loginWithGoogle, logout, refreshUser, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

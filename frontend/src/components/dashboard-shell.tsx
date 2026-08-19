@@ -67,22 +67,27 @@ function DashboardShellContent({
   const searchParams = useSearchParams();
   const projectId = searchParams?.get("projectId") || null;
 
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, acceptTermsAndCompleteProfile } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [syncPulse, setSyncPulse] = useState(99);
+
+  // KIỂM TRA TRẠNG THÁI ĐIỀU KHOẢN THEO TỪNG USER ACCOUNT CỤ THỂ
+  const needsTerms = useMemo(() => {
+    if (loading || !user) return false;
+    if (user.termsAccepted) return false;
+
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`adq_terms_accepted_${user.id}`);
+      if (cached === "true") return false;
+    }
+    return true;
+  }, [loading, user]);
+
   const [showTermsModal, setShowTermsModal] = useState(false);
 
-  // Kiểm tra nếu người dùng chưa duyệt Điều khoản (Lần đầu đăng nhập Google)
   useEffect(() => {
-    if (!loading && user) {
-      if (typeof window !== "undefined") {
-        const accepted = localStorage.getItem("adq_terms_accepted_v1");
-        if (!accepted) {
-          setShowTermsModal(true);
-        }
-      }
-    }
-  }, [loading, user]);
+    setShowTermsModal(needsTerms);
+  }, [needsTerms]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -111,21 +116,17 @@ function DashboardShellContent({
     [area]
   );
 
-  // Xử lý từ chối điều khoản -> Đăng xuất ngay lập tức
   const handleDeclineTerms = async () => {
     setShowTermsModal(false);
     await logout();
     router.replace("/");
   };
 
-  const handleAcceptTerms = () => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("adq_terms_accepted_v1", "true");
-    }
+  const handleAcceptTerms = async (extraData?: { company?: string }) => {
+    await acceptTermsAndCompleteProfile({ company: extraData?.company });
     setShowTermsModal(false);
   };
 
-  // MÀN HÌNH LOADING CYBER SOC MƯỢT MÀ KHI ĐỒNG BỘ SESSION
   if (loading || !user || (area === "admin" && user.role !== "ADMIN")) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#020617] text-cyan-400 font-sans">
@@ -148,6 +149,7 @@ function DashboardShellContent({
           isOpen={showTermsModal}
           onAccept={handleAcceptTerms}
           onDecline={handleDeclineTerms}
+          userEmail={user.email}
         />
 
         <div
@@ -376,6 +378,7 @@ function DashboardShellContent({
         isOpen={showTermsModal}
         onAccept={handleAcceptTerms}
         onDecline={handleDeclineTerms}
+        userEmail={user.email}
       />
 
       <div
