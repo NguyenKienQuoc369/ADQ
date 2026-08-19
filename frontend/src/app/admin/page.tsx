@@ -17,6 +17,18 @@ import {
 } from "lucide-react";
 
 export default function AdminDashboardPage() {
+  const [authorized, setAuthorized] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("adq_admin_root_token");
+      if (!token) {
+        window.location.href = "/admin/login";
+        return;
+      }
+      setAuthorized(true);
+    }
+  }, []);
   const [telemetry, setTelemetry] = useState<any>({
     server: { cpu_usage_percent: 18.5, ram_usage_percent: 42.1, ram_used_gb: 3.4, ram_total_gb: 8.0, disk_usage_percent: 32 },
     services: { fastapi_backend: "ONLINE", redis_queue: "HEALTHY", postgres_db: "ONLINE", worker_elite: "READY", worker_mobile: "READY" }
