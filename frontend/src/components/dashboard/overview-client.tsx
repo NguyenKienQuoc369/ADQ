@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Lock, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, Globe, Lock, Play, Plus, Shield, Smartphone, Trash2, X, Zap } from "lucide-react";
 
-import { Lock, DashboardShell } from "@/components/dashboard-shell";
-import { Lock, Badge } from "@/components/ui/badge";
-import { Lock, Button } from "@/components/ui/button";
-import { Lock, Card, CardContent } from "@/components/ui/card";
+import { DashboardShell } from "@/components/dashboard-shell";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getDashboardOverview, getProjects, createProject, deleteProject } from "@/lib/api";
