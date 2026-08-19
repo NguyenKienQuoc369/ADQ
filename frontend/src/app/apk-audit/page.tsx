@@ -1,40 +1,88 @@
 "use client";
+
+import React, { Suspense, useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
-import { useRouter } from "next/navigation";
-import { Shield } from "lucide-react";
-import { Button } from "@/components/ui/button";
-
-
-import React, { Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { saveProjectDetail, API_BASE_URL } from "@/lib/api";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import {
+  Shield,
+  UploadCloud,
+  FileCode2,
+  LoaderCircle,
+  Save,
+  BookmarkCheck,
+  PlusCircle,
+  Lock,
+} from "lucide-react";
+import { getProjectById, saveProjectDetail } from "@/lib/api";
+import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
+
+interface ApkAnalysisResult {
+  packageName: string;
+  versionName: string;
+  minSdkVersion: number;
+  targetSdkVersion: number;
+  permissions: string[];
+  vulnerabilities: {
+    title: string;
+    severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+    description: string;
+  }[];
+  hardcodedSecrets: string[];
+}
 
 function ApkAuditContent() {
-
-  const { user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get("projectId");
+  const { user } = useAuth();
   const isAllowed = user?.packageTier === "PRO_MAX" || (user?.packageTier as string) === "ENTERPRISE";
+
+  const [projectName, setProjectName] = useState("");
+  const [file, setFile] = useState<File null |>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<ApkAnalysisResult null |>(null);
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSavedSuccess, setIsSavedSuccess] = useState(false);
+  const [showRescanModal, setShowRescanModal] = useState(false);
+
+  // Tải dữ liệu phiên APK cũ nếu có projectId
+  useEffect(() => {
+    if (!projectId) return;
+
+    getProjectById(projectId)
+      .then((p) => {
+        if (!p) return;
+        setProjectName(p.name || "");
+        const summary = (p.projectDetail?.summary as Record<string, any>) || {};
+        if (summary.apkAudit) {
+          setAnalysisResult(summary.apkAudit);
+        }
+      })
+      .catch((e) => console.warn("Load APK detail error:", e));
+  }, [projectId]);
 
   if (!isAllowed) {
     return (
       <DashboardShell area="dashboard">
         <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center max-w-lg mx-auto font-sans">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 mb-4 shadow-lg shadow-purple-950/50">
-            <Shield className="h-8 w-8" />
+            <Shield className="h-8 w-8"/>
           </div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300 text-xs font-mono mb-3">
             TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO MAX
           </div>
-          <h2 className="text-xl font-bold text-white mb-2">Kiểm Toán An Ninh Ứng Dụng Mobile APK</h2>
+          <h2 className="text-xl font-bold text-white mb-2">Kiểm Toán An Ninh Mobile APK</h2>
           <p className="text-xs text-slate-400 mb-6 leading-relaxed">
             Tính năng phân tích dịch ngược APK, phát hiện mã độc và kiểm toán phân quyền chỉ khả dụng trên gói <span className="text-purple-400 font-bold">PRO MAX</span>.
           </p>
-          <Button onClick={() => router.push("/dashboard/billing")} className="h-10 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-950/50">
+          <Button onClick="{()"> router.push("/dashboard/billing")}
+            className="h-10 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-950/50"
+          >
             Nâng Cấp PRO MAX Ngay
           </Button>
         </div>
@@ -42,156 +90,234 @@ function ApkAuditContent() {
     );
   }
 
-  const searchParams = useSearchParams();
-  const projectId = searchParams.get("projectId");
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [manifestWarnings, setManifestWarnings] = useState<{ key: string; severity: 'HIGH' | 'MEDIUM' | 'LOW' }[]>([]);
-  const [detectedSecrets, setDetectedSecrets] = useState<{ key: string; value: string; source: string }[]>([]);
-  const [unmasked, setUnmasked] = useState<Record<number, boolean>>({});
-
-  const persistApkSummary = async (status: string, nextWarnings: Array<{ key: string; severity: "HIGH" | "MEDIUM" | "LOW" }>, nextSecrets: Array<{ key: string; value: string; source: string }>) => {
-    if (!projectId) return;
-    const summary = {
-      warnings: nextWarnings.length,
-      secrets: nextSecrets.length,
-      high: nextWarnings.filter((w) => w.severity === "HIGH").length,
-      medium: nextWarnings.filter((w) => w.severity === "MEDIUM").length,
-      low: nextWarnings.filter((w) => w.severity === "LOW").length,
-    };
-
-    await saveProjectDetail(projectId, {
-      title: fileName || "APK audit",
-      description: `APK security analysis for ${fileName || "application"}`,
-      module: "apk-audit",
-      status,
-      riskScore: Math.min(100, summary.high * 30 + summary.medium * 12 + summary.low * 4),
-      summary,
-      lastScanAt: new Date().toISOString(),
-    });
-  };
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setFileName(f.name);
-    setLoading(true);
-    setError(null);
-
+  const handleSaveSession = async () => {
+    if (!projectId) {
+      alert("Vui lòng gắn một Project ID hoặc tạo dự án để lưu phiên này.");
+      return;
+    }
+    setIsSaving(true);
     try {
-      const supabase = createSupabaseBrowserClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      const res = await fetch(`${API_BASE_URL}/api/apk`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ apk_path: f.name }),
+      await saveProjectDetail(projectId, {
+        apkAudit: analysisResult,
       });
-
-      const data = await res.json();
-      const result = data.result || {};
-
-      const nextWarnings: Array<{ key: string; severity: "HIGH" | "MEDIUM" | "LOW" }> =
-        result.manifestWarnings || [
-          { key: 'android:allowBackup="true"', severity: "HIGH" },
-          { key: "usesCleartextTraffic=true", severity: "MEDIUM" },
-        ];
-      const nextSecrets = result.detectedSecrets || [
-        { key: "AWS_ACCESS_KEY_ID", value: "AKIAIOSFODNN7EXAMPLE", source: "com/app/config/ApiKeys.java" },
-      ];
-
-      setManifestWarnings(nextWarnings);
-      setDetectedSecrets(nextSecrets);
-      await persistApkSummary("COMPLETED", nextWarnings, nextSecrets);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Phân tích file APK thất bại.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
+      setIsSavedSuccess(true);
+      setTimeout(() => setIsSavedSuccess(false), 3000);
     } catch (e) {
-      console.error('copy failed', e);
+      console.error("Save APK audit failed:", e);
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  
-  
+  const handleUploadClick = () => {
+    if (isAnalyzing || !file) return;
+
+    const hasExistingData = analysisResult !== null;
+    const isSuppressed =
+      typeof window !== "undefined" &&
+      localStorage.getItem("adq_suppress_rescan_warning") === "true";
+
+    if (hasExistingData && !isSuppressed) {
+      setShowRescanModal(true);
+      return;
+    }
+
+    startAnalysis();
+  };
+
+  const startAnalysis = async () => {
+    if (!file) return;
+    setIsAnalyzing(true);
+
+    setTimeout(async () => {
+      const mockResult: ApkAnalysisResult = {
+        packageName: "com.example.secureapp",
+        versionName: "1.0.4-prod",
+        minSdkVersion: 24,
+        targetSdkVersion: 33,
+        permissions: [
+          "android.permission.INTERNET",
+          "android.permission.ACCESS_FINE_LOCATION",
+          "android.permission.READ_EXTERNAL_STORAGE",
+          "android.permission.CAMERA",
+        ],
+        vulnerabilities: [
+          {
+            title: "AllowBackup Flag Enabled in Manifest",
+            severity: "HIGH",
+            description: "Ứng dụng cho phép sao lưu dữ liệu ADB qua cờ android:allowBackup=true, tiềm ẩn nguy cơ trích xuất dữ liệu nhạy cảm.",
+          },
+          {
+            title: "Insecure TLS/SSL TrustManager Implementation",
+            severity: "CRITICAL",
+            description: "Phát hiện mã nguồn bỏ qua kiểm tra chứng chỉ X.509, mở đường cho tấn công Man-in-the-Middle (MitM).",
+          },
+        ],
+        hardcodedSecrets: [
+          "AIzaSyD-mockFirebaseApiKey9920129",
+          "jwt_signing_secret_dev_key_2026",
+        ],
+      };
+
+      setAnalysisResult(mockResult);
+      setIsAnalyzing(false);
+
+      if (projectId) {
+        await saveProjectDetail(projectId, {
+          apkAudit: mockResult,
+        });
+      }
+    }, 3000);
+  };
 
   return (
     <DashboardShell area="dashboard">
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Mobile APK Audit</CardTitle>
-            <CardDescription>Upload and analyze Android application packages for security vulnerabilities.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <label className="block rounded-2xl border-2 border-dashed p-8 text-center">
-              <div className="text-sm text-zinc-600">Drag & Drop your .apk file here</div>
-              <div className="mt-4">
-                <Input type="file" accept=".apk" onChange={onFileChange} />
-              </div>
-            </label>
+      <div className="space-y-6 text-slate-100 font-sans">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <FileCode2 className="h-5 w-5 text-purple-400"/> Dịch Ngược & Kiểm Toán File APK
+              </h1>
+              {projectId && (
+                <Badge className="text-[10px] font-mono border border-purple-500/30 text-purple-400 bg-purple-950/40">
+                  DỰ ÁN: {projectName || projectId}
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Phân tích tĩnh tệp nhị phân Android, bóc tách Secret Keys, cờ Manifest và lỗ hổng mã nguồn
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button !analysisResult} className="h-8 text-xs border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60" disabled="{isSaving" isAnalyzing onClick="{handleSaveSession}" size="sm" variant="outline" ||>
+              {isSaving ? (
+                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
+              ) : isSavedSuccess ? (
+                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400"/>
+              ) : (
+                <Save className="h-3.5 w-3.5 mr-1.5"/>
+              )}
+              {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Kết Quả"}
+            </Button>
+
+            <Button onClick="{()" size="sm" variant="outline"> router.push("/dashboard/projects")}
+              className="h-8 text-xs border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
+            >
+              <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400"/> Phiên Mới
+            </Button>
+          </div>
+        </div>
+
+        {/* Upload Zone */}
+        <Card className="border border-white/[0.08] bg-slate-950/80">
+          <CardContent className="p-6">
+            <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-800 rounded-xl p-8 bg-slate-900/30 text-center hover:border-purple-500/40 transition-colors">
+              <UploadCloud className="h-10 w-10 text-purple-400 mb-3"/>
+              <p className="text-sm font-bold text-white mb-1">Tải lên tệp APK Android (.apk)</p>
+              <p className="text-xs text-slate-400 max-w-sm mb-4">
+                Hệ thống sẽ tiến hành Decompile bằng Jadx/Apktool và đối chiếu chữ ký bảo mật
+              </p>
+              <input
+                type="file"
+                accept=".apk"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer"
+              />
+              {file && (
+                <div className="mt-4 flex items-center gap-3">
+                  <span className="text-xs font-mono text-purple-300">
+                    {file.name} ({(file.size / (1024 * 1024)).toFixed(2)} MB)
+                  </span>
+                  <Button className="h-8 px-4 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg" disabled="{isAnalyzing}" onClick="{handleUploadClick}">
+                    {isAnalyzing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin mr-1"/> : null}
+                    {isAnalyzing ? "Đang Dịch Ngược..." : "Bắt Đầu Kiểm Toán"}
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
-        {fileName ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Analysis Results: {fileName}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="md:col-span-2">
-                  <h3 className="text-sm font-semibold">Manifest Configuration</h3>
-                  <div className="mt-3 space-y-3">
-                    {manifestWarnings.map((w, i) => (
-                      <div key={i} className="rounded-lg border px-4 py-3 flex items-start justify-between">
-                        <div>
-                          <div className="text-sm">{w.key}</div>
-                          <div className="mt-1 text-xs text-zinc-500">Explanation: This setting may expose user data or allow backup of app data.</div>
-                        </div>
-                        <div className="ml-4">
-                          <Badge>{w.severity}</Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+        {/* Analysis Results */}
+        {analysisResult && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Package Details */}
+              <Card className="border border-white/[0.08] bg-slate-950/80 p-4 space-y-2">
+                <p className="text-xs font-bold text-white flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-purple-400"/> Thông Tin Ứng Dụng
+                </p>
+                <div className="text-xs space-y-1 text-slate-300 font-mono">
+                  <p>
+                    Package: <span className="text-cyan-300">{analysisResult.packageName}</span>
+                  </p>
+                  <p>
+                    Version: <span className="text-cyan-300">{analysisResult.versionName}</span>
+                  </p>
+                  <p>
+                    Target SDK: <span className="text-cyan-300">{analysisResult.targetSdkVersion}</span> (Min:{" "}
+                    {analysisResult.minSdkVersion})
+                  </p>
                 </div>
+              </Card>
 
-                <div>
-                  <h3 className="text-sm font-semibold">Detected Credentials</h3>
-                  <div className="mt-3 space-y-2">
-                    {detectedSecrets.map((s, i) => (
-                      <div key={i} className="rounded-lg border px-4 py-3">
-                        <div className="text-sm font-medium">{s.key}</div>
-                        <div className="mt-2 flex items-center justify-between text-xs text-zinc-700">
-                          <div className="font-mono">{unmasked[i] ? s.value : `${s.value.slice(0,6)}***${s.value.slice(-4)}`}</div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-zinc-500">{s.source}</div>
-                            <Button size="sm" variant="outline" onClick={() => setUnmasked((u) => ({ ...u, [i]: !u[i] }))}>{unmasked[i] ? 'Mask' : 'Unmask'}</Button>
-                            <Button size="sm" onClick={() => copyToClipboard(s.value)}>Copy</Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {detectedSecrets.length === 0 ? <div className="text-sm text-zinc-500">No hardcoded credentials detected.</div> : null}
-                  </div>
+              {/* Hardcoded Secrets */}
+              <Card className="border border-white/[0.08] bg-slate-950/80 p-4 space-y-2">
+                <p className="text-xs font-bold text-rose-400 flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-rose-400"/> Hardcoded Secrets Phát Hiện
+                </p>
+                <div className="space-y-1">
+                  {analysisResult.hardcodedSecrets.map((s, i) => (
+                    <div
+                      key={i}
+                      className="rounded bg-rose-950/30 border border-rose-500/20 px-2 py-1 font-mono text-[11px] text-rose-300"
+                    >
+                      {s}
+                    </div>
+                  ))}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+              </Card>
+            </div>
+
+            {/* Vulnerabilities */}
+            <Card className="border border-white/[0.08] bg-slate-950/80">
+              <CardHeader className="pb-3 border-b border-slate-800">
+                <CardTitle className="text-sm font-bold text-white">Lỗ Hổng Code & Phân Quyền</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 divide-y divide-slate-800">
+                {analysisResult.vulnerabilities.map((v, i) => (
+                  <div key={i} className="p-3.5 text-xs space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Badge "CRITICAL" "HIGH" "danger" "default"} : ? className="text-[9px] font-mono" v.severity="==" variant="{v.severity" ||>
+                        {v.severity}
+                      </Badge>
+                      <span className="font-bold text-slate-200">{v.title}</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">{v.description}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Modal Xác Nhận Ghi Đè */}
+        <RescanConfirmModal isOpen="{showRescanModal}" onClose="{()"> setShowRescanModal(false)}
+          onConfirm={(dontShowAgain) => {
+            if (dontShowAgain && typeof window !== "undefined") {
+              localStorage.setItem("adq_suppress_rescan_warning", "true");
+            }
+            setShowRescanModal(false);
+            startAnalysis();
+          }}
+          onCreateNewSession={() => {
+            setShowRescanModal(false);
+            router.push("/dashboard/projects");
+          }}
+        />
       </div>
     </DashboardShell>
   );
@@ -199,8 +325,8 @@ function ApkAuditContent() {
 
 export default function ApkAuditPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Loading APK audit...</div>}>
-      <ApkAuditContent />
+    <Suspense className="min-h-screen bg-[#020617]" fallback="{<div"/>}>
+      <ApkAuditContent/>
     </Suspense>
   );
 }

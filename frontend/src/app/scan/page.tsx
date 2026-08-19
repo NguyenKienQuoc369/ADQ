@@ -300,7 +300,7 @@ function ScanLandingContent() {
             const lines = rawAdv.split("\n").filter((l: string) => l.trim().startsWith("-"));
             parsedAdvice = lines.slice(0, 5).map((l: string, idx: number) => ({
               id: `advice-${idx + 1}`,
-              severity: idx === 0 ? "CRITICAL" : idx === 1 ? "HIGH" : "MEDIUM",
+              vulnerabilityId: `vuln-${idx + 1}`,
               title: `Khuyến nghị #${idx + 1}`,
               rootCause: l.replace(/^- (Nguyên nhân:\s*)?/, ""),
               remediation: [l.replace(/^- /, "")],
@@ -490,7 +490,7 @@ function ScanLandingContent() {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-white tracking-tight">Trung Tâm Rà Quét Lỗ Hổng</h1>
               {projectId && (
-                <Badge className="text-[10px] font-mono border-cyan-500/30 text-cyan-400 bg-cyan-950/40" variant="outline">
+                <Badge className="text-[10px] font-mono border border-cyan-500/30 text-cyan-400 bg-cyan-950/40">
                   DỰ ÁN: {projectName || projectId}
                 </Badge>
               )}
@@ -501,7 +501,7 @@ function ScanLandingContent() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button className="h-8 text-xs border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition-all" disabled={isSavingSession || isScanning} onClick={handleSaveSessionManually} size="sm" variant="outline">
+            <Button className="h-8 text-xs border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition-all" disabled="{isSavingSession" isScanning} onClick="{handleSaveSessionManually}" size="sm" variant="outline" ||>
               {isSavingSession ? (
                 <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
               ) : isSavedSuccess ? (
@@ -512,7 +512,7 @@ function ScanLandingContent() {
               {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Phiên Quét"}
             </Button>
 
-            <Button className="h-8 text-xs border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800" onClick="{handleCreateNewSession}" size="sm" variant="outline">
+            <Button className="h-8 text-xs border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800" onClick="{handleCreateNewSession}" size="sm" variant="outline">
               <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400"/> Phiên Mới
             </Button>
           </div>
@@ -524,19 +524,13 @@ function ScanLandingContent() {
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
-                <Input
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
+                <Input onChange="{(e)" value="{target}"> setTarget(e.target.value)}
                   disabled={isScanning}
                   placeholder="Nhập tên miền mục tiêu (vd: target.com hoặc api.domain.vn)"
                   className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-cyan-500 text-sm h-10"
                 />
               </div>
-              <Button
-                className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50"
-                disabled={isScanning || isFreeLimitExceeded || !target.trim()}
-                onClick={handleStartScanClick}
-              >
+              <Button !target.trim()} className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50" disabled="{isScanning" isFreeLimitExceeded onClick="{handleStartScanClick}" ||>
                 {isScanning ? (
                   <>
                     <LoaderCircle className="h-4 w-4 mr-2 animate-spin"/> Đang Rà Quét...
@@ -632,10 +626,7 @@ function ScanLandingContent() {
                       <div key={v.id} className="p-3.5 hover:bg-slate-900/40 flex items-start justify-between gap-3 text-xs">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <Badge
-                              className="text-[9px] font-mono px-1.5 py-0"
-                              variant={v.severity === "CRITICAL" || v.severity === "HIGH" ? "destructive" : "default"}
-                            >
+                            <Badge "CRITICAL" "HIGH" "danger" "default"} : ? className="text-[9px] font-mono px-1.5 py-0" v.severity="==" variant="{v.severity" ||>
                               {v.severity}
                             </Badge>
                             <span className="font-bold text-slate-200">{v.title}</span>
@@ -650,15 +641,7 @@ function ScanLandingContent() {
             </Card>
 
             {/* AI Action Advice Card */}
-            <AiAnalysisCard
-              advice={actionAdvice}
-              rawAdvice={rawActionAdvice}
-              onGenerateFix={(adv) =>
-                handleCopilotSend(
-                  `Hãy tạo mã vá hoặc file cấu hình chi tiết để xử lý lỗ hổng này: ${adv.title} - ${adv.rootCause}`
-                )
-              }
-            />
+            <AiAnalysisCard aiSummary="{rawActionAdvice}" target="{target}" userTier="{userTier}"/>
           </div>
 
           {/* Copilot Chat Card */}
@@ -690,15 +673,12 @@ function ScanLandingContent() {
                 <div ref={chatBottomRef} />
               </CardContent>
               <div className="p-3 border-t border-slate-800 flex gap-2">
-                <Input
-                  value={copilotInput}
-                  onChange={(e) => setCopilotInput(e.target.value)}
+                <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
                   placeholder="Hỏi về bản vá hoặc phân tích..."
                   className="bg-slate-900 border-slate-800 text-xs h-8 text-slate-100"
                 />
-                <Button
-                  onClick={() => handleCopilotSend()}
+                <Button onClick="{()"> handleCopilotSend()}
                   size="sm"
                   disabled={copilotLoading || !copilotInput.trim()}
                   className="h-8 px-3 bg-cyan-600 hover:bg-cyan-500 text-white"
@@ -711,9 +691,7 @@ function ScanLandingContent() {
         </div>
 
         {/* Modal Xác Nhận Ghi Đè */}
-        <RescanConfirmModal
-          isOpen={showRescanModal}
-          onClose={() => setShowRescanModal(false)}
+        <RescanConfirmModal isOpen="{showRescanModal}" onClose="{()"> setShowRescanModal(false)}
           onConfirm={handleConfirmRescan}
           onCreateNewSession={handleCreateNewSession}
         />
@@ -724,7 +702,7 @@ function ScanLandingContent() {
 
 export default function ScanPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
+    <Suspense className="min-h-screen bg-[#020617]" fallback="{<div"/>}>
       <ScanLandingContent/>
     </Suspense>
   );
