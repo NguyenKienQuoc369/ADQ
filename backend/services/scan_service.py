@@ -4,9 +4,6 @@ import sys
 import json
 import uuid
 import time
-import ssl
-import urllib.request
-import urllib.error
 from typing import Dict, Any, List, Optional
 from fastapi import HTTPException, status
 import redis
@@ -22,6 +19,8 @@ try:
         WafDetectRequest,
         ApkRequest,
     )
+    from backend.core.recon_scan.waf_detector import WAFFingerprintDetector
+    from backend.core.recon_scan.scanner import perform_real_dynamic_scan
 except ImportError:
     from core.config import settings
     from schemas.scan import (
@@ -33,6 +32,8 @@ except ImportError:
         WafDetectRequest,
         ApkRequest,
     )
+    from core.recon_scan.waf_detector import WAFFingerprintDetector
+    from core.recon_scan.scanner import perform_real_dynamic_scan
 
 JOBS_STORAGE: Dict[str, Dict[str, Any]] = {}
 REDIS_URL = getattr(settings, "REDIS_URL", None) or os.getenv("REDIS_URL", "redis://adq_redis:6379/0")
@@ -41,8 +42,6 @@ try:
     redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 except Exception:
     redis_client = None
-
-ssl_unverified_context = ssl._create_unverified_context()
 
 class ScanService:
     @staticmethod
@@ -104,127 +103,69 @@ class ScanService:
 
     @staticmethod
     def discover_endpoints(target_url: str) -> Dict[str, Any]:
-        target = target_url.strip()
-        if not target.startswith("http"):
-            target = f"https://{target}"
+        raw = target_url.strip()
+        clean = raw if raw.startswith(("http://", "https://")) else f"https://{raw}"
 
-        discovered: List[str] = [target]
-        base_clean = target.rstrip("/")
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
+        discovered: List[str] = [clean]
+        scan_res = perform_real_dynamic_scan(clean, tier_choice=1)
 
-        # 1. Bóc tách robots.txt & sitemap.xml
-        for path in ["/robots.txt", "/sitemap.xml"]:
-            try:
-                req = urllib.request.Request(f"{base_clean}{path}", headers=headers)
-                with urllib.request.urlopen(req, timeout=4, context=ssl_unverified_context) as resp:
-                    content = resp.read().decode("utf-8", errors="ignore")
-                    for line in content.splitlines():
-                        if "Disallow:" in line or "Allow:" in line:
-                            p = line.split(":", 1)[1].strip()
-                            if p and p != "/" and not p.startswith("*"):
-                                full_p = f"{base_clean}{p}"
-                                if full_p not in discovered:
-                                    discovered.append(full_p)
-            except Exception:
-                pass
+        if scan_res.get("exposed_paths"):
+            for p in scan_res["exposed_paths"]:
+                clean_path = p.split(" ")[0]
+                if clean_path not in discovered:
+                    discovered.append(clean_path)
 
-        # 2. Cào HTML & Bóc tách Next.js Manifest
+        # Cào thêm Next.js manifest
         try:
-            req = urllib.request.Request(base_clean, headers=headers)
-            with urllib.request.urlopen(req, timeout=5, context=ssl_unverified_context) as resp:
-                html_body = resp.read().decode("utf-8", errors="ignore")
-                manifest_matches = re.findall(r'src=["\'](/_next/static/[^"\']+/_buildManifest\.js)["\']', html_body)
-                for mf in manifest_matches:
-                    try:
-                        mf_url = f"{base_clean}{mf}"
-                        mf_req = urllib.request.Request(mf_url, headers=headers)
-                        with urllib.request.urlopen(mf_req, timeout=4, context=ssl_unverified_context) as mf_resp:
-                            mf_js = mf_resp.read().decode("utf-8", errors="ignore")
-                            routes = re.findall(r'["\'](/[a-zA-Z0-9_\-\/]+)["\']', mf_js)
-                            for r in routes:
-                                if not any(r.endswith(ext) for ext in [".js", ".css", ".json"]):
-                                    full_route = f"{base_clean}{r}"
-                                    if full_route not in discovered and len(discovered) < 30:
-                                        discovered.append(full_route)
-                    except Exception:
-                        pass
-
-                links = re.findall(r'(?:href|src|action)=["\'](/[^"\'>\s]+)["\']', html_body)
-                api_calls = re.findall(r'["\'](/api/[a-zA-Z0-9_\-\/]+)["\']', html_body)
-                for link in list(set(links + api_calls)):
-                    if any(link.endswith(ext) for ext in [".css", ".png", ".jpg", ".svg", ".ico", ".woff", ".woff2"]):
-                        continue
-                    full_ep = f"{base_clean}{link}"
-                    if full_ep not in discovered and len(discovered) < 25:
-                        discovered.append(full_ep)
+            import requests
+            resp = requests.get(clean, timeout=4, verify=False)
+            manifests = re.findall(r'src=["\'](/_next/static/[^"\']+/_buildManifest\.js)["\']', resp.text)
+            for mf in manifests:
+                mf_url = f"{clean.rstrip('/')}{mf}"
+                mf_resp = requests.get(mf_url, timeout=3, verify=False)
+                routes = re.findall(r'["\'](/[a-zA-Z0-9_\-\/]+)["\']', mf_resp.text)
+                for r in routes:
+                    if not any(r.endswith(ext) for ext in [".js", ".css", ".json"]):
+                        full_r = f"{clean.rstrip('/')}{r}"
+                        if full_r not in discovered and len(discovered) < 25:
+                            discovered.append(full_r)
         except Exception:
             pass
 
-        common_probes = ["/api/auth/login", "/api/v1/user", "/api/health", "/login", "/register", "/dashboard"]
-        for cp in common_probes:
-            full_probe = f"{base_clean}{cp}"
-            if full_probe not in discovered and len(discovered) < 20:
-                discovered.append(full_probe)
-
-        return {"ok": True, "target": target, "total_found": len(discovered), "endpoints": discovered}
+        return {"ok": True, "target": clean, "total_found": len(discovered), "endpoints": discovered}
 
     @staticmethod
     def detect_waf(req: WafDetectRequest) -> Dict[str, Any]:
-        target = req.target_url.strip()
-        if not target.startswith("http"):
-            target = f"https://{target}"
+        detector = WAFFingerprintDetector()
+        waf_res = detector.detect_waf(req.target_url)
 
-        headers_detected = {}
-        detected_waf = "standard"
-        waf_name = "Standard Origin (Nginx / Linux)"
+        detected_wafs = waf_res.get("detected_wafs", [])
+        primary_waf = detected_wafs[0] if detected_wafs else "No WAF / Generic Server"
+
         input_label = "Mã Bypass / Secret Token"
         input_placeholder = "Nhập mã bypass hoặc token xác thực"
-        hint = "Hệ thống hỗ trợ nạp Bearer token hoặc header tùy chỉnh."
+        detected_slug = "standard"
 
-        try:
-            req_probe = urllib.request.Request(
-                target,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-                method="HEAD"
-            )
-            with urllib.request.urlopen(req_probe, timeout=5, context=ssl_unverified_context) as resp:
-                headers_detected = {k.lower(): v for k, v in resp.getheaders()}
-        except urllib.error.HTTPError as he:
-            headers_detected = {k.lower(): v for k, v in he.headers.items()}
-        except Exception:
-            pass
-
-        server_h = headers_detected.get("server", "").lower()
-        if "cf-ray" in headers_detected or "cloudflare" in server_h:
-            detected_waf = "cloudflare"
-            waf_name = "Cloudflare WAF / DDoS Protection"
-            input_label = "Cloudflare cf_clearance / Token"
-            input_placeholder = "Nhập trực tiếp mã token cf_clearance hoặc Access Client Secret"
-            hint = "Hệ thống tự động nạp cookie cf_clearance và header CF-Access tương ứng."
-        elif "x-vercel-id" in headers_detected or "vercel" in server_h:
-            detected_waf = "vercel"
-            waf_name = "Vercel Edge Deployment Protection"
+        if "Vercel" in primary_waf:
+            detected_slug = "vercel"
             input_label = "Vercel Protection Bypass Secret"
-            input_placeholder = "rsE... (Nhập trực tiếp chuỗi mã secret)"
-            hint = "Hệ thống tự động cấu hình header x-vercel-protection-bypass và cookie xác thực."
-        elif "x-amz-cf-id" in headers_detected or "awselb" in server_h:
-            detected_waf = "awswaf"
-            waf_name = "AWS WAF / Amazon CloudFront"
+            input_placeholder = "rsE... (Chỉ cần dán chuỗi Secret)"
+        elif "Cloudflare" in primary_waf:
+            detected_slug = "cloudflare"
+            input_label = "Cloudflare cf_clearance / Token"
+            input_placeholder = "Nhập token cf_clearance hoặc Service Secret"
+        elif "AWS" in primary_waf:
+            detected_slug = "awswaf"
             input_label = "AWS WAF x-api-key"
             input_placeholder = "Nhập chuỗi API Key x-api-key"
-            hint = "Hệ thống tự động gắn header x-api-key vào từng request."
 
         return {
             "ok": True,
-            "target_url": target,
-            "detected_waf": detected_waf,
-            "waf_name": waf_name,
+            "target_url": req.target_url,
+            "detected_waf": detected_slug,
+            "waf_name": primary_waf,
             "input_label": input_label,
             "input_placeholder": input_placeholder,
-            "hint": hint,
         }
 
     @staticmethod

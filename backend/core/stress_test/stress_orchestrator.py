@@ -1,19 +1,18 @@
 import os
 import sys
 import time
-import ssl
 import json
 import logging
 import random
 import threading
-import urllib.request
-import urllib.error
 import urllib.parse
 import concurrent.futures
 from typing import Any, Dict, Optional, List
+import requests
+import urllib3
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
-ssl_unverified_context = ssl._create_unverified_context()
 
 class StressOrchestrator:
     def __init__(self, k6_path: Optional[str] = None):
@@ -47,7 +46,7 @@ class StressOrchestrator:
         headers_dict: Dict[str, str] = custom_headers.copy() if custom_headers else {}
         headers_dict["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         headers_dict["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        headers_dict["Connection"] = "keep-alive"
+        headers_dict["Accept-Language"] = "en-US,en;q=0.9"
 
         cookie_dict: Dict[str, str] = custom_cookies.copy() if custom_cookies else {}
         clean_code = bypass_code.strip() if bypass_code else ""
@@ -65,24 +64,22 @@ class StressOrchestrator:
             elif clean_code.startswith("eyJ") or clean_code.lower().startswith("bearer "):
                 headers_dict["Authorization"] = clean_code if clean_code.lower().startswith("bearer ") else f"Bearer {clean_code}"
             else:
-                # 1. Tiêm Vercel Protection Bypass
+                # Vercel Deployment Protection Bypass
                 headers_dict["x-vercel-protection-bypass"] = clean_code
                 headers_dict["x-vercel-set-bypass-cookie"] = "samesitenone"
                 cookie_dict["x-vercel-protection-bypass"] = clean_code
                 cookie_dict["_vercel_jwt"] = clean_code
+                cookie_dict["_vercel_protection_bypass"] = clean_code
 
-                # 2. Tiêm URL Query Param dự phòng (Vercel chấp nhận trực tiếp trên URL)
+                # Tiêm trực tiếp vào Query Parameters
                 sep = "&" if "?" in final_target_url else "?"
                 final_target_url += f"{sep}x-vercel-protection-bypass={clean_code}&x-vercel-set-bypass-cookie=samesitenone"
 
-                # 3. Tiêm Cloudflare & AWS WAF
+                # Cloudflare & AWS WAF
                 headers_dict["CF-Access-Client-Id"] = clean_code
                 headers_dict["CF-Access-Client-Secret"] = clean_code
                 headers_dict["x-api-key"] = clean_code
                 cookie_dict["cf_clearance"] = clean_code
-
-        if cookie_dict:
-            headers_dict["Cookie"] = "; ".join([f"{k}={v}" for k, v in cookie_dict.items()])
 
         metrics = {
             "total_requests": 0,
@@ -103,48 +100,44 @@ class StressOrchestrator:
         end_time = start_time + duration_sec
         lock = threading.Lock()
 
-        try:
-            from curl_cffi import requests as curl_cffi_requests
-            has_curl = True
-        except ImportError:
-            has_curl = False
-
         thread_local = threading.local()
 
         def get_worker_session():
             if not getattr(thread_local, "session", None):
-                if has_curl:
-                    thread_local.session = curl_cffi_requests.Session(impersonate="chrome120", timeout=4)
-                else:
-                    thread_local.session = None
+                s = requests.Session()
+                s.headers.update(headers_dict)
+                s.cookies.update(cookie_dict)
+                adapter = requests.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50, max_retries=0)
+                s.mount("https://", adapter)
+                s.mount("http://", adapter)
+                thread_local.session = s
             return thread_local.session
 
         def fire_single_real_request():
-            req_headers = headers_dict.copy()
+            session = get_worker_session()
             spoofed_ip = f"{random.randint(11,220)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
-            req_headers["X-Forwarded-For"] = spoofed_ip
-            req_headers["X-Real-IP"] = spoofed_ip
-            req_headers["True-Client-IP"] = spoofed_ip
+            req_headers = {
+                "X-Forwarded-For": spoofed_ip,
+                "X-Real-IP": spoofed_ip,
+                "True-Client-IP": spoofed_ip,
+            }
 
             req_start = time.time()
             status_code = 0
-            session = get_worker_session()
 
-            if session is not None:
-                try:
-                    resp = session.get(final_target_url, headers=req_headers, cookies=cookie_dict if cookie_dict else None, timeout=4)
-                    status_code = resp.status_code
-                except Exception:
-                    status_code = 500
-            else:
-                req = urllib.request.Request(final_target_url, headers=req_headers, method="GET")
-                try:
-                    with urllib.request.urlopen(req, timeout=4, context=ssl_unverified_context) as response:
-                        status_code = response.getcode()
-                except urllib.error.HTTPError as he:
-                    status_code = he.code
-                except Exception:
-                    status_code = 500
+            try:
+                resp = session.get(
+                    final_target_url,
+                    headers=req_headers,
+                    timeout=3.5,
+                    verify=False,
+                    allow_redirects=True
+                )
+                status_code = resp.status_code
+            except requests.exceptions.HTTPError as he:
+                status_code = he.response.status_code if he.response else 500
+            except Exception:
+                status_code = 500
 
             req_latency = max(1, int((time.time() - req_start) * 1000))
             log_time = time.strftime("%H:%M:%S", time.localtime())
@@ -171,7 +164,7 @@ class StressOrchestrator:
                         metrics["total_requests"] += 1
                         latencies.append(lat)
 
-                        if len(sample_logs) < 100:
+                        if len(sample_logs) < 120:
                             sample_logs.append(log_entry)
 
                         if code in (200, 201, 204):
@@ -185,7 +178,7 @@ class StressOrchestrator:
                         else:
                             metrics["other_status"] += 1
 
-        concurrency = min(200, max(15, int(target_rps * 0.4)))
+        concurrency = min(200, max(15, int(target_rps * 0.35)))
         with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
             futures = [executor.submit(worker_batch) for _ in range(concurrency)]
             concurrent.futures.wait(futures, timeout=duration_sec + 4)
