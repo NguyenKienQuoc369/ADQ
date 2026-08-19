@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
   const { pathname } = request.nextUrl;
 
-  // Bỏ qua static assets, next build files và API
+  // Bỏ qua static assets và API
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
@@ -17,10 +17,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Nhận diện subdomain admin
+  // Xử lý riêng cho Subdomain admin.adq.io.vn
   if (host.startsWith("admin.") || host.includes("admin.adq.io.vn")) {
     if (pathname === "/") {
-      return NextResponse.rewrite(new URL("/admin/login", request.url));
+      return NextResponse.rewrite(new URL("/admin", request.url));
     }
     if (!pathname.startsWith("/admin")) {
       return NextResponse.rewrite(new URL(`/admin${pathname}`, request.url));

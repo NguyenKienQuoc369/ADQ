@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { AdminShell } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,12 +14,9 @@ import {
   ShieldAlert,
   RotateCw,
   Ban,
-  LogOut,
 } from "lucide-react";
 
 export default function AdminDashboardPage() {
-  const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
   const [telemetry, setTelemetry] = useState<any>({
     server: { cpu_usage_percent: 18.5, ram_usage_percent: 42.1, ram_used_gb: 3.4, ram_total_gb: 8.0, disk_usage_percent: 32 },
     services: { fastapi_backend: "ONLINE", redis_queue: "HEALTHY", postgres_db: "ONLINE", worker_elite: "READY", worker_mobile: "READY" }
@@ -30,17 +26,6 @@ export default function AdminDashboardPage() {
     { job_id: "scan_02f8b", target: "https://api-target.internal.io", user_email: "test_user@gmail.com", status: "RUNNING", total_vulns: 0, created_at: Date.now() - 120000 },
   ]);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("adq_admin_root_token");
-      if (!token) {
-        router.replace("/admin/login");
-        return;
-      }
-      setAuthorized(true);
-    }
-  }, [router]);
 
   const fetchTelemetry = async () => {
     setLoading(true);
@@ -57,49 +42,31 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
-    if (authorized) {
-      fetchTelemetry();
-      const interval = setInterval(fetchTelemetry, 10000);
-      return () => clearInterval(interval);
-    }
-  }, [authorized]);
+    fetchTelemetry();
+    const interval = setInterval(fetchTelemetry, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleKillJob = (jid: string) => {
     setScans(scans.map(s => s.job_id === jid ? { ...s, status: "KILLED_BY_ADMIN" } : s));
   };
 
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("adq_admin_root_token");
-      document.cookie = "adq_admin_root_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
-      router.replace("/admin/login");
-    }
-  };
-
-  if (!authorized) {
-    return <div className="min-h-screen bg-[#020617]" />;
-  }
-
   return (
-    <DashboardShell area="admin">
-      <div className="space-y-6 max-w-7xl mx-auto font-sans">
+    <AdminShell>
+      <div className="space-y-6 max-w-7xl mx-auto">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
-              <Server className="h-5 w-5 text-cyan-400" /> SOC Root Control & Cluster Telemetry
+              <Server className="h-5 w-5 text-rose-400" /> SOC Root Control & Cluster Telemetry
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">Giám sát hạ tầng VPS, hàng đợi tác vụ rà quét và tiến trình phân tán</p>
+            <p className="text-xs text-slate-400 mt-0.5">Giám sát hạ tầng VPS 163.44.193.9, Docker nodes và hàng đợi tác vụ rà quét</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button onClick={fetchTelemetry} disabled={loading} variant="outline" size="sm" className="h-8 border-slate-800 bg-slate-900 text-xs text-slate-300">
-              <RotateCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} /> Làm mới Realtime
-            </Button>
-            <Button onClick={handleLogout} variant="destructive" size="sm" className="h-8 text-xs bg-rose-950/60 border border-rose-500/40 text-rose-300 hover:bg-rose-900">
-              <LogOut className="h-3.5 w-3.5 mr-1" /> Thoát Root
-            </Button>
-          </div>
+          <Button onClick={fetchTelemetry} disabled={loading} variant="outline" size="sm" className="h-8 border-slate-800 bg-slate-900 text-xs text-slate-300">
+            <RotateCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} /> Làm mới Realtime
+          </Button>
         </div>
 
+        {/* 4 Thống số phần cứng */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="border border-white/[0.08] bg-slate-950/80 p-4">
             <div className="flex items-center justify-between text-slate-400 text-xs">
@@ -144,10 +111,11 @@ export default function AdminDashboardPage() {
           </Card>
         </div>
 
+        {/* Global Scans Audit */}
         <Card className="border border-white/[0.08] bg-slate-950/80 shadow-2xl">
           <CardHeader className="pb-3 border-b border-white/[0.06]">
             <CardTitle className="text-base font-bold text-white flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-rose-400" /> Toàn Bộ Lịch Sử Phiên Quét Hệ Thống (Global Audit)
+              <ShieldAlert className="h-4 w-4 text-rose-400" /> Lịch Sử Phiên Quét Toàn Cục (Global Audit)
             </CardTitle>
             <CardDescription className="text-xs text-slate-400">
               Kiểm soát tất cả mục tiêu được quét bởi các tài khoản trên nền tảng
@@ -206,6 +174,6 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
       </div>
-    </DashboardShell>
+    </AdminShell>
   );
 }
