@@ -31,12 +31,7 @@ export function getDailyLimitForPackage(packageTier: AppPackageTier) {
   return 2; // Gói FREE: đúng 2 lượt duy nhất
 }
 
-export function computePlanExpiry(durationDays?: number | null, baseDate = new Date()): Date | null {
-  const days = durationDays && durationDays > 0 ? durationDays : 30; // Mặc định 30 ngày cho gói trả phí
-  const expiry = new Date(baseDate);
-  expiry.setDate(expiry.getDate() + days);
-  return expiry;
-}
+
 
 export function toUserRecord(row: any) {
   return {
@@ -301,8 +296,9 @@ export function parseDurationLabelToDays(durationLabel: string) {
 
 export function computePlanExpiry(durationDays: number | null, from = new Date()) {
   if (durationDays === null) return null;
+  const days = durationDays && durationDays > 0 ? durationDays : 30;
   const expiry = new Date(from);
-  expiry.setDate(expiry.getDate() + durationDays);
+  expiry.setDate(expiry.getDate() + days);
   return expiry;
 }
 
