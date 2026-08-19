@@ -196,16 +196,12 @@ function safeString(val: any): string {
 function ScanLandingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
-
-    const isProMaxUser = userTier === "PRO_MAX" || (userTier as string) === "ENTERPRISE";
-  const isProUser = userTier === "PRO" || isProMaxUser;
-
-
-  const isFreeLimitExceeded = (user?.packageTier === "FREE" || !user?.packageTier) && (user?.scansToday ?? 0) >= 2;
-
+    const { user } = useAuth();
   const userTier = (user?.packageTier || "FREE").toUpperCase();
-  const projectId = searchParams.get("projectId");
+  const isProMaxUser = userTier === "PRO_MAX" || userTier === "ENTERPRISE";
+  const isProUser = userTier === "PRO" || isProMaxUser;
+  const isFreeLimitExceeded = userTier === "FREE" && (user?.scansToday ?? 0) >= 2;
+const projectId = searchParams.get("projectId");
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   const [projectName, setProjectName] = useState("");
