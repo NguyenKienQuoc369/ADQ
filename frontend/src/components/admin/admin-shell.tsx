@@ -1,50 +1,33 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { Gauge, Users, KeyRound, LogOut, Terminal, Activity, ShieldAlert } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Gauge, Users, KeyRound, LogOut, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const adminNav = [
   { href: "/admin", label: "Tổng quan SOC & Máy chủ", icon: Gauge },
-  { href: "/admin/scans", label: "Lịch sử Quét Toàn cục", icon: ShieldAlert },
   { href: "/admin/users", label: "Quản lý Người dùng", icon: Users },
   { href: "/admin/redeem-codes", label: "Mã License Redeem", icon: KeyRound },
 ];
 
-export function AdminShell({ children }: { children: React.ReactNode }) {
+export function AdminShell({ children, onLogout }: { children: React.ReactNode; onLogout?: () => void }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("adq_admin_root_token");
-      if (!token) {
-        router.replace("/admin/login");
-        return;
-      }
-      setAuthorized(true);
-    }
-  }, [router]);
 
   const handleLogout = () => {
-    if (typeof window !== "undefined") {
+    if (onLogout) {
+      onLogout();
+    } else if (typeof window !== "undefined") {
       localStorage.removeItem("adq_admin_root_token");
       document.cookie = "adq_admin_root_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
-      router.replace("/admin/login");
+      window.location.reload();
     }
   };
 
-  if (!authorized) {
-    return <div className="min-h-screen bg-[#020617]" />;
-  }
-
   return (
     <div className="flex min-h-screen bg-[#020617] text-slate-100 font-sans selection:bg-rose-500 selection:text-white">
-      {/* Sidebar Admin Riêng Biệt */}
       <aside className="w-64 shrink-0 border-r border-white/[0.08] bg-slate-950/90 p-4 flex flex-col justify-between backdrop-blur-2xl">
         <div className="space-y-6">
           <div className="flex items-center gap-3 p-2 rounded-2xl bg-slate-900/80 border border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.15)]">
@@ -62,7 +45,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <nav className="space-y-1">
             {adminNav.map((item) => {
               const Icon = item.icon;
-              const active = pathname === item.href;
+              const active = pathname === item.href || (item.href === "/admin" && (pathname === "/" || pathname === ""));
               return (
                 <Link
                   key={item.href}
@@ -91,7 +74,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </Button>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 p-6 overflow-y-auto">{children}</main>
     </div>
   );

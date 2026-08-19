@@ -5,7 +5,7 @@ import { Terminal, KeyRound, LoaderCircle, AlertTriangle, ArrowRight, ShieldAler
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export default function AdminLoginPage() {
+export default function AdminLoginPage({ onSuccess }: { onSuccess?: () => void }) {
   const [masterKey, setMasterKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,16 +17,17 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError(null);
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 400));
 
     if (masterKey.trim() === "@sisiniki123") {
       if (typeof window !== "undefined") {
-        // Lưu Root Token
         localStorage.setItem("adq_admin_root_token", "soc_root_authorized_session");
         document.cookie = "adq_admin_root_token=soc_root_authorized_session; path=/; max-age=86400;";
-        
-        // Điều hướng thẳng vào console
-        window.location.href = "/admin";
+      }
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        window.location.reload();
       }
     } else {
       setError("Mã Access Key không chính xác. Yêu cầu quyền truy cập Root bị từ chối.");
@@ -36,7 +37,6 @@ export default function AdminLoginPage() {
 
   return (
     <div className="relative min-h-screen w-full flex items-center justify-center bg-[#020617] text-slate-100 font-sans selection:bg-rose-500 selection:text-white overflow-hidden px-4">
-      {/* Background Grid */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b15_1px,transparent_1px),linear-gradient(to_bottom,#1e293b15_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
