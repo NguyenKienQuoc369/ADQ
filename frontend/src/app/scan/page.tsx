@@ -408,7 +408,6 @@ function ScanLandingContent() {
   const handleStartScanClick = () => {
     if (isScanning || !target.trim()) return;
 
-    // Kiểm tra xem phiên này đã có kết quả cũ chưa
     const hasExistingData =
       vulnerabilities.length > 0 ||
       actionAdvice.length > 0 ||
@@ -501,7 +500,7 @@ function ScanLandingContent() {
   return (
     <DashboardShell area="dashboard">
       <div className="space-y-6 text-slate-100 font-sans">
-        {/* Thanh tiêu đề và các nút Lưu / Tạo mới */}
+        {/* Header bar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
             <div className="flex items-center gap-2">
@@ -518,7 +517,6 @@ function ScanLandingContent() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Nút Lưu phiên */}
             <Button className="h-8 text-xs border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition-all" disabled="{isSavingSession" isScanning} onClick="{handleSaveSessionManually}" size="sm" variant="outline" ||>
               {isSavingSession ? (
                 <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
@@ -530,21 +528,21 @@ function ScanLandingContent() {
               {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Phiên Quét"}
             </Button>
 
-            {/* Nút Tạo phiên mới */}
             <Button className="h-8 text-xs border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800" onClick="{handleCreateNewSession}" size="sm" variant="outline">
               <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400"/> Phiên Mới
             </Button>
           </div>
         </div>
 
-        {/* Khung Nhập Target */}
+        {/* Input Target */}
         <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
-                <Input onChange="{(e)" placeholder="Nhập tên miền mục tiêu (vd: target.com hoặc api.domain.vn)" value="{target}"> setTarget(e.target.value)}
+                <Input onChange="{(e)" value="{target}"> setTarget(e.target.value)}
                   disabled={isScanning}
+                  placeholder="Nhập tên miền mục tiêu (vd: target.com hoặc api.domain.vn)"
                   className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-cyan-500 text-sm h-10"
                 />
               </div>
@@ -560,11 +558,15 @@ function ScanLandingContent() {
                 )}
               </Button>
             </div>
-            {scanError && <p className="text-xs text-rose-400 mt-2 flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5"/> {scanError}</p>}
+            {scanError && (
+              <p className="text-xs text-rose-400 mt-2 flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5"/> {scanError}
+              </p>
+            )}
           </CardContent>
         </Card>
 
-        {/* 4 Thẻ Thống kê nhanh */}
+        {/* Stats Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
             <p className="text-[11px] text-slate-400">Tên Miền Phụ</p>
@@ -584,7 +586,7 @@ function ScanLandingContent() {
           </Card>
         </div>
 
-        {/* Tiến trình 7 Bước DAG */}
+        {/* DAG 7 Steps */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
           {nodeArray.map((n) => {
             const Icon = n.icon;
@@ -620,7 +622,7 @@ function ScanLandingContent() {
           })}
         </div>
 
-        {/* Khuyến nghị AI Copilot & Danh sách Lỗ hổng */}
+        {/* AI Advice & Vuln List */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
             <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
@@ -640,7 +642,7 @@ function ScanLandingContent() {
                       <div key={v.id} className="p-3.5 hover:bg-slate-900/40 flex items-start justify-between gap-3 text-xs">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <Badge "CRITICAL" "HIGH" "danger" "default" : ? className="text-[9px] font-mono px-1.5 py-0" v.severity="==" variant="{" || }>
+                            <Badge "CRITICAL" "HIGH" "default"} "destructive" : ? className="text-[9px] font-mono px-1.5 py-0" v.severity="==" variant="{v.severity" ||>
                               {v.severity}
                             </Badge>
                             <span className="font-bold text-slate-200">{v.title}</span>
@@ -654,12 +656,14 @@ function ScanLandingContent() {
               </CardContent>
             </Card>
 
-            {/* Thẻ AI Action Advice */}
-            <AiAnalysisCard advice="{actionAdvice}" onGenerateFix="{(adv)" rawAdvice="{rawActionAdvice}"> handleCopilotSend(`Hãy tạo mã vá hoặc file cấu hình chi tiết để xử lý lỗ hổng này: ${adv.title} - ${adv.rootCause}`)}
+            {/* AI Action Advice Card */}
+            <AiAnalysisCard advice="{actionAdvice}" onGenerateFix="{(adv)" rawAdvice="{rawActionAdvice}">
+                handleCopilotSend(`Hãy tạo mã vá hoặc file cấu hình chi tiết để xử lý lỗ hổng này: ${adv.title} - ${adv.rootCause}`)
+              }
             />
           </div>
 
-          {/* Cửa sổ Trợ lý AI Copilot */}
+          {/* Copilot Chat Card */}
           <div className="lg:col-span-1">
             <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl flex flex-col h-[520px]">
               <CardHeader className="pb-3 border-b border-slate-800 flex flex-row items-center justify-between">
@@ -688,12 +692,14 @@ function ScanLandingContent() {
                 <div ref={chatBottomRef} />
               </CardContent>
               <div className="p-3 border-t border-slate-800 flex gap-2">
-                <Input onChange="{(e)" placeholder="Hỏi về bản vá hoặc phân tích..." value="{copilotInput}"> setCopilotInput(e.target.value)}
+                <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
+                  placeholder="Hỏi về bản vá hoặc phân tích..."
                   className="bg-slate-900 border-slate-800 text-xs h-8 text-slate-100"
                 />
-                <Button onClick="{()" size="sm"> handleCopilotSend()}
+                <Button onClick="{()"> handleCopilotSend()}
                   disabled={copilotLoading || !copilotInput.trim()}
+                  size="sm"
                   className="h-8 px-3 bg-cyan-600 hover:bg-cyan-500 text-white"
                 >
                   <Send className="h-3.5 w-3.5"/>
@@ -703,7 +709,7 @@ function ScanLandingContent() {
           </div>
         </div>
 
-        {/* Modal Xác Nhận Ghi Đè Khi Quét Lại */}
+        {/* Modal Xác Nhận Ghi Đè */}
         <RescanConfirmModal isOpen="{showRescanModal}" onClose="{()"> setShowRescanModal(false)}
           onConfirm={handleConfirmRescan}
           onCreateNewSession={handleCreateNewSession}
