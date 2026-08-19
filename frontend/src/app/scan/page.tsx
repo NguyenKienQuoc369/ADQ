@@ -650,7 +650,10 @@ function ScanLandingContent() {
             </Card>
 
             {/* AI Action Advice Card */}
-            <AiAnalysisCard advice="{actionAdvice}" onGenerateFix="{(adv)" rawAdvice="{rawActionAdvice}">
+            <AiAnalysisCard
+              advice={actionAdvice}
+              rawAdvice={rawActionAdvice}
+              onGenerateFix={(adv) =>
                 handleCopilotSend(
                   `Hãy tạo mã vá hoặc file cấu hình chi tiết để xử lý lỗ hổng này: ${adv.title} - ${adv.rootCause}`
                 )
