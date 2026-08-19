@@ -30,6 +30,8 @@ import {
   Minimize2,
   Lock,
 } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
+import { AiAnalysisCard } from "@/components/scan/ai-analysis-card";
 import { getProjectById, saveProjectDetail, startScanJob, getScanJobStatus, copilotChat, ActionAdvice } from "@/lib/api";
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
