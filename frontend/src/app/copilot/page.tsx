@@ -1,4 +1,8 @@
 "use client";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Bot, Sparkles, Lock, Send, MessageSquare, ShieldAlert, Sparkle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
