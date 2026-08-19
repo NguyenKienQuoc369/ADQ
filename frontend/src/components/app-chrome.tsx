@@ -1,21 +1,36 @@
 "use client";
 
+import React from "react";
 import { usePathname } from "next/navigation";
+import Navigation from "./Navigation";
 
-import { Navigation } from "@/components/Navigation";
-
-const hiddenOnPrefixes = ["/dashboard", "/admin", "/c2", "/ctem", "/graph", "/vulnerabilities", "/scan", "/settings"];
-const hiddenOnExactRoutes = ["/login", "/register", "/forgot-password", "/reset-password"];
+const DASHBOARD_ROUTES = [
+  "/dashboard",
+  "/scan",
+  "/stress-test",
+  "/apk-audit",
+  "/admin",
+  "/settings",
+  "/reports",
+  "/copilot",
+];
 
 export function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const hideNavigation =
-    hiddenOnExactRoutes.includes(pathname) || hiddenOnPrefixes.some((prefix) => pathname.startsWith(prefix));
+
+  // Kiểm tra nếu đang ở trang Dashboard hoặc các Module DAST
+  const isDashboardWorkspace = DASHBOARD_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+
+  if (isDashboardWorkspace) {
+    return <main className="flex-1 w-full">{children}</main>;
+  }
 
   return (
     <>
-      {!hideNavigation ? <Navigation /> : null}
-      <main className="flex-1 bg-transparent text-[var(--foreground)]">{children}</main>
+      <Navigation />
+      <main className="flex-1 w-full">{children}</main>
     </>
   );
 }
