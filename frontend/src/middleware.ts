@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
   const host = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "").toLowerCase();
   const { pathname } = request.nextUrl;
 
-  // Bỏ qua static files, api và assets
+  // Bỏ qua static assets và API
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
@@ -17,15 +17,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Bắt tất cả request từ adq-soc.click hoặc admin subdomain
   const isAdminDomain = host.includes("adq-soc.click") || host.startsWith("admin.");
 
   if (isAdminDomain) {
-    if (pathname === "/" || pathname === "") {
-      return NextResponse.redirect(new URL("/admin/login", request.url));
-    }
-    if (!pathname.startsWith("/admin")) {
-      return NextResponse.redirect(new URL(`/admin${pathname}`, request.url));
+    // Nếu vào sub-routes không có prefix /admin (ví dụ: /scans, /users), rewrite sang /admin/scans, /admin/users
+    if (pathname !== "/" && !pathname.startsWith("/admin")) {
+      return NextResponse.rewrite(new URL(`/admin${pathname}`, request.url));
     }
   }
 
