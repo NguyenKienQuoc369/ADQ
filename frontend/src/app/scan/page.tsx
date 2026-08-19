@@ -501,7 +501,7 @@ function ScanLandingContent() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button className="h-8 text-xs border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition-all" disabled="{isSavingSession" isScanning} onClick="{handleSaveSessionManually}" size="sm" variant="outline" ||>
+            <Button className="h-8 text-xs border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition-all" disabled={isSavingSession || isScanning} onClick={handleSaveSessionManually} size="sm" variant="outline">
               {isSavingSession ? (
                 <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
               ) : isSavedSuccess ? (
