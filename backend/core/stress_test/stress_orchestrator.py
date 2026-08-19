@@ -40,9 +40,9 @@ class StressOrchestrator:
             elif clean_code.startswith("eyJ") or clean_code.lower().startswith("bearer "):
                 headers["Authorization"] = clean_code if clean_code.lower().startswith("bearer ") else f"Bearer {clean_code}"
             else:
-                # 1. Header Injection
+                # 1. Header Injection (Vercel, Cloudflare, AWS)
                 headers["x-vercel-protection-bypass"] = clean_code
-                headers["x-vercel-set-bypass-cookie"] = "true"
+                headers["x-vercel-set-bypass-cookie"] = "samesitenone"
                 headers["CF-Access-Client-Id"] = clean_code
                 headers["CF-Access-Client-Secret"] = clean_code
                 headers["x-api-key"] = clean_code
@@ -50,11 +50,12 @@ class StressOrchestrator:
                 # 2. Cookie Injection
                 cookies["x-vercel-protection-bypass"] = clean_code
                 cookies["_vercel_jwt"] = clean_code
+                cookies["_vercel_protection_bypass"] = clean_code
                 cookies["cf_clearance"] = clean_code
 
                 # 3. URL Query Parameter Injection
                 sep = "&" if "?" in final_url else "?"
-                final_url += f"{sep}x-vercel-protection-bypass={clean_code}&_vercel_protection_bypass={clean_code}&x-vercel-set-bypass-cookie=true"
+                final_url += f"{sep}x-vercel-protection-bypass={clean_code}&_vercel_protection_bypass={clean_code}&x-vercel-set-bypass-cookie=samesitenone"
 
         return final_url, headers, cookies
 
