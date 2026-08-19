@@ -546,7 +546,7 @@ function ScanLandingContent() {
                   className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-cyan-500 text-sm h-10"
                 />
               </div>
-              <Button !target.trim() className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50" disabled="{isScanning" isFreeLimitExceeded} onClick="{handleStartScanClick}" ||>
+              <Button !target.trim()} className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50" disabled="{isScanning" isFreeLimitExceeded onClick="{handleStartScanClick}" ||>
                 {isScanning ? (
                   <>
                     <LoaderCircle className="h-4 w-4 mr-2 animate-spin"/> Đang Rà Quét...
@@ -658,7 +658,9 @@ function ScanLandingContent() {
 
             {/* AI Action Advice Card */}
             <AiAnalysisCard advice="{actionAdvice}" onGenerateFix="{(adv)" rawAdvice="{rawActionAdvice}">
-                handleCopilotSend(`Hãy tạo mã vá hoặc file cấu hình chi tiết để xử lý lỗ hổng này: ${adv.title} - ${adv.rootCause}`)
+                handleCopilotSend(
+                  `Hãy tạo mã vá hoặc file cấu hình chi tiết để xử lý lỗ hổng này: ${adv.title} - ${adv.rootCause}`
+                )
               }
             />
           </div>
