@@ -524,13 +524,19 @@ function ScanLandingContent() {
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
-                <Input onChange="{(e)" value="{target}"> setTarget(e.target.value)}
+                <Input
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
                   disabled={isScanning}
                   placeholder="Nhập tên miền mục tiêu (vd: target.com hoặc api.domain.vn)"
                   className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-cyan-500 text-sm h-10"
                 />
               </div>
-              <Button !target.trim()} className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50" disabled="{isScanning" isFreeLimitExceeded onClick="{handleStartScanClick}" ||>
+              <Button
+                className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50"
+                disabled={isScanning || isFreeLimitExceeded || !target.trim()}
+                onClick={handleStartScanClick}
+              >
                 {isScanning ? (
                   <>
                     <LoaderCircle className="h-4 w-4 mr-2 animate-spin"/> Đang Rà Quét...
