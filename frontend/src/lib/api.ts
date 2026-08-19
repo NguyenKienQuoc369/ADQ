@@ -298,7 +298,7 @@ export async function getCurrentUser() {
     role: metadata.role === "ADMIN" ? "ADMIN" : "USER",
     packageTier: metadata.packageTier === "PRO_MAX" ? "PRO_MAX" : metadata.packageTier === "PRO" ? "PRO" : "FREE",
     status: "ACTIVE",
-    dailyLimit: metadata.packageTier === "FREE" ? 5 : 999,
+    dailyLimit: metadata.packageTier === "FREE" ? 2 : 999999,
     scansToday: 0,
     telegramConnected: false,
     planExpiresAt: null,

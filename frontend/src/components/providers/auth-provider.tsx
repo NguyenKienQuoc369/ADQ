@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: metadata.role === "ADMIN" ? "ADMIN" : "USER",
         packageTier: metadata.packageTier || "FREE",
         status: metadata.status || "ACTIVE",
-        dailyLimit: metadata.packageTier === "FREE" ? 5 : 999,
+        dailyLimit: metadata.packageTier === "FREE" ? 2 : 999999,
         scansToday: metadata.scansToday || 0,
         telegramConnected: Boolean(metadata.telegramConnected),
         planExpiresAt: metadata.planExpiresAt || null,
