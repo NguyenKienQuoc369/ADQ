@@ -724,7 +724,7 @@ function ScanLandingContent() {
 
 export default function ScanPage() {
   return (
-    <Suspense className="min-h-screen bg-[#020617]" fallback="{<div"/>}>
+    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
       <ScanLandingContent/>
     </Suspense>
   );
