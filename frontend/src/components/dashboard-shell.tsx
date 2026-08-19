@@ -68,16 +68,7 @@ function DashboardShellContent({
   const { user, loading, logout, acceptTerms, setupGoogleRecovery } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const needsTerms = useMemo(() => {
-    if (loading || !user) return false;
-    if ((user as any).termsAccepted) return false;
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem(`adq_terms_accepted_${user.id}`);
-      if (cached === "true") return false;
-    }
-    return true;
-  }, [loading, user]);
-
+  // 1. Kiểm tra tài khoản Google có cần hoàn thiện thông tin trước không
   const needsGoogleRecovery = useMemo(() => {
     if (loading || !user) return false;
     if (user.oauthProvider !== "google") return false;
@@ -89,22 +80,34 @@ function DashboardShellContent({
     return true;
   }, [loading, user]);
 
-  const [showTermsModal, setShowTermsModal] = useState(false);
+  // 2. Kiểm tra điều khoản
+  const needsTerms = useMemo(() => {
+    if (loading || !user) return false;
+    if ((user as any).termsAccepted) return false;
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`adq_terms_accepted_${user.id}`);
+      if (cached === "true") return false;
+    }
+    return true;
+  }, [loading, user]);
+
   const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const [showPlansModal, setShowPlansModal] = useState(false);
 
+  // Thứ tự ưu tiên: 1. Setup Thông tin -> 2. Duyệt Điều khoản -> 3. Bảng gói cước
   useEffect(() => {
-    if (needsTerms) {
-      setShowTermsModal(true);
-      setShowGoogleModal(false);
-    } else if (needsGoogleRecovery) {
-      setShowTermsModal(false);
+    if (needsGoogleRecovery) {
       setShowGoogleModal(true);
-    } else {
       setShowTermsModal(false);
+    } else if (needsTerms) {
       setShowGoogleModal(false);
+      setShowTermsModal(true);
+    } else {
+      setShowGoogleModal(false);
+      setShowTermsModal(false);
     }
-  }, [needsTerms, needsGoogleRecovery]);
+  }, [needsGoogleRecovery, needsTerms]);
 
   const isProjectWorkspace = PROJECT_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
@@ -115,21 +118,26 @@ function DashboardShellContent({
     [area]
   );
 
+  // Sau khi hoàn tất bổ sung thông tin -> chuyển tiếp sang duyệt điều khoản (nếu chưa duyệt)
+  const handleCompleteGoogleRecovery = async (data: { name: string; username: string; password: string }) => {
+    await setupGoogleRecovery(data);
+    setShowGoogleModal(false);
+    if (needsTerms) {
+      setShowTermsModal(true);
+    }
+  };
+
   const handleDeclineTerms = async () => {
     setShowTermsModal(false);
     await logout();
     window.location.href = "/";
   };
 
+  // Sau khi duyệt điều khoản xong -> mở Modal xem bảng Gói cước
   const handleAcceptTerms = async () => {
     await acceptTerms();
     setShowTermsModal(false);
     setShowPlansModal(true);
-  };
-
-  const handleCompleteGoogleRecovery = async (data: { name: string; username: string; password: string }) => {
-    await setupGoogleRecovery(data);
-    setShowGoogleModal(false);
   };
 
   if (loading) {
@@ -156,9 +164,22 @@ function DashboardShellContent({
 
   return (
     <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
-      <TermsModal isOpen={showTermsModal} onAccept={handleAcceptTerms} onDecline={handleDeclineTerms} userEmail={user?.email || ""} />
-      <GoogleSetupModal isOpen={showGoogleModal} userEmail={user?.email || ""} defaultName={user?.name || ""} onComplete={handleCompleteGoogleRecovery} />
-      <PlansModal isOpen={showPlansModal} onClose={() => setShowPlansModal(false)} />
+      <GoogleSetupModal
+        isOpen={showGoogleModal}
+        userEmail={user?.email || ""}
+        defaultName={user?.name || ""}
+        onComplete={handleCompleteGoogleRecovery}
+      />
+      <TermsModal
+        isOpen={showTermsModal}
+        onAccept={handleAcceptTerms}
+        onDecline={handleDeclineTerms}
+        userEmail={user?.email || ""}
+      />
+      <PlansModal
+        isOpen={showPlansModal}
+        onClose={() => setShowPlansModal(false)}
+      />
 
       {isProjectWorkspace ? (
         <div className="relative min-h-screen flex flex-col">
