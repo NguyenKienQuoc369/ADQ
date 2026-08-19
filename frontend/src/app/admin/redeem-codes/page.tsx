@@ -2,11 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { KeyRound, Plus, Copy, Check, Sparkles } from "lucide-react";
-import { getAdminRedeemCodes, createAdminRedeemCode } from "@/lib/api";
+import { KeyRound, Plus, Copy, Check } from "lucide-react";
+import { getRedeemCodes, createRedeemCode } from "@/lib/api";
 
 export default function AdminRedeemCodesPage() {
   const [codes, setCodes] = useState<any[]>([
@@ -17,7 +16,27 @@ export default function AdminRedeemCodesPage() {
   const [duration, setDuration] = useState("30 Ngày");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const handleGenerate = () => {
+  useEffect(() => {
+    getRedeemCodes()
+      .then((res: any) => {
+        if (res && res.codes) setCodes(res.codes);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleGenerate = async () => {
+    try {
+      const res = await createRedeemCode({
+        packageTier: tier,
+        durationLabel: duration,
+        maxUses: 1,
+      });
+      if (res && res.code) {
+        setCodes((prev) => [res.code, ...prev]);
+        return;
+      }
+    } catch {}
+
     const newCode = {
       id: `rc_${Date.now()}`,
       code: `ADQ-${tier}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
@@ -27,7 +46,7 @@ export default function AdminRedeemCodesPage() {
       usedCount: 0,
       status: "UNUSED",
     };
-    setCodes([newCode, ...codes]);
+    setCodes((prev) => [newCode, ...prev]);
   };
 
   const handleCopy = (c: string) => {
@@ -75,10 +94,9 @@ export default function AdminRedeemCodesPage() {
           </div>
         </Card>
 
-        {/* Danh Sách Mã Đã Tạo */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {codes.map((c) => (
-            <div key={c.id} className="p-4 rounded-2xl border border-slate-800 bg-slate-900/60 flex items-center justify-between">
+            <div key={c.id || c.code} className="p-4 rounded-2xl border border-slate-800 bg-slate-900/60 flex items-center justify-between">
               <div>
                 <div className="font-mono text-sm font-bold text-cyan-300 tracking-wider">{c.code}</div>
                 <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">

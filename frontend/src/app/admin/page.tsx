@@ -12,11 +12,8 @@ import {
   Radio,
   Server,
   ShieldAlert,
-  Users,
-  KeyRound,
   RotateCw,
   Ban,
-  CheckCircle2,
 } from "lucide-react";
 
 export default function AdminDashboardPage() {
@@ -57,7 +54,6 @@ export default function AdminDashboardPage() {
   return (
     <DashboardShell area="admin">
       <div className="space-y-6 max-w-7xl mx-auto font-sans">
-        {/* Header Telemetry */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
@@ -70,7 +66,6 @@ export default function AdminDashboardPage() {
           </Button>
         </div>
 
-        {/* 4 Cards Sức Khỏe Hệ Thống */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="border border-white/[0.08] bg-slate-950/80 p-4">
             <div className="flex items-center justify-between text-slate-400 text-xs">
@@ -115,7 +110,6 @@ export default function AdminDashboardPage() {
           </Card>
         </div>
 
-        {/* Global Scans Audit Table */}
         <Card className="border border-white/[0.08] bg-slate-950/80 shadow-2xl">
           <CardHeader className="pb-3 border-b border-white/[0.06]">
             <CardTitle className="text-base font-bold text-white flex items-center gap-2">
@@ -150,7 +144,16 @@ export default function AdminDashboardPage() {
                         </span>
                       </td>
                       <td className="py-3">
-                        <Badge className={`text-[10px] font-mono ${s.status === "COMPLETED" ? "bg-emerald-950 text-emerald-300 border-emerald-500/40" : s.status === "KILLED_BY_ADMIN" ? "bg-rose-950 text-rose-300 border-rose-500/40" : "bg-cyan-950 text-cyan-300 border-cyan-500/40"}`} variant="outline">
+                        <Badge
+                          variant={
+                            s.status === "COMPLETED"
+                              ? "success"
+                              : s.status === "KILLED_BY_ADMIN"
+                              ? "danger"
+                              : "default"
+                          }
+                          className="text-[10px] font-mono"
+                        >
                           {s.status}
                         </Badge>
                       </td>
