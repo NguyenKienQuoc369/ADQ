@@ -1,16 +1,16 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { AlertTriangle, Trash2, X, Play, Shield, Smartphone, Zap, Plus, Globe } from "lucide-react";
+import { Lock, useRouter } from "next/navigation";
+import { Lock, AlertTriangle, Trash2, X, Play, Shield, Smartphone, Zap, Plus, Globe } from "lucide-react";
 
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { getDashboardOverview, getProjects, createProject, deleteProject } from "@/lib/api";
+import { Lock, DashboardShell } from "@/components/dashboard-shell";
+import { Lock, Badge } from "@/components/ui/badge";
+import { Lock, Button } from "@/components/ui/button";
+import { Lock, Card, CardContent } from "@/components/ui/card";
+import { Lock, Input } from "@/components/ui/input";
+import { Lock, Skeleton } from "@/components/ui/skeleton";
+import { Lock, getDashboardOverview, getProjects, createProject, deleteProject } from "@/lib/api";
 
 export function OverviewClient() {
   const router = useRouter();

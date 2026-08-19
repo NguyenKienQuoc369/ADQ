@@ -57,6 +57,36 @@ type CopilotMessage = {
 };
 
 function CopilotContent() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const userTier = (user?.packageTier || "FREE").toUpperCase();
+  const isAllowedCopilot = userTier === "PRO_MAX" || userTier === "ENTERPRISE";
+
+  if (!isAllowedCopilot) {
+    return (
+      <DashboardShell area="dashboard">
+        <div className="flex flex-col items-center justify-center min-h-[75vh] p-6 text-center max-w-lg mx-auto">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 mb-4 shadow-lg shadow-purple-950/50">
+            <Bot className="h-8 w-8" />
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300 text-xs font-mono mb-3">
+            <Sparkles className="h-3.5 w-3.5" /> TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO MAX
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Mở Khóa Trợ Lý An Ninh AI Copilot</h2>
+          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+            Tài khoản hiện tại (<span className="text-cyan-400 font-bold font-mono">{userTier}</span>) chưa được cấp quyền truy cập AI Copilot. Nâng cấp lên gói <span className="text-purple-300 font-bold">PRO MAX</span> để chat hỏi đáp bảo mật chuyên sâu, phân tích lỗ hổng theo ngữ cảnh và sinh bản vá tự động.
+          </p>
+          <Button
+            onClick={() => router.push("/dashboard/billing")}
+            className="h-10 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-950/50 cursor-pointer"
+          >
+            Nâng Cấp PRO MAX Ngay
+          </Button>
+        </div>
+      </DashboardShell>
+    );
+  }
+
   const searchParams = useSearchParams();
 
   const jobId = searchParams?.get("jobId");
