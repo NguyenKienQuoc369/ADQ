@@ -9,7 +9,10 @@ import threading
 import urllib.parse
 import concurrent.futures
 from typing import Any, Dict, Optional, List, Generator
+import requests
+import urllib3
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 class StressOrchestrator:
@@ -24,14 +27,6 @@ class StressOrchestrator:
         headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
         headers["Accept-Language"] = "en-US,en;q=0.9"
-        headers["Sec-Ch-Ua"] = '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"'
-        headers["Sec-Ch-Ua-Mobile"] = "?0"
-        headers["Sec-Ch-Ua-Platform"] = '"Windows"'
-        headers["Sec-Fetch-Dest"] = "document"
-        headers["Sec-Fetch-Mode"] = "navigate"
-        headers["Sec-Fetch-Site"] = "none"
-        headers["Sec-Fetch-User"] = "?1"
-        headers["Upgrade-Insecure-Requests"] = "1"
 
         cookies = custom_cookies.copy() if custom_cookies else {}
         clean_code = bypass_code.strip().strip('"').strip("'")
@@ -58,7 +53,7 @@ class StressOrchestrator:
                 cookies["_vercel_jwt"] = clean_code
                 cookies["cf_clearance"] = clean_code
 
-                # 3. URL Query Parameter Injection (Vercel hỗ trợ trực tiếp trên Query)
+                # 3. URL Query Parameter Injection
                 sep = "&" if "?" in final_url else "?"
                 final_url += f"{sep}x-vercel-protection-bypass={clean_code}&_vercel_protection_bypass={clean_code}&x-vercel-set-bypass-cookie=true"
 
@@ -72,11 +67,10 @@ class StressOrchestrator:
             s.cookies.update(cookies)
             return s, True
         except ImportError:
-            import requests
             s = requests.Session()
             s.headers.update(headers)
             s.cookies.update(cookies)
-            adapter = requests.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50, max_retries=0)
+            adapter = requests.adapters.HTTPAdapter(pool_connections=40, pool_maxsize=40, max_retries=0)
             s.mount("https://", adapter)
             s.mount("http://", adapter)
             return s, False
@@ -84,21 +78,19 @@ class StressOrchestrator:
     def verify_bypass(self, target_url: str, bypass_code: str = "", waf_type: str = "standard") -> Dict[str, Any]:
         clean_url = target_url.strip() if target_url.strip().startswith(("http://", "https://")) else f"https://{target_url.strip()}"
         
-        # Probe 1: Kiểm tra khi KHÔNG có Bypass
         status_no_bypass = 0
         try:
             s_raw, _ = self._get_client_session({"User-Agent": "Mozilla/5.0"}, {})
-            r1 = s_raw.get(clean_url, timeout=4, verify=False, allow_redirects=True)
+            r1 = s_raw.get(clean_url, timeout=3.5, verify=False, allow_redirects=True)
             status_no_bypass = r1.status_code
         except Exception:
             status_no_bypass = 500
 
-        # Probe 2: Kiểm tra khi CÓ Bypass
         final_url, headers, cookies = self._prepare_request_config(clean_url, bypass_code, waf_type)
         status_with_bypass = 0
         try:
             s_bypass, _ = self._get_client_session(headers, cookies)
-            r2 = s_bypass.get(final_url, timeout=4, verify=False, allow_redirects=True)
+            r2 = s_bypass.get(final_url, timeout=3.5, verify=False, allow_redirects=True)
             status_with_bypass = r2.status_code
         except Exception:
             status_with_bypass = 500
@@ -112,7 +104,7 @@ class StressOrchestrator:
                 msg = f"Mục tiêu phản hồi thành công (HTTP {status_with_bypass} OK)."
         else:
             if status_with_bypass == 403:
-                msg = "Server vẫn trả về HTTP 403. Hãy kiểm tra lại chuỗi Secret hoặc cấu hình Vercel."
+                msg = "Server vẫn chặn HTTP 403. Vui lòng kiểm tra lại Secret hoặc cấu hình Vercel."
             elif status_with_bypass == 429:
                 msg = "Server đang kích hoạt Rate Limit (HTTP 429 Too Many Requests)."
             else:
@@ -190,7 +182,7 @@ class StressOrchestrator:
             status_code = 0
 
             try:
-                resp = session.get(final_url, headers=req_headers, timeout=3.5, verify=False, allow_redirects=True)
+                resp = session.get(final_url, headers=req_headers, timeout=3.0, verify=False, allow_redirects=True)
                 status_code = resp.status_code
             except Exception:
                 status_code = 500
@@ -231,16 +223,17 @@ class StressOrchestrator:
                         else:
                             metrics["other_status"] += 1
 
-                        event_q.put(log_entry)
+                        if event_q.qsize() < 100:
+                            event_q.put(log_entry)
 
-        concurrency = min(150, max(10, int(target_rps * 0.35)))
+        concurrency = min(120, max(10, int(target_rps * 0.3)))
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=concurrency)
         for _ in range(concurrency):
             executor.submit(worker_batch)
 
         while time.time() < end_time + 1 or not event_q.empty():
             batch_logs = []
-            while not event_q.empty() and len(batch_logs) < 25:
+            while not event_q.empty() and len(batch_logs) < 15:
                 batch_logs.append(event_q.get())
 
             elapsed = max(0.1, time.time() - start_time)
@@ -261,7 +254,7 @@ class StressOrchestrator:
             if metrics["total_requests"] >= total_reqs and event_q.empty():
                 break
 
-            time.sleep(0.05)
+            time.sleep(0.08)
 
         executor.shutdown(wait=False)
         yield {
