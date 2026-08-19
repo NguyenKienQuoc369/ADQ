@@ -71,7 +71,6 @@ function DashboardShellContent({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [syncPulse, setSyncPulse] = useState(99);
 
-  // KIỂM TRA TRẠNG THÁI ĐIỀU KHOẢN THEO TỪNG USER ACCOUNT CỤ THỂ
   const needsTerms = useMemo(() => {
     if (loading || !user) return false;
     if (user.termsAccepted) return false;
@@ -127,7 +126,8 @@ function DashboardShellContent({
     setShowTermsModal(false);
   };
 
-  if (loading || !user || (area === "admin" && user.role !== "ADMIN")) {
+  // Nếu đang load session, hiện placeholder cực nhẹ (không bị kẹt)
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#020617] text-cyan-400 font-sans">
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-cyan-500/20 bg-slate-950/80 p-8 backdrop-blur-2xl shadow-2xl">
@@ -139,6 +139,11 @@ function DashboardShellContent({
         </div>
       </div>
     );
+  }
+
+  // Nếu không có user, để trống chờ useEffect redirect sang /login
+  if (!user || (area === "admin" && user.role !== "ADMIN")) {
+    return <div className="min-h-screen bg-[#020617]" />;
   }
 
   // 1. PROJECT WORKSPACE (ẨN SIDEBAR)

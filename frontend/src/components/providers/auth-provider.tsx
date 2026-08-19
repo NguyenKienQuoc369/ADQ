@@ -69,51 +69,6 @@ function mapSessionToAuthResponse(user: AppUser, session: Session | null): AuthR
   };
 }
 
-function getFriendlyAuthError(error: unknown, fallback = "Đăng nhập thất bại.") {
-  const message = error instanceof Error ? error.message : String(error ?? "");
-  const normalized = message.toLowerCase();
-
-  if (normalized.includes("error sending confirmation email") || normalized.includes("smtp") || normalized.includes("email provider") || normalized.includes("unable to send confirmation email")) {
-    return "Email xác nhận chưa được cấu hình. Vui lòng kiểm tra cài đặt trong Supabase Dashboard.";
-  }
-
-  if (normalized.includes("user not found") || normalized.includes("no user found") || normalized.includes("email not found")) {
-    return "Tài khoản chưa tồn tại";
-  }
-
-  if (normalized.includes("invalid login credentials") || normalized.includes("invalid email or password")) {
-    return "Mật khẩu không đúng";
-  }
-
-  if (normalized.includes("email not confirmed") || normalized.includes("confirm your email") || normalized.includes("not confirmed")) {
-    return "Tài khoản chưa được kích hoạt. Vui lòng kiểm tra hộp thư email.";
-  }
-
-  if (normalized.includes("already registered") || normalized.includes("user already registered") || normalized.includes("already exists")) {
-    return "Tài khoản đã tồn tại";
-  }
-
-  return fallback;
-}
-
-function getPendingOAuthUser(): AppUser {
-  return {
-    id: "oauth_pending",
-    name: "Đang đồng bộ SOC...",
-    email: "",
-    role: "USER",
-    packageTier: "FREE",
-    status: "PENDING",
-    dailyLimit: 5,
-    scansToday: 0,
-    telegramConnected: false,
-    planExpiresAt: null,
-    oauthProvider: "google",
-    lastLoginAt: new Date().toISOString(),
-    termsAccepted: false,
-  };
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,17 +83,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshUser = useCallback(async (showLoader = false) => {
-    if (showLoader) {
-      setLoading(true);
-    }
+    if (showLoader) setLoading(true);
+    const supabase = getSupabaseClient();
+
     try {
-      const supabase = getSupabaseClient();
+      // 1. Đọc nhanh từ Client Session trước
       const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUser = sessionData?.session?.user;
+
+      if (!sessionUser) {
+        setUser(null);
+        return;
+      }
+
+      const initialAppUser = mapSupabaseUserToAppUser(sessionUser);
+      setUser(initialAppUser);
+
+      // 2. Đồng bộ ngầm với Backend (có Timeout 2.5s tránh bị treo)
       const token = sessionData?.session?.access_token;
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+
       try {
-        const res = await fetch('/api/account/me', { credentials: 'include', headers });
+        const res = await fetch('/api/account/me', {
+          credentials: 'include',
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
         if (res.status === 200) {
           const payload = await res.json();
           if (payload?.user) {
@@ -159,50 +134,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               termsAccepted: payload.user.termsAccepted ?? Boolean(payload.user.user_metadata?.terms_accepted),
             });
             setLockMessage(null);
-            return;
           }
-        }
-
-        if (res.status === 403) {
-          try {
-            await supabase.auth.signOut();
-          } catch {}
+        } else if (res.status === 403) {
+          await supabase.auth.signOut();
           setUser(null);
           setLockMessage('Tài khoản của bạn đã bị khóa');
-          return;
         }
       } catch {
-        const { data, error } = await supabase.auth.getUser();
-        if (error) {
-          setUser(null);
-          return;
-        }
-        setUser(data.user ? mapSupabaseUserToAppUser(data.user) : null);
+        // Nếu timeout hoặc mạng chậm, giữ nguyên initialAppUser đã đọc từ session
       }
     } finally {
-      if (showLoader) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   }, [getSupabaseClient]);
 
   useEffect(() => {
     const supabase = getSupabaseClient();
-    let active = true;
-    const frameHandle = window.requestAnimationFrame(() => {
-      void refreshUser(true).finally(() => {
-        if (!active) return;
-        setLoading(false);
-      });
-    });
+    void refreshUser(false);
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, _session) => {
-      refreshUser().catch(() => {});
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(mapSupabaseUserToAppUser(session.user));
+        setLoading(false);
+      } else {
+        setUser(null);
+        setLoading(false);
+      }
     });
 
     return () => {
-      active = false;
-      window.cancelAnimationFrame(frameHandle);
       subscription.subscription.unsubscribe();
     };
   }, [getSupabaseClient, refreshUser]);
@@ -210,15 +170,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      throw new Error(getFriendlyAuthError(error, 'Mật khẩu không đúng'));
-    }
+    if (error) throw new Error(error.message);
 
     const nextUser = data.user ? mapSupabaseUserToAppUser(data.user) : null;
     if (!nextUser) throw new Error("Không thể lấy thông tin người dùng.");
 
     setUser(nextUser);
-    setLockMessage(null);
     return mapSessionToAuthResponse(nextUser, data.session);
   }, [getSupabaseClient]);
 
@@ -242,18 +199,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
-      if (error) {
-        throw new Error(getFriendlyAuthError(error, 'Không thể tạo tài khoản.'));
-      }
-
-      if (!data.session) {
-        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận. Vui lòng kiểm tra hộp thư.');
-      }
-
+      if (error) throw new Error(error.message);
       const nextUser = data.user ? mapSupabaseUserToAppUser(data.user) : null;
-      if (!nextUser) {
-        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận.');
-      }
+      if (!nextUser) throw new Error('Vui lòng kiểm tra email để kích hoạt tài khoản.');
 
       setUser(nextUser);
       return mapSessionToAuthResponse(nextUser, data.session);
@@ -261,11 +209,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [getSupabaseClient],
   );
 
-  // CHẤP THUẬN ĐIỀU KHOẢN & LƯU VĨNH VIỄN VÀO USER METADATA
   const acceptTermsAndCompleteProfile = useCallback(async (payload: { company?: string }) => {
     const supabase = getSupabaseClient();
-    const { data: userData } = await supabase.auth.getUser();
-
     const updateData: Record<string, any> = {
       terms_accepted: true,
       terms_accepted_at: new Date().toISOString(),
@@ -275,13 +220,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateData.company = payload.company.trim();
     }
 
-    const { data, error } = await supabase.auth.updateUser({
-      data: updateData,
-    });
-
-    if (error) {
-      throw new Error(getFriendlyAuthError(error, "Không thể lưu trạng thái điều khoản."));
-    }
+    const { data, error } = await supabase.auth.updateUser({ data: updateData });
+    if (error) throw new Error(error.message);
 
     if (data.user) {
       const updatedUser = mapSupabaseUserToAppUser(data.user);
@@ -300,24 +240,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: destination,
-      },
+      options: { redirectTo: destination },
     });
 
     if (error) throw error;
-
-    return {
-      accessToken: "",
-      refreshToken: "",
-      user: user ?? getPendingOAuthUser(),
-    };
+    return { accessToken: "", refreshToken: "", user: user ?? getPendingOAuthUser() };
   }, [getSupabaseClient, user]);
 
   const logout = useCallback(async () => {
     const supabase = getSupabaseClient();
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    await supabase.auth.signOut();
     setUser(null);
     setLockMessage(null);
   }, [getSupabaseClient]);
