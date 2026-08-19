@@ -1,8 +1,6 @@
-import json
 from fastapi import APIRouter, Depends, status
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from backend.schemas.scan import (
     ScanRequest,
     ScanResponse,
@@ -22,7 +20,7 @@ class EndpointDiscoveryRequest(BaseModel):
 class VerifyBypassRequest(BaseModel):
     target_url: str
     bypass_code: str
-    waf_type: str = "standard"
+    waf_type: Optional[str] = "standard"
 
 @router.post("/scan", response_model=ScanResponse, status_code=status.HTTP_201_CREATED)
 def start_scan(req: ScanRequest, user: Dict[str, Any] = Depends(get_current_user)):
@@ -58,20 +56,19 @@ def detect_waf(req: WafDetectRequest, user: Dict[str, Any] = Depends(get_current
 @router.post("/stress/verify-bypass")
 def verify_bypass(req: VerifyBypassRequest, user: Dict[str, Any] = Depends(get_current_user)):
     orchestrator = StressOrchestrator()
-    res = orchestrator.verify_bypass(target_url=req.target_url, bypass_code=req.bypass_code, waf_type=req.waf_type)
+    res = orchestrator.verify_bypass(target_url=req.target_url, bypass_code=req.bypass_code, waf_type=req.waf_type or "standard")
     return res
 
-@router.post("/stress/stream")
-def run_stress_test_stream(req: StressRequest, user: Dict[str, Any] = Depends(get_current_user)):
+@router.post("/stress")
+def run_stress_test(req: StressRequest, user: Dict[str, Any] = Depends(get_current_user)):
     orchestrator = StressOrchestrator()
-    def event_stream():
-        for chunk in orchestrator.execute_stress_test_stream(
-            target_url=req.target_url,
-            target_requests=req.target_requests or 1000,
-            duration=req.duration or "5s",
-            bypass_code=req.bypass_code or "",
-            waf_type=req.waf_type or "standard",
-        ):
-            yield f"data: {json.dumps(chunk)}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    result = orchestrator.execute_stress_test(
+        target_url=req.target_url,
+        target_requests=req.target_requests or 1000,
+        duration=req.duration or "5s",
+        bypass_code=req.bypass_code or "",
+        waf_type=req.waf_type or "standard",
+        custom_headers=req.custom_headers,
+        custom_cookies=req.custom_cookies,
+    )
+    return {"ok": True, "result": result}

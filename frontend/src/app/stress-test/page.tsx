@@ -32,13 +32,6 @@ interface StressMetrics {
   p95LatencyMs: string | number;
 }
 
-interface LogEntry {
-  time: string;
-  ip: string;
-  status: number;
-  latency: number;
-}
-
 interface LaserBeam {
   x: number;
   y: number;

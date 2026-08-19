@@ -69,7 +69,7 @@ class StressOrchestrator:
             s = requests.Session()
             s.headers.update(headers)
             s.cookies.update(cookies)
-            adapter = requests.adapters.HTTPAdapter(pool_connections=30, pool_maxsize=30, max_retries=0)
+            adapter = requests.adapters.HTTPAdapter(pool_connections=40, pool_maxsize=40, max_retries=0)
             s.mount("https://", adapter)
             s.mount("http://", adapter)
             return s, False
@@ -98,12 +98,12 @@ class StressOrchestrator:
         msg = ""
         if is_valid:
             if status_no_bypass == 403:
-                msg = "Mã Bypass CHÍNH XÁC! Đã mở khóa bảo vệ WAF (HTTP 403 -> HTTP 200 OK)."
+                msg = f"Mã Bypass CHÍNH XÁC! Đã mở khóa WAF (HTTP 403 -> HTTP {status_with_bypass} OK)."
             else:
                 msg = f"Mục tiêu phản hồi thành công (HTTP {status_with_bypass} OK)."
         else:
             if status_with_bypass == 403:
-                msg = "Server vẫn chặn HTTP 403. Vui lòng kiểm tra lại Secret hoặc cấu hình Vercel."
+                msg = "Server vẫn trả về HTTP 403. Hãy kiểm tra lại chuỗi Secret hoặc cấu hình WAF."
             elif status_with_bypass == 429:
                 msg = "Server đang kích hoạt Rate Limit (HTTP 429 Too Many Requests)."
             else:
