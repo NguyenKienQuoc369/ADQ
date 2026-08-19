@@ -3,13 +3,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Folder,
-  Shield,
-  Zap,
-  Smartphone,
   CreditCard,
   Settings,
   Gauge,
@@ -20,9 +17,12 @@ import {
   X,
   Radio,
   Sparkles,
-  Bot,
   BadgeCheck,
-  ChevronRight,
+  ArrowLeft,
+  Shield,
+  Zap,
+  Smartphone,
+  Bot,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
@@ -31,20 +31,13 @@ import { cn } from "@/lib/utils";
 
 type ShellArea = "dashboard" | "admin";
 
+// Sidebar chính: Chỉ giữ lại quản lý tổng thể
 const workspaceSections = [
   {
-    title: "Không gian làm việc",
+    title: "Không gian chính",
     links: [
-      { href: "/dashboard", label: "Quản lý Dự án", icon: Folder },
-      { href: "/scan", label: "Web & Network Scan", icon: Shield },
-      { href: "/stress-test", label: "L7 Stress Test", icon: Zap },
-      { href: "/apk-audit", label: "Mobile APK Audit", icon: Smartphone },
-    ],
-  },
-  {
-    title: "Cấu hình & Dịch vụ",
-    links: [
-      { href: "/dashboard/billing", label: "Gói SaaS & License", icon: CreditCard },
+      { href: "/dashboard", label: "Quản lý Dự án & Targets", icon: Folder },
+      { href: "/dashboard/billing", label: "Gói dịch vụ & License", icon: CreditCard },
       { href: "/settings", label: "Cài đặt & API Nodes", icon: Settings },
     ],
   },
@@ -61,17 +54,7 @@ const adminSections = [
   },
 ] as const;
 
-const routeMeta: Record<string, { eyebrow: string; title: string }> = {
-  "/dashboard": { eyebrow: "Security Assets", title: "Tổng quan phiên quét & Bề mặt mục tiêu" },
-  "/scan": { eyebrow: "DAST Engine", title: "Trinh sát bề mặt & Quét lỗ hổng Nuclei" },
-  "/stress-test": { eyebrow: "Layer 7 Engine", title: "Kiểm thử chịu tải & Đánh giá WAF Shield" },
-  "/apk-audit": { eyebrow: "Mobile Security", title: "Kiểm toán mã độc & Bóc tách Android APK" },
-  "/dashboard/billing": { eyebrow: "License Mesh", title: "Hạn ngạch Worker & Gói tài khoản" },
-  "/settings": { eyebrow: "Core Settings", title: "Cấu hình bảo mật & API Cluster" },
-  "/admin": { eyebrow: "Root SOC", title: "Bảng điều khiển máy chủ phân tán" },
-  "/admin/users": { eyebrow: "Identity Control", title: "Phân quyền & Quản trị tài khoản" },
-  "/admin/redeem-codes": { eyebrow: "License Generator", title: "Tạo và quản lý License Keys" },
-};
+const PROJECT_ROUTES = ["/scan", "/stress-test", "/apk-audit", "/copilot"];
 
 export function DashboardShell({
   area,
@@ -82,6 +65,9 @@ export function DashboardShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get("projectId");
+
   const { user, loading, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [syncPulse, setSyncPulse] = useState(99);
@@ -104,18 +90,15 @@ export function DashboardShell({
     }
   }, [area, loading, router, user]);
 
+  // Kiểm tra nếu đang ở trong không gian làm việc của một Dự án
+  const isProjectWorkspace = PROJECT_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+
   const navGroups = useMemo(
     () => (area === "admin" ? adminSections : workspaceSections),
     [area]
   );
-
-  const currentMeta = useMemo(() => {
-    const matched = Object.entries(routeMeta)
-      .sort((a, b) => b[0].length - a[0].length)
-      .find(([route]) => pathname === route || pathname.startsWith(`${route}/`));
-
-    return matched?.[1] ?? { eyebrow: "Security Mesh", title: "Không gian làm việc bảo mật" };
-  }, [pathname]);
 
   if (loading || !user || (area === "admin" && user.role !== "ADMIN")) {
     return (
@@ -131,12 +114,142 @@ export function DashboardShell({
     );
   }
 
+  // =========================================================================
+  // GIAO DIỆN DỰ ÁN (PROJECT WORKSPACE): TẮT SIDEBAR, TỐI ƯU TOÀN MÀN HÌNH
+  // =========================================================================
+  if (isProjectWorkspace) {
+    return (
+      <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
+        {/* Background Grid */}
+        <div
+          className="fixed inset-0 pointer-events-none opacity-15"
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, rgba(6, 182, 212, 0.08) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(6, 182, 212, 0.08) 1px, transparent 1px)
+            `,
+            backgroundSize: "36px 36px",
+          }}
+        />
+
+        {/* Floating Minimal Project Header Bar */}
+        <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-slate-950/85 backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-4 px-4 py-2 sm:px-6">
+            {/* Nút Quay Lại Dự Án & Module Indicator */}
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push("/dashboard")}
+                className="h-8 px-2.5 rounded-lg border border-white/[0.08] bg-slate-900/60 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:bg-cyan-950/30 hover:text-cyan-300 transition-all active:scale-98 flex items-center gap-1.5"
+              >
+                <ArrowLeft className="h-3.5 w-3.5 text-cyan-400" />
+                <span>Quay lại Dự án</span>
+              </Button>
+
+              <div className="hidden md:flex items-center gap-1.5 border-l border-white/[0.08] pl-3">
+                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="text-xs font-bold text-white tracking-wide">
+                  {pathname === "/scan"
+                    ? "Web & Network Scanner"
+                    : pathname === "/stress-test"
+                    ? "L7 Stress Test War Room"
+                    : pathname === "/apk-audit"
+                    ? "Mobile APK Audit"
+                    : "Security Workspace"}
+                </span>
+                {projectId && (
+                  <span className="text-[10px] font-mono text-cyan-400/80 bg-cyan-950/50 border border-cyan-500/30 px-1.5 py-0.5 rounded">
+                    ID: {projectId.slice(0, 8)}...
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Thanh chuyển đổi nhanh giữa các module (Giữ nguyên Session ProjectId) */}
+            {projectId && (
+              <div className="hidden lg:flex items-center gap-1 p-1 rounded-xl bg-slate-900/80 border border-white/[0.08] backdrop-blur-md">
+                <Link
+                  href={`/scan?projectId=${projectId}`}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                    pathname === "/scan"
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+                      : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  <Shield className="h-3 w-3" />
+                  Quét DAST
+                </Link>
+                <Link
+                  href={`/stress-test?projectId=${projectId}`}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                    pathname === "/stress-test"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_12px_rgba(244,63,94,0.2)]"
+                      : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  <Zap className="h-3 w-3" />
+                  Stress Test
+                </Link>
+                <Link
+                  href={`/apk-audit?projectId=${projectId}`}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                    pathname === "/apk-audit"
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+                      : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  <Smartphone className="h-3 w-3" />
+                  APK Audit
+                </Link>
+                <Link
+                  href={`/copilot?projectId=${projectId}`}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                    pathname === "/copilot"
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.2)]"
+                      : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  <Bot className="h-3 w-3" />
+                  AI Copilot
+                </Link>
+              </div>
+            )}
+
+            {/* Trạng thái Kết nối & Phân quyền */}
+            <div className="flex items-center gap-2.5">
+              <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1 backdrop-blur-md">
+                <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
+                <span className="text-[11px] font-mono font-medium text-emerald-300">
+                  Node Sync: {syncPulse}%
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-slate-900/60 px-2.5 py-1 backdrop-blur-md">
+                <BadgeCheck className="h-3.5 w-3.5 text-cyan-400" />
+                <span className="text-[11px] font-mono font-medium text-slate-300">
+                  {user.role}
+                </span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Nội dung Project Full-Screen */}
+        <main className="w-full">{children}</main>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // GIAO DIỆN QUẢN LÝ CHÍNH (/dashboard, /settings, /admin): CÓ SIDEBAR TỐI GIẢN
+  // =========================================================================
   const sidebarContent = (
     <div className="relative flex h-full flex-col justify-between border-r border-white/[0.07] bg-slate-950/80 p-4 backdrop-blur-2xl">
-      {/* Accent corner neon lines */}
-      <div className="absolute top-0 right-0 h-4 w-4 border-t border-r border-cyan-500/40 pointer-events-none" />
-      <div className="absolute bottom-0 right-0 h-4 w-4 border-b border-r border-cyan-500/40 pointer-events-none" />
-
       <div className="space-y-5">
         {/* Brand Banner */}
         <Link
@@ -240,7 +353,6 @@ export function DashboardShell({
 
   return (
     <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
-      {/* Background Matrix Grid */}
       <div
         className="fixed inset-0 pointer-events-none opacity-15"
         style={{
@@ -252,15 +364,9 @@ export function DashboardShell({
         }}
       />
 
-      {/* Ambient Neon Glows */}
-      <div className="fixed top-0 left-1/3 -translate-x-1/2 w-[600px] h-[300px] bg-cyan-500/10 blur-[130px] pointer-events-none" />
-      <div className="fixed bottom-0 right-1/4 w-[500px] h-[300px] bg-emerald-500/5 blur-[140px] pointer-events-none" />
-
       <div className="relative flex min-h-screen z-10">
-        {/* Desktop Sidebar */}
         <aside className="hidden w-64 shrink-0 xl:block">{sidebarContent}</aside>
 
-        {/* Mobile Sidebar */}
         <AnimatePresence>
           {mobileOpen && (
             <>
@@ -284,11 +390,9 @@ export function DashboardShell({
           )}
         </AnimatePresence>
 
-        {/* Main Content Area */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Header Bar */}
           <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-slate-950/70 backdrop-blur-xl">
-            <div className="flex items-center justify-between gap-4 px-4 py-2.5 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
               <div className="flex items-center gap-3">
                 <Button
                   variant="ghost"
@@ -299,19 +403,12 @@ export function DashboardShell({
                   {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
                 </Button>
                 <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                    <p className="text-[10px] font-mono uppercase tracking-wider text-cyan-400">
-                      {currentMeta.eyebrow}
-                    </p>
-                  </div>
                   <h1 className="text-sm font-bold text-white tracking-tight">
-                    {currentMeta.title}
+                    Bảng điều khiển Quản lý Dự án & Hạ tầng
                   </h1>
                 </div>
               </div>
 
-              {/* Status Indicators */}
               <div className="flex items-center gap-2">
                 <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1 backdrop-blur-md">
                   <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
@@ -330,8 +427,7 @@ export function DashboardShell({
             </div>
           </header>
 
-          {/* Dynamic Page Content */}
-          <main className="flex-1">{children}</main>
+          <main className="flex-1 p-4 sm:p-6">{children}</main>
         </div>
       </div>
     </div>
