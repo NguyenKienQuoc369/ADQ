@@ -196,6 +196,8 @@ function safeString(val: any): string {
 function ScanLandingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
+  const userTier = (user?.packageTier || "FREE").toUpperCase();
   const projectId = searchParams.get("projectId");
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
