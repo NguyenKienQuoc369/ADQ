@@ -29,9 +29,13 @@ import {
   Maximize2,
   Minimize2,
   Lock,
+  Save,
+  BookmarkCheck,
+  PlusCircle,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { AiAnalysisCard } from "@/components/scan/ai-analysis-card";
+import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
 import { getProjectById, saveProjectDetail, startScanJob, getScanJobStatus, copilotChat, ActionAdvice } from "@/lib/api";
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
@@ -60,96 +64,46 @@ interface ChatMessage {
   text: string;
 }
 
-function FormattedAiMessage({ text }: { text: string }) {
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
-
-  const copyToClipboard = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 2000);
-  };
-
-  const parts = text.split(/(```[\s\S]*?```)/g);
-
+function parseMarkdown(content: string) {
+  const blocks = content.split("\n\n");
   return (
-    <div className="space-y-2 text-sm leading-relaxed font-sans text-slate-100 antialiased">
-      {parts.map((part, index) => {
-        if (part.startsWith("```")) {
-          const firstLineEnd = part.indexOf("\n");
-          const lang = part.slice(3, firstLineEnd > 0 ? firstLineEnd : 3).trim();
-          const code = firstLineEnd > 0 ? part.slice(firstLineEnd + 1, -3).trim() : part.slice(3, -3).trim();
+    <div className="space-y-3">
+      {blocks.map((block, bIdx) => {
+        if (block.startsWith("```")) {
+          const lines = block.split("\n");
+          const code = lines.slice(1, -1).join("\n");
           return (
-            <div key={index} className="my-3 overflow-hidden rounded-xl border border-slate-700 bg-slate-950 text-slate-100 shadow-md">
-              <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/90 px-3 py-1.5 text-xs text-slate-400">
-                <span className="font-mono font-medium text-cyan-400">{lang || "snippet"}</span>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(code)}
-                  className="flex items-center gap-1 rounded bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300 hover:bg-slate-700 hover:text-white transition"
-                >
-                  {copiedCode === code ? (
-                    <>
-                      <Check className="h-3 w-3 text-emerald-400" />
-                      <span className="text-emerald-400">Đã chép</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" />
-                      <span>Sao chép</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              <pre className="overflow-x-auto p-3 font-mono text-xs text-emerald-300/90 leading-5">
-                <code>{code}</code>
-              </pre>
+            <div key={bIdx} className="relative rounded-lg bg-slate-950 border border-slate-800 p-3 font-mono text-xs text-slate-300">
+              <pre className="overflow-x-auto">{code}</pre>
             </div>
           );
         }
-
-        const lines = part.split("\n");
+        const lines = block.split("\n");
         return (
-          <div key={index} className="space-y-1.5">
+          <div key={bIdx} className="space-y-1">
             {lines.map((line, lIdx) => {
-              const trimmed = line.trim();
-              if (!trimmed) return <div key={lIdx} className="h-1" />;
-
-              if (trimmed.startsWith("### ")) {
+              if (line.startsWith("### ")) {
                 return (
-                  <h4 key={lIdx} className="mt-3 mb-1 font-bold text-sm text-cyan-300 flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {renderInline(trimmed.replace(/^###\s+/, ""))}
+                  <h4 key={lIdx} className="text-sm font-bold text-white mt-2">
+                    {renderInline(line.replace("### ", ""))}
                   </h4>
                 );
               }
-              if (trimmed.startsWith("#### ")) {
+              if (line.startsWith("## ")) {
                 return (
-                  <h5 key={lIdx} className="mt-2 mb-1 font-semibold text-xs text-slate-200 uppercase tracking-wider">
-                    {renderInline(trimmed.replace(/^####\s+/, ""))}
-                  </h5>
+                  <h3 key={lIdx} className="text-base font-bold text-white mt-3">
+                    {renderInline(line.replace("## ", ""))}
+                  </h3>
                 );
               }
-              if (trimmed.startsWith("---")) {
-                return <div key={lIdx} className="my-2 border-t border-slate-700/60" />;
-              }
-              if (/^(\*|-)\s+/.test(trimmed)) {
+              if (line.startsWith("- ") || line.startsWith("* ")) {
                 return (
-                  <div key={lIdx} className="flex items-start gap-2 pl-1.5">
-                    <span className="text-cyan-400 mt-0.5">•</span>
-                    <div className="flex-1 text-slate-200">{renderInline(trimmed.replace(/^(\*|-)\s+/, ""))}</div>
+                  <div key={lIdx} className="flex items-start gap-2 ml-2">
+                    <span className="text-cyan-400 mt-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 shrink-0" />
+                    <p className="text-slate-200">{renderInline(line.slice(2))}</p>
                   </div>
                 );
               }
-              if (/^\d+\.\s+/.test(trimmed)) {
-                const num = trimmed.match(/^\d+/)?.[0];
-                return (
-                  <div key={lIdx} className="flex items-start gap-2 pl-1.5">
-                    <span className="font-semibold text-cyan-400">{num}.</span>
-                    <div className="flex-1 text-slate-200">{renderInline(trimmed.replace(/^\d+\.\s+/, ""))}</div>
-                  </div>
-                );
-              }
-
               return (
                 <p key={lIdx} className="text-slate-200">
                   {renderInline(line)}
@@ -196,12 +150,12 @@ function safeString(val: any): string {
 function ScanLandingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-    const { user } = useAuth();
+  const { user } = useAuth();
   const userTier = (user?.packageTier || "FREE").toUpperCase();
   const isProMaxUser = userTier === "PRO_MAX" || userTier === "ENTERPRISE";
   const isProUser = userTier === "PRO" || isProMaxUser;
   const isFreeLimitExceeded = userTier === "FREE" && (user?.scansToday ?? 0) >= 2;
-const projectId = searchParams.get("projectId");
+  const projectId = searchParams.get("projectId");
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   const [projectName, setProjectName] = useState("");
@@ -210,6 +164,11 @@ const projectId = searchParams.get("projectId");
   const [jobId, setJobId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isChatExpanded, setIsChatExpanded] = useState(false);
+
+  // States lưu phiên & xác nhận ghi đè
+  const [isSavingSession, setIsSavingSession] = useState(false);
+  const [isSavedSuccess, setIsSavedSuccess] = useState(false);
+  const [showRescanModal, setShowRescanModal] = useState(false);
 
   const [nodes, setNodes] = useState<Record<string, DAGNodeState>>({
     node_recon: { step: 1, id: "node_recon", label: "Recon & DNS", sublabel: "Subfinder / DNSX", icon: Globe, status: "pending" },
@@ -254,16 +213,17 @@ const projectId = searchParams.get("projectId");
         if (boundDomain) setTarget(boundDomain);
 
         const detail = p.projectDetail || {};
-        if (detail.summary) {
-          const s = detail.summary;
-          setSubdomains(s.subdomains ?? 0);
-          setLiveHosts(s.liveHosts ?? 0);
-          setCrawledUrls(s.crawledUrls ?? 0);
-          setOpenPorts(s.openPorts ?? 0);
-          setVulnCount(s.totalVulns ?? (s.critical ?? 0) + (s.high ?? 0) + (s.medium ?? 0));
+        const summary = (detail.summary as Record<string, any>) || {};
+
+        if (summary) {
+          setSubdomains(summary.subdomains ?? 0);
+          setLiveHosts(summary.liveHosts ?? 0);
+          setCrawledUrls(summary.crawledUrls ?? 0);
+          setOpenPorts(summary.openPorts ?? 0);
+          setVulnCount(summary.totalVulns ?? (summary.critical ?? 0) + (summary.high ?? 0) + (summary.medium ?? 0));
         }
 
-        const findings = detail.findings || {};
+        const findings = summary.findings || {};
         if (Array.isArray(findings.vulnerabilities) && findings.vulnerabilities.length > 0) {
           setVulnerabilities(findings.vulnerabilities);
         }
@@ -294,67 +254,67 @@ const projectId = searchParams.get("projectId");
     };
   }, [projectId]);
 
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [copilotMessages, copilotLoading]);
-
+  // Polling scan status
   useEffect(() => {
     if (!jobId || !isScanning) return;
 
-    let tick = 0;
     const interval = setInterval(async () => {
-      tick++;
       try {
         const res = await getScanJobStatus(jobId);
-        const job = res?.job || res || {};
-        const currentStatus = String(job.status || "").toLowerCase();
+        if (!res.ok) return;
 
-        if (currentStatus === "running" || currentStatus === "queued") {
-          setNodes((prev) => ({
-            ...prev,
-            node_recon: { ...prev.node_recon, status: "completed" },
-            node_port: { ...prev.node_port, status: tick >= 2 ? "completed" : "running" },
-            node_crawl: { ...prev.node_crawl, status: tick >= 4 ? "completed" : tick >= 2 ? "running" : "pending" },
-            node_nuclei: { ...prev.node_nuclei, status: tick >= 6 ? "completed" : tick >= 4 ? "running" : "pending" },
-            node_secrets: { ...prev.node_secrets, status: tick >= 8 ? "completed" : tick >= 6 ? "running" : "pending" },
-            node_logic: { ...prev.node_logic, status: tick >= 9 ? "completed" : tick >= 8 ? "running" : "pending" },
-            node_ai: { ...prev.node_ai, status: "running" },
-          }));
-        }
+        const { progress, live_data, status, recommendations } = res;
 
-        if (currentStatus === "done" || currentStatus === "completed") {
+        setNodes((prev) => {
+          const next = { ...prev };
+          if (progress?.recon) next.node_recon.status = progress.recon === "done" ? "completed" : "running";
+          if (progress?.port_scan) next.node_port.status = progress.port_scan === "done" ? "completed" : "running";
+          if (progress?.crawl) next.node_crawl.status = progress.crawl === "done" ? "completed" : "running";
+          if (progress?.nuclei) next.node_nuclei.status = progress.nuclei === "done" ? "completed" : "running";
+          if (progress?.secrets) next.node_secrets.status = progress.secrets === "done" ? "completed" : "running";
+          if (progress?.logic) next.node_logic.status = progress.logic === "done" ? "completed" : "running";
+          if (progress?.ai_remediation) next.node_ai.status = progress.ai_remediation === "done" ? "completed" : "running";
+          return next;
+        });
+
+        const allSubs = live_data?.subdomains || [];
+        const httpLive = live_data?.live_hosts || [];
+        const ports = live_data?.open_ports || [];
+        const urls = live_data?.crawled_urls || [];
+        const nuclei = (live_data?.nuclei_findings || []).map((f: any, idx: number) => ({
+          id: `vuln-${idx}`,
+          severity: (f.severity || "MEDIUM").toUpperCase() as SeverityLevel,
+          title: f.template_id || f.title || "Phát hiện lỗ hổng",
+          endpoint: f.matched || f.url || target,
+          cve: f.cve_id,
+          description: f.description,
+        }));
+
+        setSubdomains(allSubs.length);
+        setLiveHosts(httpLive.length);
+        setOpenPorts(ports.length);
+        setCrawledUrls(urls.length);
+        setVulnCount(nuclei.length);
+        setVulnerabilities(nuclei);
+
+        if (status === "completed" || status === "COMPLETED") {
           setIsScanning(false);
-          clearInterval(interval);
-
           setNodes((prev) => {
-            const updated = { ...prev };
-            Object.keys(updated).forEach((k) => {
-              updated[k] = { ...updated[k], status: "completed" };
+            const finished = { ...prev };
+            Object.keys(finished).forEach((k) => {
+              finished[k] = { ...finished[k], status: "completed" };
             });
-            return updated;
+            return finished;
           });
 
-          const httpLive = Array.isArray(job.subdomains?.http_live) ? job.subdomains.http_live : [];
-          const allSubs = Array.isArray(job.subdomains?.all) ? job.subdomains.all : [];
-          const ports = Array.isArray(job.highlights?.ports) ? job.highlights.ports : [];
-          const urls = Array.isArray(job.urls?.combined) ? job.urls.combined : [];
-          const nuclei = Array.isArray(job.vulnerabilities?.nuclei) ? job.vulnerabilities.nuclei : [];
-
-          setSubdomains(allSubs.length || (target ? 1 : 0));
-          setLiveHosts(httpLive.length || (target ? 1 : 0));
-          setCrawledUrls(urls.length);
-          setOpenPorts(ports.length || 2);
-          setVulnCount(nuclei.length);
-          setVulnerabilities(nuclei);
-
-          const rawAdv = safeString(job.action_advice || job.actionAdvice || "");
-          setRawActionAdvice(rawAdv);
-
           let parsedAdvice: ActionAdvice[] = [];
-          if (rawAdv.trim()) {
-            const lines = rawAdv.split("\n").filter((l) => l.trim() && !l.startsWith("🧭"));
-            parsedAdvice = lines.map((l, idx) => ({
-              vulnerabilityId: `vuln-${idx}`,
+          const rawAdv = safeString(recommendations);
+          if (rawAdv) {
+            setRawActionAdvice(rawAdv);
+            const lines = rawAdv.split("\n").filter((l: string) => l.trim().startsWith("-"));
+            parsedAdvice = lines.slice(0, 5).map((l: string, idx: number) => ({
+              id: `advice-${idx + 1}`,
+              severity: idx === 0 ? "CRITICAL" : idx === 1 ? "HIGH" : "MEDIUM",
               title: `Khuyến nghị #${idx + 1}`,
               rootCause: l.replace(/^- (Nguyên nhân:\s*)?/, ""),
               remediation: [l.replace(/^- /, "")],
@@ -426,6 +386,60 @@ const projectId = searchParams.get("projectId");
     }
   };
 
+  // Nút Lưu phiên thủ công
+  const handleSaveSessionManually = async () => {
+    if (!projectId) {
+      alert("Vui lòng gắn một Project ID hoặc tạo dự án để lưu phiên này.");
+      return;
+    }
+    setIsSavingSession(true);
+    try {
+      await persistScanSummary("COMPLETED");
+      setIsSavedSuccess(true);
+      setTimeout(() => setIsSavedSuccess(false), 3000);
+    } catch (err) {
+      console.error("Save session failed", err);
+    } finally {
+      setIsSavingSession(false);
+    }
+  };
+
+  // Kiểm tra trước khi bắt đầu quét
+  const handleStartScanClick = () => {
+    if (isScanning || !target.trim()) return;
+
+    // Kiểm tra xem phiên này đã có kết quả cũ chưa
+    const hasExistingData =
+      vulnerabilities.length > 0 ||
+      actionAdvice.length > 0 ||
+      subdomains > 0 ||
+      nodes.node_recon.status === "completed";
+
+    const isSuppressed =
+      typeof window !== "undefined" &&
+      localStorage.getItem("adq_suppress_rescan_warning") === "true";
+
+    if (hasExistingData && !isSuppressed) {
+      setShowRescanModal(true);
+      return;
+    }
+
+    startScan();
+  };
+
+  const handleConfirmRescan = (dontShowAgain: boolean) => {
+    if (dontShowAgain && typeof window !== "undefined") {
+      localStorage.setItem("adq_suppress_rescan_warning", "true");
+    }
+    setShowRescanModal(false);
+    startScan();
+  };
+
+  const handleCreateNewSession = () => {
+    setShowRescanModal(false);
+    router.push("/dashboard/projects");
+  };
+
   const startScan = async () => {
     if (isScanning || !target.trim()) return;
 
@@ -487,477 +501,222 @@ const projectId = searchParams.get("projectId");
   return (
     <DashboardShell area="dashboard">
       <div className="space-y-6 text-slate-100 font-sans">
-        <Card className="border border-slate-800/80 bg-slate-900/90 shadow-xl backdrop-blur-md">
-          <CardHeader className="pb-4">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse" />
-                  <CardTitle className="text-2xl font-bold tracking-tight text-white">
-                    Recon & Vulnerability Scan
-                  </CardTitle>
-                </div>
-                <CardDescription className="mt-1 text-sm text-slate-400">
-                  {projectName ? `Phiên làm việc: ${projectName}` : "Hệ thống quét an ninh tự động hóa đa tầng và AI Copilot."}
-                </CardDescription>
-              </div>
-              {projectId ? (
-                <Badge className="border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 font-mono" variant="muted">
-                  Session ID: {projectId.slice(0, 14)}...
+        {/* Thanh tiêu đề và các nút Lưu / Tạo mới */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-white tracking-tight">Trung Tâm Rà Quét Lỗ Hổng</h1>
+              {projectId && (
+                <Badge className="text-[10px] font-mono border-cyan-500/30 text-cyan-400 bg-cyan-950/40" variant="outline">
+                  DỰ ÁN: {projectName || projectId}
                 </Badge>
-              ) : null}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-              <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                  <span>Target Mục Tiêu (Cố định theo phiên)</span>
-                  {projectId ? (
-                    <span className="text-[11px] text-cyan-400 flex items-center gap-1">
-                      <Lock className="h-3 w-3" /> Đã khóa mục tiêu
-                    </span>
-                  ) : null}
-                </label>
-                <div className="relative">
-                  <Globe className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    value={target}
-                    onChange={(e) => setTarget(e.target.value)}
-                    readOnly={Boolean(projectId && target)}
-                    placeholder="https://example.com hoặc domain.vn"
-                    disabled={isScanning}
-                    className="h-12 pl-11 pr-4 border-slate-700 bg-slate-950/80 text-white placeholder:text-slate-500 focus:border-cyan-500 text-sm read-only:text-cyan-300 read-only:bg-slate-950 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Gói SaaS Engine</label>
-                <div className="flex gap-2">
-                  {(["STARTER", "DEVSEC PRO", "FINTECH MAX"] as string[]).map((t) => {
-                    const isAllowed = 
-                      t === "STARTER" ||
-                      (t === "DEVSEC PRO" && (isProUser || isProMaxUser)) ||
-                      (t === "FINTECH MAX" && isProMaxUser);
-
-                    return (
-                      <Button
-                        key={t}
-                        type="button"
-                        variant={tier === t ? "default" : "outline"}
-                        disabled={isScanning || !isAllowed}
-                        onClick={() => isAllowed && setTier(t)}
-                        className={
-                          !isAllowed
-                            ? "h-12 border-slate-900 bg-slate-950/40 text-slate-600 cursor-not-allowed opacity-50 relative"
-                            : tier === t
-                            ? "h-12 border border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium hover:bg-cyan-500/30"
-                            : "h-12 border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-800 hover:text-white"
-                        }
-                      >
-                        {!isAllowed && <Lock className="h-3 w-3 mr-1 text-slate-600" />}
-                        {t}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
-              {scanError ? (
-                <div className="flex items-center gap-2 text-sm text-rose-400">
-                  <AlertCircle className="h-4 w-4" /> {scanError}
-                </div>
-              ) : (
-                <div className="text-xs text-slate-500 flex items-center gap-1.5">
-                  <ShieldCheck className="h-4 w-4 text-emerald-400" /> Sẵn sàng quét mục tiêu đã liên kết
-                </div>
               )}
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Rà quét tự động đa tầng (Recon, Port, Crawl, Nuclei, Hardcoded Secrets & AI Copilot)
+            </p>
+          </div>
 
-              <Button
-                type="button"
-                onClick={startScan}
-                disabled={isScanning || !target.trim()}
-                className="h-11 px-6 rounded-xl font-semibold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
+          <div className="flex items-center gap-2">
+            {/* Nút Lưu phiên */}
+            <Button className="h-8 text-xs border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition-all" disabled="{isSavingSession" isScanning} onClick="{handleSaveSessionManually}" size="sm" variant="outline" ||>
+              {isSavingSession ? (
+                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
+              ) : isSavedSuccess ? (
+                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400"/>
+              ) : (
+                <Save className="h-3.5 w-3.5 mr-1.5"/>
+              )}
+              {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Phiên Quét"}
+            </Button>
+
+            {/* Nút Tạo phiên mới */}
+            <Button className="h-8 text-xs border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800" onClick="{handleCreateNewSession}" size="sm" variant="outline">
+              <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400"/> Phiên Mới
+            </Button>
+          </div>
+        </div>
+
+        {/* Khung Nhập Target */}
+        <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
+                <Input onChange="{(e)" placeholder="Nhập tên miền mục tiêu (vd: target.com hoặc api.domain.vn)" value="{target}"> setTarget(e.target.value)}
+                  disabled={isScanning}
+                  className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-cyan-500 text-sm h-10"
+                />
+              </div>
+              <Button !target.trim() className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50" disabled="{isScanning" isFreeLimitExceeded} onClick="{handleStartScanClick}" ||>
                 {isScanning ? (
-                  <span className="flex items-center gap-2">
-                    <LoaderCircle className="h-4 w-4 animate-spin text-white" />
-                    Đang quét pipeline...
-                  </span>
+                  <>
+                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin"/> Đang Rà Quét...
+                  </>
                 ) : (
-                  <span className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 fill-white" />
-                    Bắt đầu quét
-                  </span>
+                  <>
+                    <Zap className="h-4 w-4 mr-2"/> Bắt Đầu Quét
+                  </>
                 )}
               </Button>
             </div>
+            {scanError && <p className="text-xs text-rose-400 mt-2 flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5"/> {scanError}</p>}
           </CardContent>
         </Card>
 
-        <Card className="border border-slate-800/80 bg-slate-900/90 shadow-md">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
-              <Layers className="h-5 w-5 text-cyan-400" />
-              Live DAG Execution Visualizer (Tiến trình quét liên hoàn)
-            </CardTitle>
-            <CardDescription className="text-xs text-slate-400">
-              Theo dõi luồng thực thi dữ liệu giữa các công cụ bảo mật từ Recon đến AI Analysis.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap items-center justify-between gap-y-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              {nodeArray.map((node, index) => {
-                const IconComponent = node.icon;
-                const isLast = index === nodeArray.length - 1;
+        {/* 4 Thẻ Thống kê nhanh */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">Tên Miền Phụ</p>
+            <p className="text-xl font-bold text-cyan-400 font-mono mt-1">{subdomains}</p>
+          </Card>
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">Live Hosts</p>
+            <p className="text-xl font-bold text-emerald-400 font-mono mt-1">{liveHosts}</p>
+          </Card>
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">Endpoints Crawl</p>
+            <p className="text-xl font-bold text-amber-400 font-mono mt-1">{crawledUrls}</p>
+          </Card>
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">Lỗ Hổng Phát Hiện</p>
+            <p className="text-xl font-bold text-rose-400 font-mono mt-1">{vulnCount}</p>
+          </Card>
+        </div>
 
-                return (
-                  <React.Fragment key={node.id}>
-                    <div
-                      className={`flex flex-col gap-1.5 rounded-xl border p-3 min-w-[135px] flex-1 transition-all ${
-                        node.status === "running"
-                          ? "border-cyan-400 bg-cyan-950/40 shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-400/50"
-                          : node.status === "completed"
-                          ? "border-emerald-500/60 bg-emerald-950/20 text-slate-200"
-                          : node.status === "failed"
-                          ? "border-rose-500/60 bg-rose-950/20"
-                          : "border-slate-800 bg-slate-900/60 opacity-65"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-slate-300">
-                          {node.step}
-                        </span>
-                        {node.status === "running" ? (
-                          <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400" />
-                        ) : node.status === "completed" ? (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                        ) : (
-                          <IconComponent className="h-4 w-4 text-slate-500" />
-                        )}
-                      </div>
-                      <div className="mt-1 text-xs font-bold text-white truncate">{node.label}</div>
-                      <div className="text-[10px] text-slate-400 truncate">{node.sublabel}</div>
-                    </div>
-
-                    {!isLast ? (
-                      <div className="hidden lg:flex items-center justify-center px-1">
-                        <ArrowRight
-                          className={`h-4 w-4 ${
-                            node.status === "completed"
-                              ? "text-emerald-400"
-                              : node.status === "running"
-                              ? "text-cyan-400 animate-pulse"
-                              : "text-slate-700"
-                          }`}
-                        />
-                      </div>
-                    ) : null}
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-6 lg:grid-cols-12">
-          <div className="space-y-6 lg:col-span-7">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-center">
-                <div className="text-xs text-slate-400">Subdomains</div>
-                <div className="mt-1 text-2xl font-bold text-cyan-400">{subdomains}</div>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-center">
-                <div className="text-xs text-slate-400">Live Hosts</div>
-                <div className="mt-1 text-2xl font-bold text-emerald-400">{liveHosts}</div>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-center">
-                <div className="text-xs text-slate-400">Cổng Dịch Vụ</div>
-                <div className="mt-1 text-2xl font-bold text-amber-400">{openPorts}</div>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-center">
-                <div className="text-xs text-slate-400">Lỗ Hổng Nuclei</div>
-                <div className="mt-1 text-2xl font-bold text-rose-400">{vulnCount}</div>
-              </div>
-            </div>
-
-            <Card className="border border-slate-800 bg-slate-900/90 shadow-md">
-              <CardHeader className="pb-3">
+        {/* Tiến trình 7 Bước DAG */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          {nodeArray.map((n) => {
+            const Icon = n.icon;
+            const isDone = n.status === "completed";
+            const isRun = n.status === "running";
+            return (
+              <div
+                key={n.id}
+                className={`p-2.5 rounded-xl border flex flex-col justify-between transition-all ${
+                  isDone
+                    ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-400"
+                    : isRun
+                    ? "bg-cyan-950/30 border-cyan-500/50 text-cyan-300 ring-1 ring-cyan-500/30"
+                    : "bg-slate-950/40 border-slate-800 text-slate-500"
+                }`}
+              >
                 <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-emerald-400" />
-                      AI Action Advice (Nguyên nhân & Hành động gợi ý)
-                    </CardTitle>
-                    <CardDescription className="text-xs text-slate-400">
-                      Được tự động đúc kết từ kết quả trinh sát và phát hiện lỗ hổng.
-                    </CardDescription>
-                  </div>
-                  {actionAdvice.length > 0 ? (
-                    <Badge className="border-emerald-500/40 text-emerald-300 text-xs" variant="muted">
-                      {actionAdvice.length} khuyến nghị
-                    </Badge>
-                  ) : null}
+                  <Icon className="h-4 w-4"/>
+                  {isDone ? (
+                    <Check className="h-3 w-3 text-emerald-400"/>
+                  ) : isRun ? (
+                    <LoaderCircle className="h-3 w-3 text-cyan-400 animate-spin"/>
+                  ) : (
+                    <span className="text-[10px] font-mono">{n.step}</span>
+                  )}
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {actionAdvice.length > 0 ? (
-                  <div className="space-y-2.5">
-                    {actionAdvice.map((adv, idx) => (
-                      <div
-                        key={idx}
-                        className="group flex items-start gap-3 rounded-xl border border-slate-800/90 bg-slate-950/60 p-3 hover:border-slate-700 transition"
-                      >
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-xs font-bold text-emerald-400">
-                          {idx + 1}
-                        </span>
-                        <div className="flex-1 text-xs text-slate-200 leading-5">
-                          {adv.rootCause}
-                        </div>
-                        <Button
-                          onClick={() =>
-                            handleCopilotSend(
-                              `Hãy hướng dẫn chi tiết cách thực hiện hành động này: "${adv.rootCause}"`
-                            )
-                          }
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                          className="shrink-0 h-7 text-[11px] text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10"
-                        >
-                          Hỏi AI <ArrowRight className="ml-1 h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <AiAnalysisCard 
-                    userTier={userTier} 
-                    aiSummary={rawActionAdvice} 
-                    target={target} 
-                  />
-                )}
-              </CardContent>
-            </Card>
+                <div className="mt-2">
+                  <p className="text-xs font-bold truncate text-slate-200">{n.label}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{n.sublabel}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
-            <Card className="border border-slate-800 bg-slate-900/90 shadow-md">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-rose-400" />
-                  Lỗ hổng bảo mật & Phát hiện CVE
+        {/* Khuyến nghị AI Copilot & Danh sách Lỗ hổng */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
+            <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
+              <CardHeader className="pb-3 border-b border-slate-800">
+                <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-rose-400"/> Danh Sách Lỗ Hổng Chi Tiết
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                {vulnerabilities.length > 0 ? (
-                  <div className="space-y-2">
-                    {vulnerabilities.map((v, i) => (
-                      <div key={i} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 p-3">
-                        <div>
-                          <div className="text-xs font-bold text-slate-100">{v.title}</div>
-                          <div className="text-[11px] font-mono text-slate-400">{v.endpoint}</div>
+              <CardContent className="p-0">
+                <div className="divide-y divide-slate-800 max-h-96 overflow-y-auto">
+                  {vulnerabilities.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-500 font-mono">
+                      Chưa có lỗ hổng nào được phát hiện trong phiên này.
+                    </div>
+                  ) : (
+                    vulnerabilities.map((v) => (
+                      <div key={v.id} className="p-3.5 hover:bg-slate-900/40 flex items-start justify-between gap-3 text-xs">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge "CRITICAL" "HIGH" "danger" "default" : ? className="text-[9px] font-mono px-1.5 py-0" v.severity="==" variant="{" || }>
+                              {v.severity}
+                            </Badge>
+                            <span className="font-bold text-slate-200">{v.title}</span>
+                          </div>
+                          <p className="font-mono text-[11px] text-slate-400">{v.endpoint}</p>
                         </div>
-                        <Badge className="text-[10px]" variant="danger">{v.severity || "MEDIUM"}</Badge>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-xs text-slate-500 text-center py-4">
-                    Không tìm thấy lỗ hổng CRITICAL/HIGH tức thì trên các endpoint công khai.
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
               </CardContent>
             </Card>
+
+            {/* Thẻ AI Action Advice */}
+            <AiAnalysisCard advice="{actionAdvice}" onGenerateFix="{(adv)" rawAdvice="{rawActionAdvice}"> handleCopilotSend(`Hãy tạo mã vá hoặc file cấu hình chi tiết để xử lý lỗ hổng này: ${adv.title} - ${adv.rootCause}`)}
+            />
           </div>
 
-          <div className="lg:col-span-5">
-            <Card className="flex flex-col h-full border border-slate-800/80 bg-slate-900/90 shadow-xl">
-              <CardHeader className="pb-3 border-b border-slate-800/80">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                      <Bot className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-sm font-bold text-white">ADQ Security Copilot</CardTitle>
-                      <div className="text-[10px] text-emerald-400 flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        AI Agent Active (Gemini Engine)
-                      </div>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => setIsChatExpanded(true)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                    className="h-7 text-[11px] border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white"
-                  >
-                    <Maximize2 className="mr-1 h-3 w-3" /> Mở rộng
-                  </Button>
-                </div>
+          {/* Cửa sổ Trợ lý AI Copilot */}
+          <div className="lg:col-span-1">
+            <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl flex flex-col h-[520px]">
+              <CardHeader className="pb-3 border-b border-slate-800 flex flex-row items-center justify-between">
+                <CardTitle className="text-xs font-bold text-white flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-cyan-400"/> Copilot Tương Tác
+                </CardTitle>
               </CardHeader>
-
-              <CardContent className="flex-1 flex flex-col justify-between p-4 space-y-3">
-                <div className="h-[430px] overflow-y-auto space-y-3.5 pr-1.5">
-                  {copilotMessages.map((m, idx) => (
-                    <div key={idx} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
-                      <div
-                        className={`max-w-[90%] rounded-2xl p-3.5 text-xs ${
-                          m.sender === "user"
-                            ? "bg-cyan-600 text-white rounded-br-none shadow-md"
-                            : "bg-slate-950/90 border border-slate-800/90 rounded-bl-none shadow-md"
-                        }`}
-                      >
-                        {m.sender === "copilot" ? (
-                          <FormattedAiMessage text={m.text} />
-                        ) : (
-                          <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
-                  {copilotLoading ? (
-                    <div className="flex justify-start">
-                      <div className="rounded-2xl rounded-bl-none border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-400 flex items-center gap-2">
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-400" />
-                        Copilot đang suy nghĩ...
-                      </div>
-                    </div>
-                  ) : null}
-                  <div ref={chatBottomRef} />
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/60">
-                  <button
-                    type="button"
-                    onClick={() => handleCopilotSend("Hãy hướng dẫn tôi tạo file vercel.json có đầy đủ security headers bảo mật nhất.")}
-                    className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-[11px] text-cyan-300 hover:bg-slate-800 hover:text-white transition flex items-center gap-1"
+              <CardContent className="flex-1 p-3 overflow-y-auto space-y-3 text-xs">
+                {copilotMessages.map((m, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-3 rounded-xl ${
+                      m.sender === "user"
+                        ? "bg-cyan-950/40 border border-cyan-500/30 text-cyan-200 ml-4"
+                        : "bg-slate-900 border border-slate-800 text-slate-300 mr-2"
+                    }`}
                   >
-                    <FileCode2 className="h-3 w-3" /> vercel.json mẫu
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCopilotSend("Làm thế nào để phòng chống lỗi BOLA và XSS trên ứng dụng này?")}
-                    className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-[11px] text-emerald-300 hover:bg-slate-800 hover:text-white transition flex items-center gap-1"
-                  >
-                    <ShieldCheck className="h-3 w-3" /> Vá BOLA & XSS
-                  </button>
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <Input
-                    value={copilotInput}
-                    onChange={(e) => setCopilotInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
-                    placeholder="Hỏi cách vá lỗi, kiểm tra bảo mật..."
-                    className="h-10 text-xs border-slate-700 bg-slate-950 text-white placeholder:text-slate-500 focus:border-cyan-500"
-                  />
-                  <Button
-                    onClick={() => handleCopilotSend()}
-                    type="button"
-                    disabled={copilotLoading || !copilotInput.trim()}
-                    className="h-10 px-3.5 bg-cyan-600 hover:bg-cyan-500 text-white shrink-0"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                    {m.sender === "copilot" ? parseMarkdown(m.text) : m.text}
+                  </div>
+                ))}
+                {copilotLoading && (
+                  <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center gap-2 text-slate-400 text-xs">
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-400"/> Copilot đang suy nghĩ...
+                  </div>
+                )}
+                <div ref={chatBottomRef} />
               </CardContent>
+              <div className="p-3 border-t border-slate-800 flex gap-2">
+                <Input onChange="{(e)" placeholder="Hỏi về bản vá hoặc phân tích..." value="{copilotInput}"> setCopilotInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
+                  className="bg-slate-900 border-slate-800 text-xs h-8 text-slate-100"
+                />
+                <Button onClick="{()" size="sm"> handleCopilotSend()}
+                  disabled={copilotLoading || !copilotInput.trim()}
+                  className="h-8 px-3 bg-cyan-600 hover:bg-cyan-500 text-white"
+                >
+                  <Send className="h-3.5 w-3.5"/>
+                </Button>
+              </div>
             </Card>
           </div>
         </div>
 
-        {isChatExpanded && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
-            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setIsChatExpanded(false)} />
-            <div className="relative z-10 flex flex-col h-full max-h-[90vh] w-full max-w-5xl rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-800 p-4 bg-slate-950">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                    <Bot className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-white text-base">ADQ Security Copilot — Full Workspace</h3>
-                    <p className="text-xs font-mono text-cyan-400">Target: {target || "Chưa có"} | Phiên: {projectId || "Tạm thời"}</p>
-                  </div>
-                </div>
-                <Button
-                  onClick={() => setIsChatExpanded(false)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                  className="border-slate-800 text-slate-300"
-                >
-                  <Minimize2 className="mr-1.5 h-4 w-4" /> Thu nhỏ
-                </Button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-950/60">
-                {copilotMessages.map((m, idx) => (
-                  <div key={idx} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[85%] rounded-2xl p-4 text-sm ${
-                        m.sender === "user"
-                          ? "bg-cyan-600 text-white rounded-br-none shadow-md"
-                          : "bg-slate-900 border border-slate-800 rounded-bl-none shadow-md"
-                      }`}
-                    >
-                      {m.sender === "copilot" ? (
-                        <FormattedAiMessage text={m.text} />
-                      ) : (
-                        <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {copilotLoading ? (
-                  <div className="flex justify-start">
-                    <div className="rounded-2xl rounded-bl-none border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400 flex items-center gap-2">
-                      <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400" />
-                      Copilot đang suy nghĩ...
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="p-4 border-t border-slate-800 bg-slate-950 flex gap-2">
-                <Input
-                  value={copilotInput}
-                  onChange={(e) => setCopilotInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
-                  placeholder="Nhập câu hỏi hoặc yêu cầu sinh mã khắc phục..."
-                  className="h-12 border-slate-800 bg-slate-900 text-white"
-                />
-                <Button
-                  onClick={() => handleCopilotSend()}
-                  type="button"
-                  disabled={copilotLoading || !copilotInput.trim()}
-                  className="h-12 px-6 bg-cyan-600 hover:bg-cyan-500 text-white"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Modal Xác Nhận Ghi Đè Khi Quét Lại */}
+        <RescanConfirmModal isOpen="{showRescanModal}" onClose="{()"> setShowRescanModal(false)}
+          onConfirm={handleConfirmRescan}
+          onCreateNewSession={handleCreateNewSession}
+        />
       </div>
     </DashboardShell>
   );
 }
 
-export default function ScanLandingPage() {
+export default function ScanPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center text-slate-400">
-          Loading scan pipeline...
-        </div>
-      }
-    >
-      <ScanLandingContent />
+    <Suspense className="min-h-screen bg-[#020617]" fallback="{<div"/>}>
+      <ScanLandingContent/>
     </Suspense>
   );
 }

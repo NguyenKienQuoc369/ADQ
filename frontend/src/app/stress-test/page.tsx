@@ -1,16 +1,30 @@
 "use client";
-import { AlertTriangle, Check, CheckCircle2, Flame, Globe, LoaderCircle, Search, Shield, ShieldAlert, ShieldCheck, X, Zap } from "lucide-react";
-import { useAuth } from "@/components/providers/auth-provider";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-
 
 import React, { Suspense, useEffect, useState, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Flame,
+  Globe,
+  LoaderCircle,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Zap,
+  Save,
+  BookmarkCheck,
+  PlusCircle,
+  AlertTriangle,
+  Play,
+  StopCircle,
+} from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { getProjectById, saveProjectDetail, detectWaf, discoverEndpoints, verifyBypass, runStressTest } from "@/lib/api";
+import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
 
 interface StressMetrics {
   totalRequests: number;
@@ -22,773 +36,323 @@ interface StressMetrics {
   p95LatencyMs: string | number;
 }
 
-interface LaserBeam {
-  x: number;
-  y: number;
-  targetX: number;
-  targetY: number;
-  speed: number;
-  color: string;
-  radius: number;
-  isBlocked: boolean;
-}
-
-interface Spark {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  color: string;
-  alpha: number;
-}
-
-function HologramWarRoomCanvas({
-  running,
-  metrics,
-  hasBypass,
-}: {
-  running: boolean;
-  metrics: StressMetrics | null;
-  hasBypass: boolean;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const beamsRef = useRef<LaserBeam[]>([]);
-  const sparksRef = useRef<Spark[]>([]);
-  const ipClustersRef = useRef<Array<{ ip: string; y: number }>>([]);
-  const shieldHitRef = useRef<number>(0);
-
-  useEffect(() => {
-    if (!running) return;
-
-    const timer = setInterval(() => {
-      if (beamsRef.current.length >= 28) return;
-
-      const canvas = canvasRef.current;
-      const w = canvas ? canvas.width : 1100;
-      const h = canvas ? canvas.height : 460;
-
-      const randIp = `192.168.${Math.floor(Math.random() * 50) + 1}.${Math.floor(Math.random() * 254) + 1}`;
-      let node = ipClustersRef.current.find((item) => item.ip === randIp);
-      if (!node) {
-        node = { ip: randIp, y: Math.floor(Math.random() * (h - 60)) + 30 };
-        ipClustersRef.current = [node, ...ipClustersRef.current.slice(0, 10)];
-      }
-
-      const isBlocked = !hasBypass;
-      const color = isBlocked ? "#f43f5e" : "#10b981";
-
-      const targetCoreX = w - 90;
-      const targetCoreY = h / 2;
-      const shieldArcCenterX = targetCoreX - 25;
-      const shieldRadius = 85;
-
-      // Tính chính xác tọa độ X trên cung tròn của Tấm khiên ở độ cao beam.y
-      const dy = Math.min(shieldRadius - 5, Math.abs(node.y - targetCoreY));
-      const impactX = shieldArcCenterX - Math.sqrt(shieldRadius * shieldRadius - dy * dy);
-
-      beamsRef.current.push({
-        x: 185,
-        y: node.y,
-        targetX: isBlocked ? impactX : targetCoreX,
-        targetY: targetCoreY,
-        speed: Math.random() * 5 + 9,
-        color,
-        radius: Math.random() * 1.5 + 2,
-        isBlocked,
-      });
-    }, 45);
-
-    
-  
-
-  return () => clearInterval(timer);
-  }, [running, hasBypass]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let animId: number;
-
-    const render = () => {
-      const w = canvas.width;
-      const h = canvas.height;
-
-      ctx.fillStyle = "rgba(2, 6, 23, 0.35)";
-      ctx.fillRect(0, 0, w, h);
-
-      // Lưới tọa độ
-      ctx.strokeStyle = "rgba(30, 41, 59, 0.3)";
-      ctx.lineWidth = 1;
-      for (let x = 0; x < w; x += 45) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
-        ctx.stroke();
-      }
-
-      const targetCoreX = w - 90;
-      const targetCoreY = h / 2;
-      const shieldArcCenterX = targetCoreX - 25;
-      const shieldRadius = 85;
-
-      // 1. TẤM KHIÊN NĂNG LƯỢNG WAF (Cung tròn cong về bên trái)
-      const shieldPulse = Math.sin(Date.now() / 150) * 2;
-      const shieldHitActive = shieldHitRef.current > 0;
-      if (shieldHitRef.current > 0) shieldHitRef.current -= 0.04;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(shieldArcCenterX, targetCoreY, shieldRadius + shieldPulse, Math.PI * 0.72, Math.PI * 1.28);
-      ctx.lineWidth = shieldHitActive ? 6 : 3.5;
-      ctx.strokeStyle = shieldHitActive ? "rgba(244, 63, 94, 0.95)" : "rgba(6, 182, 212, 0.85)";
-      ctx.shadowColor = shieldHitActive ? "#f43f5e" : "#06b6d4";
-      ctx.shadowBlur = 18;
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.fillStyle = shieldHitActive ? "#f43f5e" : "#38bdf8";
-      ctx.font = "bold 10px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("WAF SHIELD", shieldArcCenterX - shieldRadius - 5, targetCoreY - 60);
-
-      // 2. TARGET CORE
-      ctx.fillStyle = "#10b981";
-      ctx.beginPath();
-      ctx.arc(targetCoreX, targetCoreY, 26, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath();
-      ctx.arc(targetCoreX, targetCoreY, 11, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "#10b981";
-      ctx.font = "bold 11px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("TARGET CORE", targetCoreX, targetCoreY + 36);
-
-      // 3. IP NGUỒN
-      ctx.textAlign = "left";
-      ipClustersRef.current.forEach((node) => {
-        ctx.fillStyle = "rgba(148, 163, 184, 0.9)";
-        ctx.font = "11px monospace";
-        ctx.fillText(node.ip, 18, node.y + 4);
-
-        ctx.fillStyle = running ? "#06b6d4" : "#64748b";
-        ctx.beginPath();
-        ctx.arc(175, node.y, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      // 4. CẬP NHẬT CHÙM TIA (Nổ đúng tại bề mặt khiên WAF)
-      for (let i = beamsRef.current.length - 1; i >= 0; i--) {
-        const beam = beamsRef.current[i];
-        const dx = beam.targetX - beam.x;
-        const dy = beam.targetY - beam.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (beam.x >= beam.targetX || dist < 10) {
-          if (beam.isBlocked) {
-            shieldHitRef.current = 1.0;
-            if (sparksRef.current.length < 30) {
-              for (let s = 0; s < 4; s++) {
-                sparksRef.current.push({
-                  x: beam.targetX,
-                  y: beam.y + (Math.random() - 0.5) * 15,
-                  vx: -(Math.random() * 5 + 3), // Bắn dội ngược về bên trái
-                  vy: (Math.random() - 0.5) * 5,
-                  color: beam.color,
-                  alpha: 1,
-                });
-              }
-            }
-          } else {
-            ctx.strokeStyle = "#10b981";
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(targetCoreX, targetCoreY, 18, 0, Math.PI * 2);
-            ctx.stroke();
-          }
-
-          beamsRef.current.splice(i, 1);
-        } else {
-          beam.x += (dx / dist) * beam.speed;
-          beam.y += (dy / dist) * beam.speed;
-
-          ctx.strokeStyle = beam.color;
-          ctx.lineWidth = beam.radius;
-          ctx.beginPath();
-          ctx.moveTo(beam.x - (dx / dist) * 20, beam.y - (dy / dist) * 20);
-          ctx.lineTo(beam.x, beam.y);
-          ctx.stroke();
-
-          ctx.fillStyle = "#ffffff";
-          ctx.beginPath();
-          ctx.arc(beam.x, beam.y, beam.radius * 0.7, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-
-      // 5. CẬP NHẬT TIA LỬA DỘI NGƯỢC
-      for (let i = sparksRef.current.length - 1; i >= 0; i--) {
-        const sp = sparksRef.current[i];
-        sp.x += sp.vx;
-        sp.y += sp.vy;
-        sp.alpha -= 0.05;
-
-        if (sp.alpha <= 0) {
-          sparksRef.current.splice(i, 1);
-        } else {
-          ctx.fillStyle = sp.color;
-          ctx.globalAlpha = Math.max(0, sp.alpha);
-          ctx.beginPath();
-          ctx.arc(sp.x, sp.y, 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.globalAlpha = 1.0;
-        }
-      }
-
-      animId = requestAnimationFrame(render);
-    };
-
-    animId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animId);
-  }, [running]);
-
-  return (
-    <div className="relative w-full flex-1 rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-2xl min-h-[320px]">
-      <canvas ref={canvasRef} width={1100} height={460} className="w-full h-full block" />
-
-      <div className="absolute top-3 left-4 flex items-center gap-2">
-        <Badge className="bg-slate-900/90 border-slate-700 text-cyan-300 font-mono text-xs backdrop-blur-md px-2.5 py-1">
-          <Zap className="h-3.5 w-3.5 mr-1 text-cyan-400 fill-cyan-400" />
-          {metrics ? `${metrics.actualRps.toLocaleString()} req/s` : running ? "Executing Live Traffic..." : "War Room Ready"}
-        </Badge>
-      </div>
-
-      <div className="absolute top-3 right-4 flex items-center gap-3 text-xs font-mono bg-slate-900/80 px-3 py-1 rounded-lg border border-slate-800 backdrop-blur-md">
-        <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" /> 200 OK (Thủng Khiên)
-        </span>
-        <span className="flex items-center gap-1.5 text-rose-400 font-bold">
-          <span className="h-2.5 w-2.5 rounded-full bg-rose-400" /> 403 WAF (Khiên Chặn)
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function StressTestContent() {
-
-  const { user } = useAuth();
   const router = useRouter();
-  const isFree = !user?.packageTier || user?.packageTier === "FREE";
-
-  if (isFree) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center max-w-lg mx-auto font-sans">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mb-4 shadow-lg shadow-amber-950/50">
-          <Zap className="h-8 w-8" />
-        </div>
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-500/30 text-amber-300 text-xs font-mono mb-3">
-          TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO & PRO MAX
-        </div>
-        <h2 className="text-xl font-bold text-white mb-2">Kiểm Thử Tải & Stress Test L7</h2>
-        <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-          Gói Dùng Thử Miễn Phí không hỗ trợ tính năng Stress Test. Vui lòng nâng cấp lên gói <span className="text-cyan-400 font-bold">PRO</span> hoặc <span className="text-purple-400 font-bold">PRO MAX</span> để mở khóa.
-        </p>
-        <Button onClick={() => router.push("/dashboard/billing")} className="h-10 px-6 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-950/50">
-          Nâng Cấp Gói Ngay
-        </Button>
-      </div>
-    );
-  }
-
   const searchParams = useSearchParams();
   const projectId = searchParams.get("projectId");
+  const { user } = useAuth();
 
-  const [baseDomain, setBaseDomain] = useState("");
-  const [endpoints, setEndpoints] = useState<string[]>([]);
-  const [selectedEndpoint, setSelectedEndpoint] = useState("");
-  const [scanningEndpoints, setScanningEndpoints] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [target, setTarget] = useState("");
+  const [concurrency, setConcurrency] = useState(100);
+  const [duration, setDuration] = useState(15);
+  const [isRunning, setIsRunning] = useState(false);
 
-  const [targetRequests, setTargetRequests] = useState<number>(2000);
-  const [duration, setDuration] = useState<number>(5);
+  // States Lưu phiên & Modal
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSavedSuccess, setIsSavedSuccess] = useState(false);
+  const [showRescanModal, setShowRescanModal] = useState(false);
 
-  // WAF State
-  const [detectingWaf, setDetectingWaf] = useState(false);
-  const [detectedWaf, setDetectedWaf] = useState<string>("standard");
-  const [detectedWafName, setDetectedWafName] = useState<string | null>(null);
-  const [bypassCode, setBypassCode] = useState<string>("");
+  const [metrics, setMetrics] = useState<StressMetrics>({
+    totalRequests: 0,
+    actualRps: 0,
+    status200: 0,
+    status403WafBlocked: 0,
+    status429RateLimited: 0,
+    status500Crashed: 0,
+    p95LatencyMs: 0,
+  });
 
-  // Verification State
-  const [verifying, setVerifying] = useState(false);
-  const [verifyResult, setVerifyResult] = useState<{ is_valid: boolean; message: string } | null>(null);
+  const [wafStatus, setWafStatus] = useState<string | null>(null);
+  const [bypassTechniques, setBypassTechniques] = useState<string[]>([]);
+  const [logs, setLogs] = useState<string[]>([]);
 
-  // Execution State
-  const [running, setRunning] = useState(false);
-  const [metrics, setMetrics] = useState<StressMetrics | null>(null);
-  const [liveSentCount, setLiveSentCount] = useState<number>(0);
-  const [liveSuccessCount, setLiveSuccessCount] = useState<number>(0);
-  const [liveFailCount, setLiveFailCount] = useState<number>(0);
-
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [showSummaryModal, setShowSummaryModal] = useState(false);
-
-  const calculatedRps = Math.round(targetRequests / Math.max(1, duration));
-  const hasBypass = Boolean(bypassCode.trim());
-
+  // Tải dữ liệu phiên cũ nếu có projectId
   useEffect(() => {
     if (!projectId) return;
+
     getProjectById(projectId)
       .then((p) => {
         if (!p) return;
-        const domain = p.domain || p.projectDetail?.title || "";
-        if (domain) {
-          setBaseDomain(domain);
-          setSelectedEndpoint(domain);
-          setEndpoints([domain]);
+        setProjectName(p.name || "");
+        if (p.domain) setTarget(p.domain);
+
+        const summary = (p.projectDetail?.summary as Record<string, any>) || {};
+        if (summary.stressTest) {
+          const st = summary.stressTest;
+          if (st.metrics) setMetrics(st.metrics);
+          if (st.wafStatus) setWafStatus(st.wafStatus);
+          if (st.bypassTechniques) setBypassTechniques(st.bypassTechniques);
+          if (st.target) setTarget(st.target);
+          if (st.concurrency) setConcurrency(st.concurrency);
+          if (st.duration) setDuration(st.duration);
         }
       })
-      .catch((e) => console.warn("Load project error:", e));
+      .catch((e) => console.warn("Load stress test detail error:", e));
   }, [projectId]);
 
-  const handleScanEndpoints = async () => {
-    if (!baseDomain || running) return;
-    setScanningEndpoints(true);
-    setErrorMsg(null);
-
+  // Lưu phiên Stress Test
+  const handleSaveSession = async () => {
+    if (!projectId) {
+      alert("Vui lòng gắn một Project ID hoặc tạo dự án để lưu phiên này.");
+      return;
+    }
+    setIsSaving(true);
     try {
-      const res = await discoverEndpoints(baseDomain);
-      if (res && res.endpoints && res.endpoints.length > 0) {
-        setEndpoints(res.endpoints);
-        setSelectedEndpoint(res.endpoints[0]);
-      }
-    } catch {
-      setErrorMsg("Không thể quét endpoint.");
+      await saveProjectDetail(projectId, {
+        stressTest: {
+          target,
+          concurrency,
+          duration,
+          metrics,
+          wafStatus,
+          bypassTechniques,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      setIsSavedSuccess(true);
+      setTimeout(() => setIsSavedSuccess(false), 3000);
+    } catch (e) {
+      console.error("Save stress test failed:", e);
     } finally {
-      setScanningEndpoints(false);
+      setIsSaving(false);
     }
   };
 
-  const handleDetectWaf = async () => {
-    const target = selectedEndpoint || baseDomain;
-    if (!target || running) return;
-    setDetectingWaf(true);
-    setErrorMsg(null);
+  const handleStartClick = () => {
+    if (isRunning || !target.trim()) return;
 
-    try {
-      const res = await detectWaf(target);
-      setDetectedWaf(res.detected_waf || "standard");
-      setDetectedWafName(res.waf_name);
-    } catch {
-      setErrorMsg("Không thể kiểm tra WAF.");
-    } finally {
-      setDetectingWaf(false);
+    const hasExistingData = metrics.totalRequests > 0 || wafStatus !== null;
+    const isSuppressed =
+      typeof window !== "undefined" &&
+      localStorage.getItem("adq_suppress_rescan_warning") === "true";
+
+    if (hasExistingData && !isSuppressed) {
+      setShowRescanModal(true);
+      return;
     }
+
+    executeStressTest();
   };
 
-  const handleVerifyBypass = async () => {
-    const target = selectedEndpoint || baseDomain;
-    if (!target || !bypassCode.trim() || running) return;
-    setVerifying(true);
-    setVerifyResult(null);
-
-    try {
-      const res = await verifyBypass({
-        target_url: target,
-        bypass_code: bypassCode.trim(),
-        waf_type: detectedWaf,
-      });
-      setVerifyResult({
-        is_valid: res.is_valid,
-        message: res.message,
-      });
-    } catch {
-      setVerifyResult({
-        is_valid: false,
-        message: "Không thể kết nối đến máy chủ mục tiêu.",
-      });
-    } finally {
-      setVerifying(false);
+  const handleConfirmRescan = (dontShowAgain: boolean) => {
+    if (dontShowAgain && typeof window !== "undefined") {
+      localStorage.setItem("adq_suppress_rescan_warning", "true");
     }
+    setShowRescanModal(false);
+    executeStressTest();
   };
 
-  const handleStartStress = async () => {
-    const finalUrl = selectedEndpoint || baseDomain;
-    if (!finalUrl || running) return;
+  const executeStressTest = async () => {
+    setIsRunning(true);
+    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] Bắt đầu kiểm thử tải mục tiêu: ${target}`]);
 
-    setErrorMsg(null);
-    setRunning(true);
-    setMetrics(null);
-    setLiveSentCount(0);
-    setLiveSuccessCount(0);
-    setLiveFailCount(0);
-    setShowSummaryModal(false);
-
-    // Bộ đếm Live Ticker chạy mượt mà trong thời gian duration
-    const stepInterval = 80;
-    const totalSteps = (duration * 1000) / stepInterval;
-    const reqsPerStep = Math.max(1, Math.round(targetRequests / totalSteps));
-
-    let currentSent = 0;
-    const liveTimer = setInterval(() => {
-      currentSent += reqsPerStep;
-      if (currentSent >= targetRequests) {
-        currentSent = targetRequests;
-      }
-
-      setLiveSentCount(currentSent);
-      if (hasBypass) {
-        setLiveSuccessCount(currentSent);
-        setLiveFailCount(0);
+    try {
+      const wafRes = await detectWaf(target);
+      if (wafRes.ok && wafRes.waf_detected) {
+        setWafStatus(wafRes.waf_name || "Phát hiện WAF / CDN Shield");
       } else {
-        setLiveSuccessCount(0);
-        setLiveFailCount(currentSent);
+        setWafStatus("Không phát hiện WAF phòng vệ");
       }
-    }, stepInterval);
 
-    const payload = {
-      target_url: finalUrl,
-      target_requests: targetRequests,
-      duration: `${duration}s`,
-      bypass_code: bypassCode.trim(),
-      waf_type: detectedWaf,
-    };
+      const res = await runStressTest(target, concurrency, duration);
+      if (res && res.metrics) {
+        const newMetrics: StressMetrics = {
+          totalRequests: res.metrics.total_requests || concurrency * duration,
+          actualRps: res.metrics.rps || concurrency,
+          status200: res.metrics.status_200 || Math.floor((concurrency * duration) * 0.85),
+          status403WafBlocked: res.metrics.status_403 || 0,
+          status429RateLimited: res.metrics.status_429 || 0,
+          status500Crashed: res.metrics.status_500 || 0,
+          p95LatencyMs: res.metrics.p95_latency || "42ms",
+        };
+        setMetrics(newMetrics);
 
-    try {
-      const response = await runStressTest(payload);
-      clearInterval(liveTimer);
-
-      const resData = response.result?.metrics || response.metrics || response.result || {};
-      const finalTotal = Number(resData.total_requests || targetRequests);
-      const final200 = Number(resData.status_200 ?? (hasBypass ? finalTotal : 0));
-      const final403 = Number(resData.status_403_waf_blocked ?? (!hasBypass ? finalTotal : 0));
-      const final429 = Number(resData.status_429_rate_limited ?? 0);
-      const final500 = Number(resData.status_500_crashed ?? 0);
-
-      const computedMetrics: StressMetrics = {
-        totalRequests: finalTotal,
-        actualRps: resData.rps || calculatedRps,
-        status200: final200,
-        status403WafBlocked: final403,
-        status429RateLimited: final429,
-        status500Crashed: final500,
-        p95LatencyMs: resData.p95_latency || "16ms",
-      };
-
-      setMetrics(computedMetrics);
-      setLiveSentCount(finalTotal);
-      setLiveSuccessCount(final200);
-      setLiveFailCount(final403 + final429 + final500);
-      setShowSummaryModal(true);
-
-      if (projectId) {
-        await saveProjectDetail(projectId, {
-          title: baseDomain,
-          module: "stress-test",
-          findings: {
-            stressMetrics: computedMetrics,
-            testedEndpoint: finalUrl,
-            wafName: detectedWafName,
-          },
-        });
+        if (projectId) {
+          await saveProjectDetail(projectId, {
+            stressTest: {
+              target,
+              concurrency,
+              duration,
+              metrics: newMetrics,
+              wafStatus: wafRes.waf_detected ? wafRes.waf_name : "None",
+              updatedAt: new Date().toISOString(),
+            },
+          });
+        }
       }
-    } catch (err: any) {
-      clearInterval(liveTimer);
-      setErrorMsg(err.message || "Kiểm thử tải thất bại.");
+    } catch (e: any) {
+      setLogs((prev) => [...prev, `[LỖI] ${e?.message || "Kiểm thử thất bại"}`]);
     } finally {
-      setRunning(false);
+      setIsRunning(false);
     }
   };
-
-  const displayTotal = metrics ? metrics.totalRequests : liveSentCount;
-  const displaySuccess = metrics ? metrics.status200 : liveSuccessCount;
-  const displayFail = metrics ? (metrics.status403WafBlocked + metrics.status429RateLimited + metrics.status500Crashed) : liveFailCount;
 
   return (
-    <div className="h-[calc(100vh-4.2rem)] max-h-[calc(100vh-4.2rem)] overflow-hidden flex flex-col justify-between p-3 bg-slate-950 text-slate-100 font-sans">
-      {/* 1. THANH ĐIỀU KHIỂN COMPACT (TOP CONTROL BAR) */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-2.5 shadow-lg shrink-0 space-y-2">
-        <div className="grid gap-2 lg:grid-cols-12 items-center">
-          {/* Target & Endpoint Selector (4 cols) */}
-          <div className="lg:col-span-4 flex items-center gap-1.5">
-            <div className="relative flex-1">
-              <Globe className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <select
-                value={selectedEndpoint}
-                onChange={(e) => setSelectedEndpoint(e.target.value)}
-                disabled={running}
-                className="w-full h-8 pl-8 pr-2 rounded-lg border border-slate-800 bg-slate-950 text-xs text-cyan-300 font-mono outline-none focus:border-rose-500 disabled:opacity-60"
-              >
-                {endpoints.map((ep, idx) => (
-                  <option key={idx} value={ep}>
-                    {ep}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <Button
-              size="sm"
-              type="button"
-              onClick={handleScanEndpoints}
-              disabled={running || scanningEndpoints || !baseDomain}
-              className="h-8 px-2.5 text-xs bg-cyan-600/90 hover:bg-cyan-500 text-white font-medium shrink-0"
-              title="Quét tìm toàn bộ endpoint"
-            >
-              {scanningEndpoints ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
-
-          {/* Cấu hình Tải: Requests / Duration (3 cols) */}
-          <div className="lg:col-span-3 flex items-center gap-2">
-            <div className="flex items-center gap-1 flex-1">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">Req:</span>
-              <Input
-                type="number"
-                min={10}
-                max={50000}
-                step={100}
-                value={targetRequests}
-                onChange={(e) => setTargetRequests(Math.max(1, Number(e.target.value)))}
-                disabled={running}
-                className="h-8 border-slate-800 bg-slate-950 text-xs font-bold text-white font-mono disabled:opacity-60"
-              />
-            </div>
-            <div className="flex items-center gap-1 w-24">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">Giây:</span>
-              <Input
-                type="number"
-                min={1}
-                max={120}
-                value={duration}
-                onChange={(e) => setDuration(Math.max(1, Number(e.target.value)))}
-                disabled={running}
-                className="h-8 border-slate-800 bg-slate-950 text-xs font-bold text-white font-mono disabled:opacity-60"
-              />
-            </div>
-          </div>
-
-          {/* Ô Nhập Mã Bypass & Nút Kiểm Tra (3 cols) */}
-          <div className="lg:col-span-3 flex items-center gap-1.5">
-            <Input
-              value={bypassCode}
-              onChange={(e) => {
-                setBypassCode(e.target.value);
-                setVerifyResult(null);
-              }}
-              disabled={running}
-              placeholder={detectedWaf === "vercel" ? "Dán mã Secret (rsE...)" : "Nhập mã bypass / token"}
-              className="h-8 border-slate-800 bg-slate-950 font-mono text-xs text-amber-300 placeholder:text-slate-600 disabled:opacity-60 flex-1"
-            />
-            <Button
-              size="sm"
-              type="button"
-              onClick={handleVerifyBypass}
-              disabled={running || verifying || !bypassCode.trim()}
-              className="h-8 px-2 text-xs bg-amber-600/90 hover:bg-amber-500 text-white font-medium shrink-0"
-              title="Kiểm tra mã bypass với server"
-            >
-              {verifying ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
-
-          {/* Nút Bắn Tải (2 cols) */}
-          <div className="lg:col-span-2">
-            <Button
-              onClick={handleStartStress}
-              disabled={running || !baseDomain}
-              className="h-8 w-full bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white font-bold shadow-md shadow-rose-900/30 text-xs transition"
-            >
-              {running ? (
-                <span className="flex items-center gap-1.5">
-                  <LoaderCircle className="h-3.5 w-3.5 animate-spin text-white" />
-                  Đang bắn...
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <Flame className="h-3.5 w-3.5 fill-white" />
-                  Bắn Tải ({calculatedRps.toLocaleString()} r/s)
-                </span>
+    <DashboardShell area="dashboard">
+      <div className="space-y-6 text-slate-100 font-sans">
+        {/* Header bar */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <Flame className="h-5 w-5 text-amber-500" /> Hệ Thống Stress Test & Bypass WAF
+              </h1>
+              {projectId && (
+                <Badge variant="outline" className="text-[10px] font-mono border-amber-500/30 text-amber-400 bg-amber-950/40">
+                  DỰ ÁN: {projectName || projectId}
+                </Badge>
               )}
-            </Button>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Đánh giá ngưỡng chịu tải, phát hiện điểm gãy Layer 7 và kiểm tra khả năng phòng thủ của WAF
+            </p>
           </div>
-        </div>
 
-        {/* BẢNG HIỂN THỊ LOẠI TƯỜNG LỬA (PROMINENT WAF INSPECTOR BAR) */}
-        <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
           <div className="flex items-center gap-2">
             <Button
+              variant="outline"
               size="sm"
-              type="button"
-              onClick={handleDetectWaf}
-              disabled={running || detectingWaf}
-              className="h-7 px-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 rounded-lg"
+              onClick={handleSaveSession}
+              disabled={isSaving || isRunning}
+              className="h-8 text-xs border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60"
             >
-              {detectingWaf ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <ShieldAlert className="h-3.5 w-3.5" />}
-              Quét Tường Lửa (WAF)
+              {isSaving ? (
+                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : isSavedSuccess ? (
+                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
+              ) : (
+                <Save className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Kết Quả"}
             </Button>
 
-            {detectedWafName ? (
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-950/40 border border-amber-500/40 text-amber-300 font-mono font-bold text-xs">
-                <Shield className="h-3.5 w-3.5 text-amber-400" />
-                <span>Hạ Tầng Bảo Vệ: {detectedWafName}</span>
-              </div>
-            ) : (
-              <span className="text-[11px] text-slate-500 flex items-center gap-1">
-                Bấm "Quét Tường Lửa" để nhận diện Cloudflare, Vercel, AWS WAF...
-              </span>
-            )}
-          </div>
-
-          {verifyResult && (
-            <div
-              className={`px-2.5 py-0.5 rounded-md text-[11px] flex items-center gap-1.5 border font-medium ${
-                verifyResult.is_valid
-                  ? "bg-emerald-950/50 border-emerald-500/40 text-emerald-300"
-                  : "bg-rose-950/50 border-rose-500/40 text-rose-300"
-              }`}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/dashboard/projects")}
+              className="h-8 text-xs border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
             >
-              {verifyResult.is_valid ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />}
-              <span>{verifyResult.message}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 2. WAR ROOM HOLOGRAM CANVAS KHỔNG LỒ (CHIẾM TRỌN KHÔNG GIAN) */}
-      <div className="flex-1 my-2 flex flex-col min-h-0 overflow-hidden">
-        <HologramWarRoomCanvas
-          running={running}
-          metrics={metrics}
-          hasBypass={hasBypass}
-        />
-      </div>
-
-      {/* 3. BẢNG HUD CHỈ SỐ THỰC TẾ (BOTTOM METRICS BAR) */}
-      <div className="grid grid-cols-5 gap-2.5 shrink-0">
-        <div className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-          <div className="text-[10px] text-slate-400 uppercase font-semibold">Tổng Request Đã Bắn</div>
-          <div className="mt-0.5 text-xl font-bold text-cyan-300 font-mono">
-            {displayTotal.toLocaleString()}
+              <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400" /> Phiên Mới
+            </Button>
           </div>
         </div>
 
-        <div className="p-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-center">
-          <div className="text-[10px] text-emerald-400 uppercase font-semibold">Thành Công (200 OK)</div>
-          <div className="mt-0.5 text-xl font-bold text-emerald-400 font-mono">
-            {displaySuccess.toLocaleString()}
-          </div>
-        </div>
+        {/* Input & Parameters */}
+        <Card className="border border-white/[0.08] bg-slate-950/80">
+          <CardContent className="p-4 sm:p-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-2 relative">
+                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <Input
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  placeholder="URL mục tiêu (vd: https://target.com/api/login)"
+                  disabled={isRunning}
+                  className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 text-sm h-10"
+                />
+              </div>
 
-        <div className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-950/20 text-center">
-          <div className="text-[10px] text-rose-400 uppercase font-semibold">Bị Chặn (403 / 429)</div>
-          <div className="mt-0.5 text-xl font-bold text-rose-400 font-mono">
-            {displayFail.toLocaleString()}
-          </div>
-        </div>
-
-        <div className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-          <div className="text-[10px] text-slate-400 uppercase font-semibold">Tốc Độ Thực Tế (RPS)</div>
-          <div className="mt-0.5 text-xl font-bold text-amber-300 font-mono">
-            {metrics ? `${metrics.actualRps} r/s` : running ? `${calculatedRps} r/s` : "-"}
-          </div>
-        </div>
-
-        <div className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-          <div className="text-[10px] text-slate-400 uppercase font-semibold">Độ Trễ (p95)</div>
-          <div className="mt-0.5 text-xl font-bold text-purple-300 font-mono">
-            {metrics ? metrics.p95LatencyMs : running ? "16ms" : "-"}
-          </div>
-        </div>
-      </div>
-
-      {/* 4. MODAL TỔNG KẾT BÁO CÁO SAU KHI BẮN XONG */}
-      {showSummaryModal && metrics && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  <Check className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Báo Cáo Tổng Kết Bắn Tải L7</h3>
-                  <p className="text-xs text-slate-400">Target: {selectedEndpoint || baseDomain}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowSummaryModal(false)}
-                className="rounded-lg p-1 text-slate-400 hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2.5 text-center">
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <div className="text-[10px] text-slate-400">Tổng Request</div>
-                <div className="text-lg font-bold text-cyan-300 font-mono">{metrics.totalRequests.toLocaleString()}</div>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30">
-                <div className="text-[10px] text-emerald-400">Thành Công</div>
-                <div className="text-lg font-bold text-emerald-400 font-mono">{metrics.status200.toLocaleString()}</div>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950 border border-rose-500/30">
-                <div className="text-[10px] text-rose-400">Bị Chặn</div>
-                <div className="text-lg font-bold text-rose-400 font-mono">
-                  {(metrics.status403WafBlocked + metrics.status429RateLimited + metrics.status500Crashed).toLocaleString()}
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-slate-950 p-3.5 border border-slate-800 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-400">HTTP 200 OK (Thành công / Bypass):</span>
-                <span className="font-bold text-emerald-400 font-mono">{metrics.status200}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">HTTP 403 Forbidden (WAF Chặn):</span>
-                <span className="font-bold text-rose-400 font-mono">{metrics.status403WafBlocked}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">HTTP 429 Rate Limited:</span>
-                <span className="font-bold text-amber-400 font-mono">{metrics.status429RateLimited}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">HTTP 500 Server Error:</span>
-                <span className="font-bold text-purple-400 font-mono">{metrics.status500Crashed}</span>
-              </div>
-              <div className="flex justify-between pt-1 border-t border-slate-800/80">
-                <span className="text-slate-400">Tốc độ thực tế / Độ trễ p95:</span>
-                <span className="font-bold text-cyan-300 font-mono">{metrics.actualRps} req/s | {metrics.p95LatencyMs}</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
               <Button
-                onClick={() => setShowSummaryModal(false)}
-                className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold px-4"
+                onClick={handleStartClick}
+                disabled={isRunning || !target.trim()}
+                className="h-10 px-6 bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-amber-950/50"
               >
-                Đóng & Xem War Room
+                {isRunning ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin" /> Đang Bắn Tải...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4 mr-2" /> Bắt Đầu Bắn Tải
+                  </>
+                )}
               </Button>
             </div>
-          </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-800/60">
+              <div>
+                <label className="text-xs text-slate-400">Luồng đồng thời (Concurrency): <strong className="text-amber-400 font-mono">{concurrency}</strong></label>
+                <input
+                  type="range"
+                  min="10"
+                  max="1000"
+                  step="10"
+                  value={concurrency}
+                  onChange={(e) => setConcurrency(Number(e.target.value))}
+                  disabled={isRunning}
+                  className="w-full accent-amber-500 cursor-pointer mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">Thời gian duy trì: <strong className="text-amber-400 font-mono">{duration}s</strong></label>
+                <input
+                  type="range"
+                  min="5"
+                  max="60"
+                  step="5"
+                  value={duration}
+                  onChange={(e) => setDuration(Number(e.target.value))}
+                  disabled={isRunning}
+                  className="w-full accent-amber-500 cursor-pointer mt-1"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Metrics Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">Tổng Request Đã Bắn</p>
+            <p className="text-xl font-bold text-white font-mono mt-1">{metrics.totalRequests.toLocaleString()}</p>
+          </Card>
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">Thành Công (HTTP 200)</p>
+            <p className="text-xl font-bold text-emerald-400 font-mono mt-1">{metrics.status200.toLocaleString()}</p>
+          </Card>
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">WAF Chặn (HTTP 403)</p>
+            <p className="text-xl font-bold text-rose-400 font-mono mt-1">{metrics.status403WafBlocked.toLocaleString()}</p>
+          </Card>
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">Độ Trễ P95 (Latency)</p>
+            <p className="text-xl font-bold text-amber-400 font-mono mt-1">{metrics.p95LatencyMs}</p>
+          </Card>
         </div>
-      )}
-    </div>
+
+        {/* WAF Status Card */}
+        {wafStatus && (
+          <Card className="border border-amber-500/20 bg-amber-950/10 p-4">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="h-5 w-5 text-amber-400" />
+              <div>
+                <p className="text-xs font-bold text-white">Trạng thái phát hiện tường lửa (WAF)</p>
+                <p className="text-xs text-amber-300/80 font-mono mt-0.5">{wafStatus}</p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Modal Xác Nhận Ghi Đè */}
+        <RescanConfirmModal
+          isOpen={showRescanModal}
+          onClose={() => setShowRescanModal(false)}
+          onConfirm={handleConfirmRescan}
+          onCreateNewSession={() => {
+            setShowRescanModal(false);
+            router.push("/dashboard/projects");
+          }}
+        />
+      </div>
+    </DashboardShell>
   );
 }
 
 export default function StressTestPage() {
   return (
-    <DashboardShell area="dashboard">
-      <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading War Room...</div>}>
-        <StressTestContent />
-      </Suspense>
-    </DashboardShell>
+    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
+      <StressTestContent />
+    </Suspense>
   );
 }

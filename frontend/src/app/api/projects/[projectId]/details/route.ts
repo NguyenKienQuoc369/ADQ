@@ -26,6 +26,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
       return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
     }
 
+    const currentDetail = await prisma.projectDetail.findUnique({ where: { projectId } });
+    const currentSummary = (currentDetail?.summary as Record<string, any>) || {};
+
+    const updatedSummary = {
+      ...currentSummary,
+      ...(body.summary || {}),
+      ...(body.findings ? { findings: body.findings } : {}),
+      ...(body.stressTest ? { stressTest: body.stressTest } : {}),
+      ...(body.apkAudit ? { apkAudit: body.apkAudit } : {}),
+    };
+
     const detail = await prisma.projectDetail.upsert({
       where: { projectId },
       update: {
@@ -34,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
         module: body.module ?? undefined,
         status: body.status ?? undefined,
         riskScore: body.riskScore ?? undefined,
-        summary: body.summary ?? undefined,
+        summary: updatedSummary,
         lastScanAt: body.lastScanAt ? new Date(body.lastScanAt) : undefined,
       },
       create: {
@@ -44,7 +55,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
         module: body.module ?? "web",
         status: body.status ?? "ACTIVE",
         riskScore: body.riskScore ?? 0,
-        summary: body.summary ?? {},
+        summary: updatedSummary,
         lastScanAt: body.lastScanAt ? new Date(body.lastScanAt) : null,
       },
     });
