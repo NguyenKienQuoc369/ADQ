@@ -120,16 +120,23 @@ function DashboardShellContent({
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
+    useEffect(() => {
+    if (typeof window === "undefined") return;
+    const host = window.location.hostname.toLowerCase();
+    // Bỏ qua tuyệt đối nếu đang ở domain adq-soc.click hoặc route admin
+    if (host.includes("adq-soc.click") || pathname?.startsWith("/admin")) return;
+
     if (loading) return;
-    if (!user) {
+
+    const localSession = localStorage.getItem("adq_user_session");
+    if (!user && !localSession) {
       router.replace("/login");
       return;
     }
-    if (area === "admin" && user.role !== "ADMIN") {
+    if (area === "admin" && user && user.role !== "ADMIN" && !localSession?.includes('"role":"ADMIN"')) {
       router.replace("/dashboard");
     }
-  }, [area, loading, router, user]);
+  }, [area, loading, pathname, router, user]);
 
   const isProjectWorkspace = PROJECT_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
