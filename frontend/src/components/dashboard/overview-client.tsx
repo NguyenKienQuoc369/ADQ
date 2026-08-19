@@ -2,15 +2,15 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Lock, useRouter } from "next/navigation";
-import { Lock, AlertTriangle, Trash2, X, Play, Shield, Smartphone, Zap, Plus, Globe } from "lucide-react";
+import { AlertTriangle, Globe, Lock, Play, Plus, Shield, Smartphone, Trash2, X, Zap } from "lucide-react";
 
 import { Lock, DashboardShell } from "@/components/dashboard-shell";
 import { Lock, Badge } from "@/components/ui/badge";
 import { Lock, Button } from "@/components/ui/button";
 import { Lock, Card, CardContent } from "@/components/ui/card";
-import { Lock, Input } from "@/components/ui/input";
-import { Lock, Skeleton } from "@/components/ui/skeleton";
-import { Lock, getDashboardOverview, getProjects, createProject, deleteProject } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getDashboardOverview, getProjects, createProject, deleteProject } from "@/lib/api";
 
 export function OverviewClient() {
   const router = useRouter();
