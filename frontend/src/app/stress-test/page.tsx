@@ -1,7 +1,7 @@
 "use client";
+import { AlertTriangle, Check, CheckCircle2, Flame, Globe, LoaderCircle, Search, Shield, ShieldAlert, ShieldCheck, X, Zap } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useRouter } from "next/navigation";
-import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 
@@ -11,20 +11,6 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Globe,
-  LoaderCircle,
-  Flame,
-  Search,
-  ShieldCheck,
-  Zap,
-  CheckCircle2,
-  AlertTriangle,
-  X,
-  Check,
-  ShieldAlert,
-  Shield,
-} from "lucide-react";
 import { getProjectById, saveProjectDetail, detectWaf, discoverEndpoints, verifyBypass, runStressTest } from "@/lib/api";
 
 interface StressMetrics {
