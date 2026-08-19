@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
 import {
   Card,
@@ -13,13 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Bot,
-  Send,
-  Check,
-  Copy,
-  LoaderCircle,
-} from "lucide-react";
+import { Bot, Check, Copy, LoaderCircle, Lock, Send, Sparkles } from "lucide-react";
 import {
   copilotChat,
   copilotAnalyze,
