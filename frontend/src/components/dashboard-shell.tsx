@@ -72,7 +72,6 @@ function DashboardShellContent({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [syncPulse, setSyncPulse] = useState(99);
 
-  // 1. Kiểm tra cần duyệt điều khoản
   const needsTerms = useMemo(() => {
     if (loading || !user) return false;
     if (user.termsAccepted) return false;
@@ -84,7 +83,6 @@ function DashboardShellContent({
     return true;
   }, [loading, user]);
 
-  // 2. Kiểm tra cần tạo mật khẩu dự phòng cho Google User
   const needsGoogleRecovery = useMemo(() => {
     if (loading || !user) return false;
     if (user.oauthProvider !== "google") return false;
@@ -174,136 +172,38 @@ function DashboardShellContent({
     return <div className="min-h-screen bg-[#020617]" />;
   }
 
-  // 1. PROJECT WORKSPACE (ẨN SIDEBAR)
+  // 1. PROJECT WORKSPACE (ẨN SIDEBAR HOÀN TOÀN)
   if (isProjectWorkspace) {
     return (
       <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
-        <TermsModal
-          isOpen={showTermsModal}
-          onAccept={handleAcceptTerms}
-          onDecline={handleDeclineTerms}
-          userEmail={user.email}
-        />
+        <TermsModal isOpen={showTermsModal} onAccept={handleAcceptTerms} onDecline={handleDeclineTerms} userEmail={user.email} />
+        <GoogleSetupModal isOpen={showGoogleModal} userEmail={user.email} defaultName={user.name} onComplete={handleCompleteGoogleRecovery} />
+        
+        {/* Transparent header in project view */}
+        <header className="absolute top-0 left-0 z-30 w-full flex items-center justify-between p-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/dashboard")}
+            className="h-8 px-2.5 rounded-lg border border-white/[0.08] bg-slate-900/60 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:bg-cyan-950/30 hover:text-cyan-300 transition-all active:scale-98 flex items-center gap-1.5"
+          >
+            <ArrowLeft className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Quay lại Dự án</span>
+          </Button>
 
-        <GoogleSetupModal
-          isOpen={showGoogleModal}
-          userEmail={user.email}
-          defaultName={user.name}
-          onComplete={handleCompleteGoogleRecovery}
-        />
-
-        <div
-          className="fixed inset-0 pointer-events-none opacity-15"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, rgba(6, 182, 212, 0.08) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(6, 182, 212, 0.08) 1px, transparent 1px)
-            `,
-            backgroundSize: "36px 36px",
-          }}
-        />
-
-        <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-slate-950/85 backdrop-blur-xl">
-          <div className="flex items-center justify-between gap-4 px-4 py-2 sm:px-6">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push("/dashboard")}
-                className="h-8 px-2.5 rounded-lg border border-white/[0.08] bg-slate-900/60 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:bg-cyan-950/30 hover:text-cyan-300 transition-all active:scale-98 flex items-center gap-1.5"
-              >
-                <ArrowLeft className="h-3.5 w-3.5 text-cyan-400" />
-                <span>Quay lại Dự án</span>
-              </Button>
-
-              <div className="hidden md:flex items-center gap-1.5 border-l border-white/[0.08] pl-3">
-                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="text-xs font-bold text-white tracking-wide">
-                  {pathname === "/scan"
-                    ? "Web & Network Scanner"
-                    : pathname === "/stress-test"
-                    ? "L7 Stress Test War Room"
-                    : pathname === "/apk-audit"
-                    ? "Mobile APK Audit"
-                    : "Security Workspace"}
-                </span>
-                {projectId && (
-                  <span className="text-[10px] font-mono text-cyan-400/80 bg-cyan-950/50 border border-cyan-500/30 px-1.5 py-0.5 rounded">
-                    ID: {projectId.slice(0, 8)}...
-                  </span>
-                )}
-              </div>
+          {projectId && (
+            <div className="hidden lg:flex items-center gap-1 p-1 rounded-xl bg-slate-900/40 border border-white/[0.08] backdrop-blur-md">
+              <Link href={`/scan?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/scan" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" : "text-slate-400 hover:text-slate-200")}>
+                <Shield className="h-3 w-3" /> Quét DAST
+              </Link>
+              <Link href={`/stress-test?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/stress-test" ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "text-slate-400 hover:text-slate-200")}>
+                <Zap className="h-3 w-3" /> Stress Test
+              </Link>
+              <Link href={`/apk-audit?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/apk-audit" ? "bg-amber-500/20 text-amber-300 border border-amber-500/40" : "text-slate-400 hover:text-slate-200")}>
+                <Smartphone className="h-3 w-3" /> APK Audit
+              </Link>
             </div>
-
-            {projectId && (
-              <div className="hidden lg:flex items-center gap-1 p-1 rounded-xl bg-slate-900/80 border border-white/[0.08] backdrop-blur-md">
-                <Link
-                  href={`/scan?projectId=${projectId}`}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
-                    pathname === "/scan"
-                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.2)]"
-                      : "text-slate-400 hover:text-slate-200"
-                  )}
-                >
-                  <Shield className="h-3 w-3" />
-                  Quét DAST
-                </Link>
-                <Link
-                  href={`/stress-test?projectId=${projectId}`}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
-                    pathname === "/stress-test"
-                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_12px_rgba(244,63,94,0.2)]"
-                      : "text-slate-400 hover:text-slate-200"
-                  )}
-                >
-                  <Zap className="h-3 w-3" />
-                  Stress Test
-                </Link>
-                <Link
-                  href={`/apk-audit?projectId=${projectId}`}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
-                    pathname === "/apk-audit"
-                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
-                      : "text-slate-400 hover:text-slate-200"
-                  )}
-                >
-                  <Smartphone className="h-3 w-3" />
-                  APK Audit
-                </Link>
-                <Link
-                  href={`/copilot?projectId=${projectId}`}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
-                    pathname === "/copilot"
-                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.2)]"
-                      : "text-slate-400 hover:text-slate-200"
-                  )}
-                >
-                  <Bot className="h-3 w-3" />
-                  AI Copilot
-                </Link>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2.5">
-              <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1 backdrop-blur-md">
-                <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
-                <span className="text-[11px] font-mono font-medium text-emerald-300">
-                  Node Sync: {syncPulse}%
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-slate-900/60 px-2.5 py-1 backdrop-blur-md">
-                <BadgeCheck className="h-3.5 w-3.5 text-cyan-400" />
-                <span className="text-[11px] font-mono font-medium text-slate-300">
-                  {user.role}
-                </span>
-              </div>
-            </div>
-          </div>
+          )}
         </header>
 
         <main className="w-full">{children}</main>
@@ -311,7 +211,7 @@ function DashboardShellContent({
     );
   }
 
-  // 2. DASHBOARD / SETTINGS / ADMIN (CÓ SIDEBAR)
+  // 2. DASHBOARD / SETTINGS / ADMIN (CÓ SIDEBAR, KHÔNG HEADER)
   const sidebarContent = (
     <div className="relative flex h-full flex-col justify-between border-r border-white/[0.07] bg-slate-950/80 p-4 backdrop-blur-2xl">
       <div className="space-y-5">
@@ -327,12 +227,9 @@ function DashboardShellContent({
               <span className="font-bold text-sm tracking-wide text-white">
                 ADQ<span className="text-cyan-400">.SEC</span>
               </span>
-              <span className="rounded bg-cyan-950 px-1.5 py-0.2 text-[9px] font-mono text-cyan-300 border border-cyan-500/30">
-                PRO
-              </span>
             </div>
             <p className="truncate text-[10px] font-mono text-slate-400 tracking-wider">
-              {area === "admin" ? "SOC ROOT CONSOLE" : "DEVSECOPS SUITE"}
+              {area === "admin" ? "ROOT ACCESS" : "SOC CONSOLE"}
             </p>
           </div>
         </Link>
@@ -346,10 +243,7 @@ function DashboardShellContent({
               <div className="space-y-0.5 pt-1">
                 {group.links.map((item) => {
                   const Icon = item.icon;
-                  const active =
-                    pathname === item.href ||
-                    (item.href !== "/dashboard" && pathname.startsWith(item.href));
-
+                  const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
                   return (
                     <Link
                       key={item.href}
@@ -358,24 +252,13 @@ function DashboardShellContent({
                       className={cn(
                         "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200",
                         active
-                          ? "border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 shadow-[inset_0_1px_0_0_rgba(6,182,212,0.3),0_0_15px_rgba(6,182,212,0.1)]"
-                          : "border border-transparent text-slate-400 hover:border-white/[0.06] hover:bg-slate-900/60 hover:text-slate-200"
+                          ? "border border-cyan-500/40 bg-cyan-950/40 text-cyan-300"
+                          : "border border-transparent text-slate-400 hover:border-white/[0.06] hover:bg-slate-900/60"
                       )}
                     >
-                      <Icon
-                        className={cn(
-                          "h-4 w-4 shrink-0 transition-colors",
-                          active ? "text-cyan-400 drop-shadow-[0_0_6px_#22d3ee]" : "text-slate-400 group-hover:text-slate-300"
-                        )}
-                      />
+                      <Icon className={cn("h-4 w-4 shrink-0 transition-colors", active ? "text-cyan-400" : "text-slate-400")} />
                       <span className="truncate">{item.label}</span>
-
-                      {active && (
-                        <motion.span
-                          layoutId="activeIndicator"
-                          className="absolute right-2 h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"
-                        />
-                      )}
+                      {active && <motion.span layoutId="activeIndicator" className="absolute right-2 h-1.5 w-1.5 rounded-full bg-cyan-400" />}
                     </Link>
                   );
                 })}
@@ -384,124 +267,39 @@ function DashboardShellContent({
           ))}
         </div>
       </div>
-
-      <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 p-3 backdrop-blur-xl">
-        <div className="mb-2.5 flex items-center gap-2.5">
-          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-500/10 border border-cyan-500/30 font-mono font-bold text-xs text-cyan-300">
-            {user.name.slice(0, 1).toUpperCase()}
-            <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-slate-950 bg-emerald-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-xs font-semibold text-white">{user.name}</p>
-            <p className="truncate text-[10px] font-mono text-slate-400">{user.email}</p>
-          </div>
-        </div>
-
-        <Button
-          variant="secondary"
-          className="h-7 w-full justify-center gap-1.5 rounded-lg border border-white/[0.06] bg-slate-950 text-[11px] font-medium text-slate-400 transition hover:border-rose-500/40 hover:bg-rose-950/20 hover:text-rose-300 active:scale-98"
-          onClick={async () => {
-            await logout();
-            router.replace("/login");
-          }}
-        >
-          <LogOut className="h-3 w-3" />
-          Đăng xuất
-        </Button>
-      </div>
+      <Button
+        variant="ghost"
+        className="w-full justify-start gap-2 text-xs text-rose-400 hover:bg-rose-950/20 hover:text-rose-300"
+        onClick={() => logout()}
+      >
+        <LogOut className="h-4 w-4" /> Đăng xuất
+      </Button>
     </div>
   );
 
   return (
     <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
-      <TermsModal
-        isOpen={showTermsModal}
-        onAccept={handleAcceptTerms}
-        onDecline={handleDeclineTerms}
-        userEmail={user.email}
-      />
-
-      <GoogleSetupModal
-        isOpen={showGoogleModal}
-        userEmail={user.email}
-        defaultName={user.name}
-        onComplete={handleCompleteGoogleRecovery}
-      />
-
-      <div
-        className="fixed inset-0 pointer-events-none opacity-15"
-        style={{
-          backgroundImage: `
-            linear-gradient(to right, rgba(6, 182, 212, 0.08) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(6, 182, 212, 0.08) 1px, transparent 1px)
-          `,
-          backgroundSize: "36px 36px",
-        }}
-      />
-
+      <TermsModal isOpen={showTermsModal} onAccept={handleAcceptTerms} onDecline={handleDeclineTerms} userEmail={user.email} />
+      <GoogleSetupModal isOpen={showGoogleModal} userEmail={user.email} defaultName={user.name} onComplete={handleCompleteGoogleRecovery} />
+      
       <div className="relative flex min-h-screen z-10">
         <aside className="hidden w-64 shrink-0 xl:block">{sidebarContent}</aside>
-
         <AnimatePresence>
           {mobileOpen && (
             <>
-              <motion.button
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-md xl:hidden"
-                onClick={() => setMobileOpen(false)}
-              />
-              <motion.aside
-                initial={{ x: -260 }}
-                animate={{ x: 0 }}
-                exit={{ x: -260 }}
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="fixed inset-y-0 left-0 z-50 w-64 xl:hidden"
-              >
-                {sidebarContent}
-              </motion.aside>
+              <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-md xl:hidden" onClick={() => setMobileOpen(false)} />
+              <motion.aside initial={{ x: -260 }} animate={{ x: 0 }} exit={{ x: -260 }} className="fixed inset-y-0 left-0 z-50 w-64 xl:hidden">{sidebarContent}</motion.aside>
             </>
           )}
         </AnimatePresence>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-slate-950/70 backdrop-blur-xl">
-            <div className="flex items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-lg border border-slate-800 bg-slate-900 text-slate-300 hover:border-cyan-500/40 hover:text-white xl:hidden"
-                  onClick={() => setMobileOpen(true)}
-                >
-                  {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-                </Button>
-                <div>
-                  <h1 className="text-sm font-bold text-white tracking-tight">
-                    Bảng điều khiển Quản lý Dự án & Hạ tầng
-                  </h1>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1 backdrop-blur-md">
-                  <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
-                  <span className="text-[11px] font-mono font-medium text-emerald-300">
-                    Engine Sync: {syncPulse}%
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-slate-900/60 px-2.5 py-1 backdrop-blur-md">
-                  <BadgeCheck className="h-3.5 w-3.5 text-cyan-400" />
-                  <span className="text-[11px] font-mono font-medium text-slate-300">
-                    {user.role}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </header>
-
+          {/* Mobile Menu Button only */}
+          <div className="p-4 xl:hidden">
+            <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)} className="h-8 w-8 text-slate-300 border border-slate-800 bg-slate-900">
+              <Menu className="h-4 w-4" />
+            </Button>
+          </div>
           <main className="flex-1 p-4 sm:p-6">{children}</main>
         </div>
       </div>
