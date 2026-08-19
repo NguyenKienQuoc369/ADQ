@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useState, useRef } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,17 +8,23 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Activity,
+  Flame,
   Globe,
+  KeyRound,
   LoaderCircle,
   Lock,
-  Flame,
-  Activity,
   Search,
   ShieldCheck,
-  KeyRound,
   Zap,
 } from "lucide-react";
-import { getProjectById, saveProjectDetail, detectWaf, runStressTest, discoverEndpoints } from "@/lib/api";
+import {
+  detectWaf,
+  discoverEndpoints,
+  getProjectById,
+  runStressTest,
+  saveProjectDetail,
+} from "@/lib/api";
 
 interface StressMetrics {
   totalRequests: number;
@@ -27,6 +33,7 @@ interface StressMetrics {
   status403WafBlocked: number;
   status429RateLimited: number;
   status500Crashed: number;
+  otherStatus: number;
   p95LatencyMs: string | number;
 }
 
@@ -37,82 +44,89 @@ interface LogEntry {
   latency: number;
 }
 
-interface LaserBeam {
+interface PreflightResult {
+  ok?: boolean;
+  status?: number;
+  latency_ms?: number;
+  final_url?: string;
+  server?: string;
+  request_id?: string;
+  error?: string;
+}
+
+type RunPhase = "idle" | "executing" | "replaying" | "done" | "error";
+
+type Beam = {
   x: number;
   y: number;
-  targetX: number;
-  targetY: number;
+  tx: number;
+  ty: number;
   speed: number;
   color: string;
-  radius: number;
-  isBlocked: boolean;
-}
+  blocked: boolean;
+};
 
-interface Spark {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  color: string;
-  alpha: number;
-}
+const statusColor = (status: number) => {
+  if (status === 403) return "#fb7185";
+  if (status === 429) return "#fbbf24";
+  if (status >= 500 || status === 0) return "#c084fc";
+  return "#34d399";
+};
 
-function HologramWarRoomCanvas({
+function WarRoom({
   logs,
-  running,
+  phase,
   targetName,
   metrics,
 }: {
   logs: LogEntry[];
-  running: boolean;
+  phase: RunPhase;
   targetName: string;
   metrics: StressMetrics | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const beamsRef = useRef<LaserBeam[]>([]);
-  const sparksRef = useRef<Spark[]>([]);
-  const ipClustersRef = useRef<Array<{ ip: string; y: number; count: number }>>([]);
-  const shieldHitRef = useRef<number>(0);
+  const beamsRef = useRef<Beam[]>([]);
+  const nodesRef = useRef<Array<{ id: string; y: number }>>([]);
+  const lastLogCountRef = useRef(0);
 
   useEffect(() => {
-    if (!logs.length) return;
-    const latest = logs.slice(0, 12);
+    if (logs.length <= lastLogCountRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    latest.forEach((l) => {
-      const isBlocked = l.status === 403 || l.status === 429;
-      let color = "#10b981";
-      if (l.status === 403) color = "#f43f5e";
-      else if (l.status === 429) color = "#f59e0b";
-      else if (l.status >= 500) color = "#a855f7";
+    const newLogs = logs.slice(lastLogCountRef.current);
+    lastLogCountRef.current = logs.length;
+    const w = canvas.clientWidth || 800;
+    const h = canvas.clientHeight || 340;
 
-      const canvas = canvasRef.current;
-      const w = canvas ? canvas.width : 760;
-      const h = canvas ? canvas.height : 260;
-
-      let existingIp = ipClustersRef.current.find((item) => item.ip === l.ip);
-      if (!existingIp) {
-        const randomY = Math.floor(Math.random() * (h - 40)) + 20;
-        existingIp = { ip: l.ip, y: randomY, count: 1 };
-        ipClustersRef.current = [existingIp, ...ipClustersRef.current.slice(0, 12)];
-      } else {
-        existingIp.count += 1;
+    newLogs.slice(-24).forEach((log) => {
+      let node = nodesRef.current.find((item) => item.id === log.ip);
+      if (!node) {
+        const usable = Math.max(120, h - 110);
+        node = { id: log.ip, y: 72 + Math.random() * usable };
+        nodesRef.current = [...nodesRef.current.slice(-9), node];
       }
 
-      const targetCoreX = w - 80;
-      const shieldX = targetCoreX - 60;
-
+      const blocked = log.status === 403 || log.status === 429;
       beamsRef.current.push({
-        x: 175,
-        y: existingIp.y,
-        targetX: isBlocked ? shieldX : targetCoreX,
-        targetY: h / 2,
-        speed: Math.random() * 5 + 7,
-        color,
-        radius: Math.random() * 2 + 2,
-        isBlocked,
+        x: Math.max(120, w * 0.2),
+        y: node.y,
+        tx: blocked ? w * 0.77 : w * 0.88,
+        ty: h * 0.55,
+        speed: 8 + Math.random() * 4,
+        color: statusColor(log.status),
+        blocked,
       });
     });
   }, [logs]);
+
+  useEffect(() => {
+    if (phase === "idle") {
+      lastLogCountRef.current = 0;
+      beamsRef.current = [];
+      nodesRef.current = [];
+    }
+  }, [phase]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -120,182 +134,163 @@ function HologramWarRoomCanvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let animId: number;
+    let animationId = 0;
+    let width = 0;
+    let height = 0;
+    let dpr = 1;
 
-    const render = () => {
-      const w = canvas.width;
-      const h = canvas.height;
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = Math.max(320, rect.width);
+      height = Math.max(230, rect.height);
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
 
-      ctx.fillStyle = "rgba(2, 6, 23, 0.32)";
-      ctx.fillRect(0, 0, w, h);
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
 
-      // Lưới Hologram
-      ctx.strokeStyle = "rgba(30, 41, 59, 0.35)";
+    const draw = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      const bg = ctx.createLinearGradient(0, 0, width, height);
+      bg.addColorStop(0, "#020617");
+      bg.addColorStop(0.55, "#07101f");
+      bg.addColorStop(1, "#020617");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.strokeStyle = "rgba(51,65,85,.28)";
       ctx.lineWidth = 1;
-      for (let x = 0; x < w; x += 40) {
+      for (let x = 0; x <= width; x += 38) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= height; y += 38) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
         ctx.stroke();
       }
 
-      const targetCoreX = w - 80;
-      const targetCoreY = h / 2;
-      const shieldX = targetCoreX - 60;
-
-      // VẼ TẤM KHIÊN WAF
-      const shieldPulse = Math.sin(Date.now() / 150) * 2;
-      const shieldHitActive = shieldHitRef.current > 0;
-      if (shieldHitRef.current > 0) shieldHitRef.current -= 0.05;
+      const coreX = width * 0.88;
+      const coreY = height * 0.55;
+      const shieldX = width * 0.77;
+      const pulse = 1 + Math.sin(Date.now() / 260) * 0.04;
 
       ctx.save();
+      ctx.strokeStyle = "rgba(34,211,238,.8)";
+      ctx.shadowColor = "#22d3ee";
+      ctx.shadowBlur = 20;
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.arc(shieldX + 50, targetCoreY, 75 + shieldPulse, Math.PI * 0.72, Math.PI * 1.28);
-      ctx.lineWidth = shieldHitActive ? 5 : 3;
-      ctx.strokeStyle = shieldHitActive ? "rgba(244, 63, 94, 0.95)" : "rgba(6, 182, 212, 0.85)";
-      ctx.shadowColor = shieldHitActive ? "#f43f5e" : "#06b6d4";
-      ctx.shadowBlur = 18;
+      ctx.arc(shieldX, coreY, 54 * pulse, -Math.PI / 2, Math.PI / 2);
       ctx.stroke();
       ctx.restore();
 
-      ctx.fillStyle = shieldHitActive ? "#f43f5e" : "#38bdf8";
-      ctx.font = "bold 9px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("WAF SHIELD", shieldX - 5, targetCoreY - 50);
-
-      // VẼ TARGET CORE
-      const radGrad = ctx.createRadialGradient(targetCoreX, targetCoreY, 4, targetCoreX, targetCoreY, 28);
-      radGrad.addColorStop(0, "rgba(255, 255, 255, 0.95)");
-      radGrad.addColorStop(0.3, "rgba(16, 185, 129, 0.8)");
-      radGrad.addColorStop(0.8, "rgba(6, 182, 212, 0.2)");
-      radGrad.addColorStop(1, "rgba(2, 6, 23, 0)");
-
-      ctx.fillStyle = radGrad;
+      const coreGradient = ctx.createRadialGradient(coreX, coreY, 2, coreX, coreY, 42);
+      coreGradient.addColorStop(0, "rgba(255,255,255,.98)");
+      coreGradient.addColorStop(0.18, "rgba(52,211,153,.95)");
+      coreGradient.addColorStop(0.55, "rgba(34,211,238,.3)");
+      coreGradient.addColorStop(1, "rgba(2,6,23,0)");
+      ctx.fillStyle = coreGradient;
       ctx.beginPath();
-      ctx.arc(targetCoreX, targetCoreY, 28, 0, Math.PI * 2);
+      ctx.arc(coreX, coreY, 42, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath();
-      ctx.arc(targetCoreX, targetCoreY, 10, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "#10b981";
-      ctx.font = "bold 10px monospace";
+      ctx.font = "600 10px ui-monospace, monospace";
       ctx.textAlign = "center";
-      ctx.fillText("TARGET CORE", targetCoreX, targetCoreY + 28);
+      ctx.fillStyle = "#67e8f9";
+      ctx.fillText("WAF", shieldX, coreY - 67);
+      ctx.fillStyle = "#a7f3d0";
+      ctx.fillText("TARGET", coreX, coreY + 55);
 
-      // VẼ IP NGUỒN
       ctx.textAlign = "left";
-      ipClustersRef.current.forEach((node) => {
-        ctx.fillStyle = "rgba(148, 163, 184, 0.9)";
-        ctx.font = "10px monospace";
-        ctx.fillText(node.ip, 18, node.y + 3);
-
-        ctx.fillStyle = running ? "#06b6d4" : "#64748b";
+      nodesRef.current.forEach((node) => {
+        ctx.fillStyle = "#64748b";
+        ctx.font = "10px ui-monospace, monospace";
+        ctx.fillText(node.id, 16, node.y + 3);
+        ctx.fillStyle = phase === "executing" || phase === "replaying" ? "#22d3ee" : "#475569";
         ctx.beginPath();
-        ctx.arc(165, node.y, 3, 0, Math.PI * 2);
+        ctx.arc(Math.max(120, width * 0.2), node.y, 3, 0, Math.PI * 2);
         ctx.fill();
       });
 
-      // CẬP NHẬT & VẼ CHÙM TIA LASER
-      beamsRef.current.forEach((beam, idx) => {
-        const dx = beam.targetX - beam.x;
-        const dy = beam.targetY - beam.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+      beamsRef.current = beamsRef.current.filter((beam) => {
+        const dx = beam.tx - beam.x;
+        const dy = beam.ty - beam.y;
+        const distance = Math.max(0.001, Math.hypot(dx, dy));
+        if (distance < 12) return false;
 
-        if (dist < 10) {
-          if (beam.isBlocked) {
-            shieldHitRef.current = 1.0;
-            for (let s = 0; s < 4; s++) {
-              sparksRef.current.push({
-                x: beam.targetX,
-                y: beam.targetY + (Math.random() - 0.5) * 20,
-                vx: -(Math.random() * 4 + 2),
-                vy: (Math.random() - 0.5) * 4,
-                color: beam.color,
-                alpha: 1,
-              });
-            }
-          } else {
-            ctx.strokeStyle = "#10b981";
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(targetCoreX, targetCoreY, 16, 0, Math.PI * 2);
-            ctx.stroke();
-          }
+        const oldX = beam.x;
+        const oldY = beam.y;
+        beam.x += (dx / distance) * beam.speed;
+        beam.y += (dy / distance) * beam.speed;
 
-          beamsRef.current.splice(idx, 1);
-        } else {
-          beam.x += (dx / dist) * beam.speed;
-          beam.y += (dy / dist) * beam.speed;
-
-          const trailLength = 20;
-          const trailX = beam.x - (dx / dist) * trailLength;
-          const trailY = beam.y - (dy / dist) * trailLength;
-
-          const grad = ctx.createLinearGradient(trailX, trailY, beam.x, beam.y);
-          grad.addColorStop(0, "rgba(0,0,0,0)");
-          grad.addColorStop(1, beam.color);
-
-          ctx.strokeStyle = grad;
-          ctx.lineWidth = beam.radius;
-          ctx.beginPath();
-          ctx.moveTo(trailX, trailY);
-          ctx.lineTo(beam.x, beam.y);
-          ctx.stroke();
-
-          ctx.fillStyle = "#ffffff";
-          ctx.beginPath();
-          ctx.arc(beam.x, beam.y, beam.radius * 0.7, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        const trail = ctx.createLinearGradient(oldX, oldY, beam.x, beam.y);
+        trail.addColorStop(0, "rgba(2,6,23,0)");
+        trail.addColorStop(1, beam.color);
+        ctx.strokeStyle = trail;
+        ctx.lineWidth = beam.blocked ? 2.2 : 1.8;
+        ctx.beginPath();
+        ctx.moveTo(oldX, oldY);
+        ctx.lineTo(beam.x, beam.y);
+        ctx.stroke();
+        return true;
       });
 
-      // VẼ TIA LỬA NỔ TẠI KHIÊN
-      sparksRef.current.forEach((sp, sIdx) => {
-        sp.x += sp.vx;
-        sp.y += sp.vy;
-        sp.alpha -= 0.05;
-
-        if (sp.alpha <= 0) {
-          sparksRef.current.splice(sIdx, 1);
-        } else {
-          ctx.fillStyle = sp.color;
-          ctx.globalAlpha = sp.alpha;
-          ctx.beginPath();
-          ctx.arc(sp.x, sp.y, 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.globalAlpha = 1.0;
-        }
-      });
-
-      animId = requestAnimationFrame(render);
+      animationId = requestAnimationFrame(draw);
     };
 
-    render();
-    return () => cancelAnimationFrame(animId);
-  }, [running, targetName]);
+    draw();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(animationId);
+    };
+  }, [phase]);
+
+  const phaseText =
+    phase === "executing"
+      ? "Running authorized load test"
+      : phase === "replaying"
+      ? "Replaying captured request telemetry"
+      : phase === "done"
+      ? "Run complete"
+      : phase === "error"
+      ? "Run stopped"
+      : "War Room ready";
 
   return (
-    <div className="relative w-full h-[255px] rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-2xl shrink-0">
-      <canvas ref={canvasRef} width={800} height={255} className="w-full h-full block" />
-
-      <div className="absolute top-2 left-3 flex items-center gap-2">
-        <Badge className="bg-slate-900/90 border-slate-700 text-cyan-300 font-mono text-[10px] backdrop-blur-md">
-          <Zap className="h-3 w-3 mr-1 text-cyan-400 fill-cyan-400" />
-          {metrics ? `${metrics.actualRps} req/s` : running ? "Executing Traffic..." : "War Room Ready"}
+    <section className="relative min-h-[260px] h-[34vh] lg:h-full lg:min-h-0 overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-950 shadow-[0_18px_70px_rgba(0,0,0,.35)]">
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-center justify-between gap-2 p-3">
+        <Badge className="border border-cyan-500/30 bg-slate-950/80 text-cyan-300 backdrop-blur-xl font-mono text-[10px]">
+          <Zap className="mr-1 h-3 w-3" /> {metrics ? `${metrics.actualRps} req/s` : phaseText}
+        </Badge>
+        <Badge className="max-w-[70%] truncate border border-slate-700 bg-slate-950/80 text-slate-300 backdrop-blur-xl font-mono text-[10px]">
+          {targetName || "No target selected"}
         </Badge>
       </div>
-
-      <div className="absolute top-2 right-3 flex items-center gap-2 text-[10px] font-mono">
-        <span className="flex items-center gap-1 text-emerald-400 font-bold">
-          <span className="h-2 w-2 rounded-full bg-emerald-400" /> 200 OK (Thủng Khiên)
-        </span>
-        <span className="flex items-center gap-1 text-rose-400 font-bold">
-          <span className="h-2 w-2 rounded-full bg-rose-400" /> 403 WAF (Khiên Chặn)
-        </span>
+      <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex flex-wrap gap-x-4 gap-y-1 rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-[9px] font-mono backdrop-blur-md">
+        <span className="text-emerald-300">● 2xx/3xx accepted</span>
+        <span className="text-rose-300">● 403 denied</span>
+        <span className="text-amber-300">● 429 rate limited</span>
+        <span className="text-purple-300">● 5xx/network error</span>
       </div>
+    </section>
+  );
+}
+
+function MetricCard({ label, value, tone }: { label: string; value: React.ReactNode; tone: string }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2.5 text-center shadow-sm">
+      <div className="text-[9px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-1 font-mono text-base font-bold ${tone}`}>{value}</div>
     </div>
   );
 }
@@ -308,52 +303,63 @@ function StressTestContent() {
   const [endpoints, setEndpoints] = useState<string[]>([]);
   const [selectedEndpoint, setSelectedEndpoint] = useState("");
   const [scanningEndpoints, setScanningEndpoints] = useState(false);
-
-  const [targetRequests, setTargetRequests] = useState<number>(2000);
-  const [duration, setDuration] = useState<number>(5);
+  const [targetRequests, setTargetRequests] = useState(2000);
+  const [duration, setDuration] = useState(5);
 
   const [detectingWaf, setDetectingWaf] = useState(false);
-  const [detectedWaf, setDetectedWaf] = useState<string>("standard");
+  const [detectedWaf, setDetectedWaf] = useState("standard");
   const [detectedWafName, setDetectedWafName] = useState<string | null>(null);
-  const [inputLabel, setInputLabel] = useState<string>("Mã Bypass / Secret Token");
-  const [inputPlaceholder, setInputPlaceholder] = useState<string>("Nhập mã bypass");
-  const [bypassCode, setBypassCode] = useState<string>("");
+  const [inputLabel, setInputLabel] = useState("Authorized test credential");
+  const [inputPlaceholder, setInputPlaceholder] = useState("header.Authorization=Bearer ...");
+  const [credentialHelp, setCredentialHelp] = useState("Use credentials configured for your own test environment.");
+  const [bypassCode, setBypassCode] = useState("");
 
-  const [running, setRunning] = useState(false);
+  const [phase, setPhase] = useState<RunPhase>("idle");
   const [metrics, setMetrics] = useState<StressMetrics | null>(null);
   const [liveLogs, setLiveLogs] = useState<LogEntry[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+  const [preflight, setPreflight] = useState<PreflightResult | null>(null);
+  const replayTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const calculatedRps = Math.round(targetRequests / Math.max(1, duration));
+  const running = phase === "executing" || phase === "replaying";
+  const calculatedRps = useMemo(
+    () => Math.round(targetRequests / Math.max(1, duration)),
+    [targetRequests, duration]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (replayTimer.current) clearInterval(replayTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!projectId) return;
     getProjectById(projectId)
-      .then((p) => {
-        if (!p) return;
-        const domain = p.domain || p.projectDetail?.title || "";
+      .then((project) => {
+        if (!project) return;
+        const domain = project.domain || project.projectDetail?.title || "";
         if (domain) {
           setBaseDomain(domain);
           setSelectedEndpoint(domain);
           setEndpoints([domain]);
         }
       })
-      .catch((e) => console.warn("Load project error:", e));
+      .catch((error) => console.warn("Load project error:", error));
   }, [projectId]);
 
   const handleScanEndpoints = async () => {
     if (!baseDomain || running) return;
     setScanningEndpoints(true);
     setErrorMsg(null);
-
     try {
-      const res = await discoverEndpoints(baseDomain);
-      if (res && res.endpoints && res.endpoints.length > 0) {
-        setEndpoints(res.endpoints);
-        setSelectedEndpoint(res.endpoints[0]);
-      }
+      const result = await discoverEndpoints(baseDomain);
+      const found = Array.isArray(result?.endpoints) ? result.endpoints : [];
+      setEndpoints(found.length ? found : [baseDomain]);
+      setSelectedEndpoint(found[0] || baseDomain);
     } catch {
-      setErrorMsg("Không thể quét endpoint.");
+      setErrorMsg("Không thể quét endpoint. Kiểm tra URL và kết nối backend.");
     } finally {
       setScanningEndpoints(false);
     }
@@ -364,13 +370,14 @@ function StressTestContent() {
     if (!target || running) return;
     setDetectingWaf(true);
     setErrorMsg(null);
-
     try {
-      const res = await detectWaf(target);
-      setDetectedWaf(res.detected_waf || "standard");
-      setDetectedWafName(res.waf_name);
-      setInputLabel(res.input_label || "Mã Bypass / Secret Token");
-      setInputPlaceholder(res.input_placeholder || "Nhập mã bypass");
+      const result = await detectWaf(target);
+      setDetectedWaf(result.detected_waf || "standard");
+      setDetectedWafName(result.waf_name || "No WAF / Generic Server");
+      setInputLabel(result.input_label || "Authorized test credential");
+      setInputPlaceholder(result.input_placeholder || "header.Authorization=Bearer ...");
+      setCredentialHelp(result.credential_help || "Use credentials configured for your own test environment.");
+      setBypassCode("");
     } catch {
       setErrorMsg("Không thể kiểm tra WAF.");
     } finally {
@@ -378,40 +385,74 @@ function StressTestContent() {
     }
   };
 
+  const replayCapturedLogs = (logs: LogEntry[]) => {
+    if (replayTimer.current) clearInterval(replayTimer.current);
+    if (!logs.length) {
+      setPhase("done");
+      return;
+    }
+    setPhase("replaying");
+    setLiveLogs([]);
+    let index = 0;
+    const batch = Math.max(1, Math.ceil(logs.length / 36));
+    replayTimer.current = setInterval(() => {
+      index = Math.min(logs.length, index + batch);
+      setLiveLogs(logs.slice(0, index));
+      if (index >= logs.length) {
+        if (replayTimer.current) clearInterval(replayTimer.current);
+        replayTimer.current = null;
+        setPhase("done");
+      }
+    }, 70);
+  };
+
   const handleStartStress = async () => {
     const finalUrl = selectedEndpoint || baseDomain;
     if (!finalUrl || running) return;
 
     setErrorMsg(null);
-    setRunning(true);
+    setProfileMessage(null);
+    setPreflight(null);
     setMetrics(null);
     setLiveLogs([]);
+    setPhase("executing");
 
     const payload = {
       target_url: finalUrl,
-      target_requests: targetRequests,
-      duration: `${duration}s`,
+      target_requests: Math.min(50000, Math.max(1, targetRequests)),
+      duration: `${Math.min(120, Math.max(1, duration))}s`,
       bypass_code: bypassCode.trim(),
       waf_type: detectedWaf,
     };
 
     try {
       const response = await runStressTest(payload);
-      const resData = response.result?.metrics || response.metrics || {};
-      const realSampleLogs = response.result?.sample_logs || response.sample_logs || [];
+      const result = response?.result || response || {};
+      const raw = result.metrics || {};
+      const capturedLogs: LogEntry[] = Array.isArray(result.sample_logs) ? result.sample_logs : [];
 
       const computedMetrics: StressMetrics = {
-        totalRequests: resData.total_requests || targetRequests,
-        actualRps: resData.rps || calculatedRps,
-        status200: resData.status_200 || 0,
-        status403WafBlocked: resData.status_403_waf_blocked || 0,
-        status429RateLimited: resData.status_429_rate_limited || 0,
-        status500Crashed: resData.status_500_crashed || 0,
-        p95LatencyMs: resData.p95_latency || "16ms",
+        totalRequests: raw.total_requests ?? 0,
+        actualRps: raw.rps ?? 0,
+        status200: raw.status_200 ?? 0,
+        status403WafBlocked: raw.status_403_waf_blocked ?? 0,
+        status429RateLimited: raw.status_429_rate_limited ?? 0,
+        status500Crashed: raw.status_500_crashed ?? 0,
+        otherStatus: raw.other_status ?? 0,
+        p95LatencyMs: raw.p95_latency ?? "0ms",
       };
 
       setMetrics(computedMetrics);
-      setLiveLogs(realSampleLogs);
+      setPreflight(result.preflight || null);
+      setProfileMessage(result.profile?.message || null);
+
+      if (!result.ok) {
+        setErrorMsg(result.profile?.message || `Preflight failed with HTTP ${result.preflight?.status || "unknown"}.`);
+        setPhase("error");
+        return;
+      }
+
+      replayCapturedLogs(capturedLogs);
 
       if (projectId) {
         await saveProjectDetail(projectId, {
@@ -421,231 +462,185 @@ function StressTestContent() {
             stressMetrics: computedMetrics,
             testedEndpoint: finalUrl,
             wafName: detectedWafName,
+            preflight: result.preflight || null,
           },
         });
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || "Kiểm thử tải thất bại.");
-    } finally {
-      setRunning(false);
+    } catch (error: any) {
+      setErrorMsg(error?.message || "Kiểm thử tải thất bại.");
+      setPhase("error");
     }
   };
 
   return (
-    <div className="h-[calc(100vh-5.5rem)] max-h-[calc(100vh-5.5rem)] overflow-hidden flex flex-col justify-between p-2.5 bg-slate-950 text-slate-100 font-sans">
-      {/* 1. Header Bar Tối Giản */}
-      <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30">
-            <Flame className="h-4 w-4 fill-rose-500 text-rose-500" />
+    <div className="min-h-[calc(100dvh-4rem)] bg-slate-950 text-slate-100 lg:h-[calc(100dvh-4rem)] lg:overflow-hidden">
+      <div className="mx-auto flex min-h-full w-full max-w-[1800px] flex-col gap-3 p-3 sm:p-4 lg:h-full lg:p-4">
+        <header className="flex shrink-0 flex-col gap-3 rounded-2xl border border-slate-800/80 bg-slate-900/60 px-3 py-3 shadow-sm backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-400">
+              <Flame className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold tracking-tight text-white sm:text-base">L7 Stress Test · War Room</h1>
+              <p className="truncate text-[10px] text-slate-500">Authorized load testing with WAF-aware access profiles</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
-              L7 Stress Test & War Room Hologram
-              {projectId && (
-                <span className="text-[10px] font-mono text-cyan-400 font-normal">
-                  [{projectId.slice(0, 10)}]
-                </span>
-              )}
-            </h2>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {detectedWafName ? (
-            <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-300 font-mono text-[10px]" variant="muted">
-              <ShieldCheck className="h-3 w-3 mr-1" /> {detectedWafName}
+          <div className="flex flex-wrap items-center gap-2">
+            {detectedWafName && (
+              <Badge className="border border-amber-500/30 bg-amber-500/10 text-amber-300 font-mono text-[10px]">
+                <ShieldCheck className="mr-1 h-3 w-3" /> {detectedWafName}
+              </Badge>
+            )}
+            <Badge className="border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 font-mono text-[10px]">
+              {calculatedRps.toLocaleString()} req/s target
             </Badge>
-          ) : null}
-          <Badge className="border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono text-[10px]" variant="muted">
-            Tốc độ: {calculatedRps.toLocaleString()} req/sec
-          </Badge>
-        </div>
-      </div>
+          </div>
+        </header>
 
-      {/* 2. Bố Cục 2 Cột Vừa Khít 1 Màn Hình Không Cần Cuộn */}
-      <div className="grid gap-2.5 lg:grid-cols-12 flex-1 my-1.5 min-h-0 overflow-hidden">
-        {/* CỘT TRÁI (5 phần): Cấu hình & Ô Nhập Khóa Khi Bắn */}
-        <div className="lg:col-span-5 flex flex-col justify-between gap-2 min-h-0">
-          <Card className="border-slate-800 bg-slate-900/90 shadow-md">
-            <CardContent className="p-3 space-y-2">
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-slate-400 flex items-center justify-between">
-                  <span>Domain Gốc</span>
-                  {projectId && (
-                    <span className="text-[9px] text-cyan-400 flex items-center gap-1">
-                      <Lock className="h-2.5 w-2.5" /> Cố định
-                    </span>
-                  )}
-                </label>
-                <div className="relative mt-1">
-                  <Globe className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <Input
-                    value={baseDomain}
-                    onChange={(e) => setBaseDomain(e.target.value)}
-                    disabled={running || Boolean(projectId && baseDomain)}
-                    placeholder="https://example.com"
-                    className="h-8 pl-8 border-slate-800 bg-slate-950 font-mono text-xs text-cyan-300 disabled:opacity-80"
-                  />
+        <div className="grid flex-1 gap-3 lg:min-h-0 lg:grid-cols-[minmax(310px,380px)_minmax(0,1fr)]">
+          <aside className="flex flex-col gap-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+            <Card className="border-slate-800 bg-slate-900/80">
+              <CardContent className="space-y-3 p-4">
+                <div>
+                  <label className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    <span>Target domain</span>
+                    {projectId && <span className="flex items-center gap-1 text-cyan-400"><Lock className="h-3 w-3" /> Project</span>}
+                  </label>
+                  <div className="relative mt-1.5">
+                    <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                    <Input
+                      value={baseDomain}
+                      onChange={(event) => setBaseDomain(event.target.value)}
+                      disabled={running || Boolean(projectId && baseDomain)}
+                      placeholder="https://example.com"
+                      className="h-10 border-slate-800 bg-slate-950 pl-9 font-mono text-xs text-cyan-200"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold uppercase text-slate-400">
-                    Endpoint Bắn Tải ({endpoints.length})
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Endpoint ({endpoints.length})</label>
+                    <Button
+                      size="sm"
+                      type="button"
+                      onClick={handleScanEndpoints}
+                      disabled={running || scanningEndpoints || !baseDomain}
+                      className="h-7 bg-cyan-600 px-2.5 text-[10px] hover:bg-cyan-500"
+                    >
+                      {scanningEndpoints ? <LoaderCircle className="mr-1 h-3 w-3 animate-spin" /> : <Search className="mr-1 h-3 w-3" />}
+                      Discover
+                    </Button>
+                  </div>
+                  <select
+                    value={selectedEndpoint}
+                    onChange={(event) => setSelectedEndpoint(event.target.value)}
+                    disabled={running}
+                    className="mt-1.5 h-10 w-full rounded-md border border-slate-800 bg-slate-950 px-3 font-mono text-xs text-slate-200 outline-none focus:border-cyan-600"
+                  >
+                    {(endpoints.length ? endpoints : baseDomain ? [baseDomain] : []).map((endpoint) => (
+                      <option key={endpoint} value={endpoint}>{endpoint}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] font-semibold uppercase text-slate-500">Requests</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={50000}
+                      value={targetRequests}
+                      onChange={(event) => setTargetRequests(Math.max(1, Number(event.target.value) || 1))}
+                      disabled={running}
+                      className="mt-1 h-9 border-slate-800 bg-slate-950 font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-semibold uppercase text-slate-500">Seconds</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={120}
+                      value={duration}
+                      onChange={(event) => setDuration(Math.max(1, Number(event.target.value) || 1))}
+                      disabled={running}
+                      className="mt-1 h-9 border-slate-800 bg-slate-950 font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-slate-800 bg-slate-900/80 lg:flex-1">
+              <CardContent className="flex h-full flex-col gap-3 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex min-w-0 items-center gap-1.5 truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    <KeyRound className="h-3.5 w-3.5 shrink-0 text-amber-400" /> {inputLabel}
                   </label>
                   <Button
                     size="sm"
                     type="button"
-                    onClick={handleScanEndpoints}
-                    disabled={running || scanningEndpoints || !baseDomain}
-                    className="h-5 px-2 text-[9px] bg-cyan-600/90 hover:bg-cyan-500 text-white font-medium"
+                    variant="outline"
+                    onClick={handleDetectWaf}
+                    disabled={running || detectingWaf || !(selectedEndpoint || baseDomain)}
+                    className="h-7 shrink-0 border-amber-500/30 px-2 text-[10px] text-amber-300 hover:bg-amber-500/10"
                   >
-                    {scanningEndpoints ? <LoaderCircle className="h-2.5 w-2.5 animate-spin mr-1" /> : <Search className="h-2.5 w-2.5 mr-1" />}
-                    Quét Endpoint
+                    {detectingWaf ? <LoaderCircle className="mr-1 h-3 w-3 animate-spin" /> : <Activity className="mr-1 h-3 w-3" />}
+                    Detect WAF
                   </Button>
                 </div>
-                <select
-                  value={selectedEndpoint}
-                  onChange={(e) => setSelectedEndpoint(e.target.value)}
+
+                <Input
+                  value={bypassCode}
+                  onChange={(event) => setBypassCode(event.target.value)}
                   disabled={running}
-                  className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 outline-none focus:border-rose-500 font-mono disabled:opacity-60"
-                >
-                  {endpoints.map((ep, idx) => (
-                    <option key={idx} value={ep}>
-                      {ep}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  placeholder={inputPlaceholder}
+                  className="h-10 border-slate-800 bg-slate-950 font-mono text-xs text-cyan-200 placeholder:text-slate-600"
+                />
 
-              <div className="grid grid-cols-2 gap-2 pt-0.5">
-                <div>
-                  <label className="text-[9px] uppercase text-slate-400 font-semibold">Tổng Requests</label>
-                  <Input
-                    type="number"
-                    min={10}
-                    max={50000}
-                    step={100}
-                    value={targetRequests}
-                    onChange={(e) => setTargetRequests(Math.max(1, Number(e.target.value)))}
-                    disabled={running}
-                    className="mt-0.5 h-7 border-slate-800 bg-slate-950 text-xs font-bold text-white disabled:opacity-60"
-                  />
+                <p className="text-[10px] leading-relaxed text-slate-500">{credentialHelp}</p>
+
+                {(profileMessage || preflight) && (
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-[10px]">
+                    {profileMessage && <p className="text-slate-300">{profileMessage}</p>}
+                    {preflight && (
+                      <div className="mt-2 flex flex-wrap gap-2 font-mono">
+                        <span className={preflight.ok ? "text-emerald-400" : "text-rose-400"}>Preflight HTTP {preflight.status ?? 0}</span>
+                        <span className="text-slate-500">{preflight.latency_ms ?? 0}ms</span>
+                        {preflight.request_id && <span className="max-w-full truncate text-cyan-500">ID: {preflight.request_id}</span>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-auto space-y-2 pt-1">
+                  {errorMsg && <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-[10px] text-rose-300">{errorMsg}</div>}
+                  <Button
+                    onClick={handleStartStress}
+                    disabled={running || !(selectedEndpoint || baseDomain)}
+                    className="h-11 w-full bg-gradient-to-r from-rose-600 to-orange-600 text-xs font-bold text-white shadow-lg shadow-rose-950/30 hover:from-rose-500 hover:to-orange-500"
+                  >
+                    {running ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Flame className="mr-2 h-4 w-4" />}
+                    {phase === "executing" ? "Executing authorized test..." : phase === "replaying" ? "Rendering telemetry..." : `Start Stress Test · ${calculatedRps.toLocaleString()} req/s`}
+                  </Button>
                 </div>
-                <div>
-                  <label className="text-[9px] uppercase text-slate-400 font-semibold">Thời gian (Giây)</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={120}
-                    value={duration}
-                    onChange={(e) => setDuration(Math.max(1, Number(e.target.value)))}
-                    disabled={running}
-                    className="mt-0.5 h-7 border-slate-800 bg-slate-950 text-xs font-bold text-white disabled:opacity-60"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </aside>
 
-          {/* Quét WAF & Ô Nhập Mã Bypass Tự Động Khóa */}
-          <Card className="border-slate-800 bg-slate-900/90 shadow-md flex-1 flex flex-col justify-between">
-            <CardContent className="p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-semibold uppercase text-slate-400 flex items-center gap-1">
-                  <KeyRound className="h-3 w-3 text-amber-400" /> {inputLabel}
-                </label>
-                <Button
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                  onClick={handleDetectWaf}
-                  disabled={running || detectingWaf}
-                  className="h-5 px-2 text-[9px] border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
-                >
-                  {detectingWaf ? <LoaderCircle className="h-2.5 w-2.5 animate-spin mr-1" /> : <Activity className="h-2.5 w-2.5 mr-1" />}
-                  Quét WAF
-                </Button>
-              </div>
-
-              <Input
-                value={bypassCode}
-                onChange={(e) => setBypassCode(e.target.value)}
-                disabled={running}
-                placeholder={inputPlaceholder}
-                className="h-8 border-slate-800 bg-slate-950 font-mono text-xs text-cyan-300 placeholder:text-slate-600 disabled:opacity-60"
-              />
-
-              <p className="text-[9px] text-slate-400 leading-relaxed">
-                {detectedWaf === "vercel"
-                  ? "Dán chuỗi Secret (rsE...), hệ thống tự tiêm 3 tầng vào URL, Header & Cookie."
-                  : detectedWaf === "cloudflare"
-                  ? "Dán trực tiếp token cf_clearance hoặc Service Secret."
-                  : "Hỗ trợ nạp token hoặc chuỗi header/cookie tùy chỉnh."}
-              </p>
-
-              <div className="pt-1">
-                {errorMsg && <p className="mb-1 text-[10px] text-rose-400">{errorMsg}</p>}
-                <Button
-                  onClick={handleStartStress}
-                  disabled={running || !baseDomain}
-                  className="h-9 w-full bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white font-bold shadow-lg shadow-rose-900/30 transition text-xs"
-                >
-                  {running ? (
-                    <span className="flex items-center gap-1.5">
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin text-white" />
-                      Đang thực thi ({calculatedRps.toLocaleString()} req/s)...
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5">
-                      <Flame className="h-3.5 w-3.5 fill-white" />
-                      Kích Hoạt Stress Test ({calculatedRps.toLocaleString()} req/s)
-                    </span>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* CỘT PHẢI (7 phần): War Room Hologram Canvas với Tấm Khiên WAF & Thẻ HTTP */}
-        <div className="lg:col-span-7 flex flex-col justify-between gap-2 min-h-0">
-          <HologramWarRoomCanvas
-            logs={liveLogs}
-            running={running}
-            targetName={selectedEndpoint || baseDomain}
-            metrics={metrics}
-          />
-
-          {/* 4 Thẻ Trạng Thái HTTP Thực Tế */}
-          <div className="grid grid-cols-4 gap-2 shrink-0">
-            <div className="p-2 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-              <div className="text-[9px] text-slate-400 font-medium">200 OK (Thành công)</div>
-              <div className="text-sm font-bold text-emerald-400 font-mono">
-                {metrics ? metrics.status200 : 0}
-              </div>
+          <main className="grid gap-3 lg:min-h-0 lg:grid-rows-[minmax(0,1fr)_auto]">
+            <WarRoom logs={liveLogs} phase={phase} targetName={selectedEndpoint || baseDomain} metrics={metrics} />
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+              <MetricCard label="Total" value={metrics?.totalRequests ?? 0} tone="text-slate-100" />
+              <MetricCard label="2xx/3xx" value={metrics?.status200 ?? 0} tone="text-emerald-400" />
+              <MetricCard label="403" value={metrics?.status403WafBlocked ?? 0} tone="text-rose-400" />
+              <MetricCard label="429" value={metrics?.status429RateLimited ?? 0} tone="text-amber-400" />
+              <MetricCard label="5xx / Net" value={metrics?.status500Crashed ?? 0} tone="text-purple-400" />
+              <MetricCard label="p95" value={metrics?.p95LatencyMs ?? "-"} tone="text-cyan-300" />
             </div>
-            <div className="p-2 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-              <div className="text-[9px] text-slate-400 font-medium">403 (Khiên Chặn)</div>
-              <div className="text-sm font-bold text-rose-400 font-mono">
-                {metrics ? metrics.status403WafBlocked : 0}
-              </div>
-            </div>
-            <div className="p-2 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-              <div className="text-[9px] text-slate-400 font-medium">429 (Giới hạn tải)</div>
-              <div className="text-sm font-bold text-amber-400 font-mono">
-                {metrics ? metrics.status429RateLimited : 0}
-              </div>
-            </div>
-            <div className="p-2 rounded-xl border border-slate-800 bg-slate-900/90 text-center">
-              <div className="text-[9px] text-slate-400 font-medium">Latency p95</div>
-              <div className="text-sm font-bold text-cyan-300 font-mono">
-                {metrics ? metrics.p95LatencyMs : "-"}
-              </div>
-            </div>
-          </div>
+          </main>
         </div>
       </div>
     </div>
@@ -655,7 +650,7 @@ function StressTestContent() {
 export default function StressTestPage() {
   return (
     <DashboardShell area="dashboard">
-      <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading war room suite...</div>}>
+      <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center text-slate-500">Loading stress-test workspace...</div>}>
         <StressTestContent />
       </Suspense>
     </DashboardShell>

@@ -1,11 +1,10 @@
 import os
 import re
-import sys
 import json
 import uuid
 import time
-from typing import Dict, Any, List, Optional
-from fastapi import HTTPException, status
+from typing import Dict, Any, List
+from fastapi import HTTPException
 import redis
 
 try:
@@ -13,11 +12,8 @@ try:
     from backend.schemas.scan import (
         ScanRequest,
         CopilotChatRequest,
-        CopilotAnalyzeRequest,
-        CopilotPatchRequest,
         StressRequest,
         WafDetectRequest,
-        ApkRequest,
     )
     from backend.core.recon_scan.waf_detector import WAFFingerprintDetector
     from backend.core.recon_scan.scanner import perform_real_dynamic_scan
@@ -26,11 +22,8 @@ except ImportError:
     from schemas.scan import (
         ScanRequest,
         CopilotChatRequest,
-        CopilotAnalyzeRequest,
-        CopilotPatchRequest,
         StressRequest,
         WafDetectRequest,
-        ApkRequest,
     )
     from core.recon_scan.waf_detector import WAFFingerprintDetector
     from core.recon_scan.scanner import perform_real_dynamic_scan
@@ -42,6 +35,7 @@ try:
     redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 except Exception:
     redis_client = None
+
 
 class ScanService:
     @staticmethod
@@ -103,7 +97,9 @@ class ScanService:
 
     @staticmethod
     def discover_endpoints(target_url: str) -> Dict[str, Any]:
-        raw = target_url.strip()
+        raw = (target_url or "").strip()
+        if not raw:
+            raise HTTPException(status_code=400, detail="Target URL is required")
         clean = raw if raw.startswith(("http://", "https://")) else f"https://{raw}"
 
         discovered: List[str] = [clean]
@@ -112,23 +108,23 @@ class ScanService:
         if scan_res.get("exposed_paths"):
             for p in scan_res["exposed_paths"]:
                 clean_path = p.split(" ")[0]
-                if clean_path not in discovered:
+                if clean_path.startswith(("http://", "https://")) and clean_path not in discovered:
                     discovered.append(clean_path)
 
         # Cào thêm Next.js manifest
         try:
             import requests
-            resp = requests.get(clean, timeout=4, verify=False)
+            resp = requests.get(clean, timeout=4)
             manifests = re.findall(r'src=["\'](/_next/static/[^"\']+/_buildManifest\.js)["\']', resp.text)
             for mf in manifests:
                 mf_url = f"{clean.rstrip('/')}{mf}"
-                mf_resp = requests.get(mf_url, timeout=3, verify=False)
+                mf_resp = requests.get(mf_url, timeout=3)
                 routes = re.findall(r'["\'](/[a-zA-Z0-9_\-\/]+)["\']', mf_resp.text)
-                for r in routes:
-                    if not any(r.endswith(ext) for ext in [".js", ".css", ".json"]):
-                        full_r = f"{clean.rstrip('/')}{r}"
-                        if full_r not in discovered and len(discovered) < 25:
-                            discovered.append(full_r)
+                for route in routes:
+                    if not any(route.endswith(ext) for ext in [".js", ".css", ".json"]):
+                        full_route = f"{clean.rstrip('/')}{route}"
+                        if full_route not in discovered and len(discovered) < 25:
+                            discovered.append(full_route)
         except Exception:
             pass
 
@@ -141,23 +137,28 @@ class ScanService:
 
         detected_wafs = waf_res.get("detected_wafs", [])
         primary_waf = detected_wafs[0] if detected_wafs else "No WAF / Generic Server"
+        primary_lower = primary_waf.lower()
 
-        input_label = "Mã Bypass / Secret Token"
-        input_placeholder = "Nhập mã bypass hoặc token xác thực"
+        input_label = "Authorized test credential"
+        input_placeholder = "header.Authorization=Bearer ..."
         detected_slug = "standard"
+        credential_help = "Use an explicit header/cookie key-value pair for your own test environment."
 
-        if "Vercel" in primary_waf:
+        if "vercel" in primary_lower:
             detected_slug = "vercel"
-            input_label = "Vercel Protection Bypass Secret"
-            input_placeholder = "rsE... (Chỉ cần dán chuỗi Secret)"
-        elif "Cloudflare" in primary_waf:
+            input_label = "Vercel Automation Bypass Secret"
+            input_placeholder = "Paste the project automation bypass secret"
+            credential_help = "Requires Vercel Protection Bypass for Automation to be enabled for this project."
+        elif "cloudflare" in primary_lower:
             detected_slug = "cloudflare"
-            input_label = "Cloudflare cf_clearance / Token"
-            input_placeholder = "Nhập token cf_clearance hoặc Service Secret"
-        elif "AWS" in primary_waf:
+            input_label = "Cloudflare Access Service Token"
+            input_placeholder = "client_id=...;client_secret=..."
+            credential_help = "Requires a Cloudflare Access Service Auth policy that accepts this service token."
+        elif "aws" in primary_lower or "api gateway" in primary_lower:
             detected_slug = "awswaf"
-            input_label = "AWS WAF x-api-key"
-            input_placeholder = "Nhập chuỗi API Key x-api-key"
+            input_label = "AWS API Gateway API key"
+            input_placeholder = "Paste x-api-key value"
+            credential_help = "Only works when the tested API method/stage accepts this API key."
 
         return {
             "ok": True,
@@ -166,12 +167,14 @@ class ScanService:
             "waf_name": primary_waf,
             "input_label": input_label,
             "input_placeholder": input_placeholder,
+            "credential_help": credential_help,
         }
 
     @staticmethod
     def run_stress_test(req: StressRequest) -> Dict[str, Any]:
         try:
             from backend.core.stress_test.stress_orchestrator import StressOrchestrator
+
             orchestrator = StressOrchestrator()
             result = orchestrator.execute_stress_test(
                 target_url=req.target_url,
@@ -182,6 +185,8 @@ class ScanService:
                 custom_headers=req.custom_headers,
                 custom_cookies=req.custom_cookies,
             )
-            return {"ok": True, "result": result}
+            return {"ok": bool(result.get("ok", False)), "result": result}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Stress test error: {str(exc)}")
