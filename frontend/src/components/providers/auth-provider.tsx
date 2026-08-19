@@ -1,8 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 
 export interface UserProfile {
   id: string;
@@ -39,6 +39,10 @@ const defaultUser: UserProfile = {
   termsAccepted: true,
 };
 
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
+
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
@@ -53,11 +57,6 @@ const AuthContext = createContext<AuthContextType>({
   updateUser: () => {},
 });
 
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -65,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [lockMessage, setLockMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    // Bỏ qua hoàn toàn Auth check nếu đang ở domain adq-soc.click hoặc /admin
+    // Tách biệt hoàn toàn: Không kiểm tra auth nếu đang ở adq-soc.click hoặc route admin
     if (typeof window !== "undefined") {
       const host = window.location.hostname.toLowerCase();
       if (host.includes("adq-soc.click") || pathname?.startsWith("/admin")) {
@@ -74,74 +73,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    if (typeof window !== "undefined") {
-      try {
-        const localUser = localStorage.getItem("adq_user_session");
-        if (localUser) {
-          const parsed = JSON.parse(localUser);
-          setUser({ ...defaultUser, ...parsed });
-          if (parsed.isLocked) {
-            setLockMessage("Tài khoản tạm thời bị khóa do vi phạm chính sách.");
-          }
+    if (supabase) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          const profile: UserProfile = {
+            ...defaultUser,
+            id: session.user.id,
+            email: session.user.email || "",
+            name: session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "User",
+          };
+          setUser(profile);
         }
-      } catch {}
+        setLoading(false);
+      });
+
+      const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          setUser({
+            ...defaultUser,
+            id: session.user.id,
+            email: session.user.email || "",
+            name: session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "User",
+          });
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      });
+
+      return () => {
+        authListener?.subscription.unsubscribe();
+      };
+    } else {
+      if (typeof window !== "undefined") {
+        try {
+          const localUser = localStorage.getItem("adq_user_session");
+          if (localUser) setUser({ ...defaultUser, ...JSON.parse(localUser) });
+        } catch {}
+      }
       setLoading(false);
     }
   }, [pathname]);
 
   const login = async (email?: string, password?: string) => {
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (res.ok && data.user) {
-        const fullUser = { ...defaultUser, ...data.user };
-        setUser(fullUser);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("adq_user_session", JSON.stringify(fullUser));
-        }
-        return data;
-      }
-      return data;
-    } catch (e) {
-      return { ok: false, error: e };
+    if (supabase && email && password) {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, user: data.user };
     }
+    return { ok: false, error: "Supabase not initialized" };
   };
 
   const register = async (payload?: any) => {
-    try {
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+    if (supabase && payload?.email && payload?.password) {
+      const { data, error } = await supabase.auth.signUp({
+        email: payload.email,
+        password: payload.password,
+        options: { data: { full_name: payload.name } },
       });
-      return await res.json();
-    } catch (e) {
-      return { ok: false, error: e };
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, user: data.user };
     }
+    return { ok: false, error: "Supabase not initialized" };
   };
 
-    const loginWithGoogle = async (...args: any[]) => {
+  const loginWithGoogle = async () => {
     if (typeof window !== "undefined") {
       if (supabase) {
-        const { error } = await supabase.auth.signInWithOAuth({
+        await supabase.auth.signInWithOAuth({
           provider: "google",
           options: {
             redirectTo: `${window.location.origin}/dashboard`,
           },
         });
-        if (error) console.error("Google Auth Error:", error);
-      } else {
-        // Fallback sang API backend nếu có cấu hình
-        window.location.href = `${process.env.NEXT_PUBLIC_API_URL || ""}/api/auth/google/login`;
       }
     }
   };
 
   const logout = async () => {
+    if (supabase) await supabase.auth.signOut();
     if (typeof window !== "undefined") {
       localStorage.removeItem("adq_user_session");
       setUser(null);
@@ -161,9 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const setupGoogleRecovery = async (...args: any[]) => {
-    return { ok: true };
-  };
+  const setupGoogleRecovery = async () => ({ ok: true });
 
   const updateUser = (data: Partial<UserProfile>) => {
     if (user) {
