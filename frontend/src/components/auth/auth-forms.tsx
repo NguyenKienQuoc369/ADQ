@@ -13,14 +13,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   ArrowRight,
-  Building,
   Radio,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { TermsModal } from "./terms-modal";
 
 function GoogleIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
@@ -234,7 +232,7 @@ export function LoginForm() {
 }
 
 // =========================================================================
-// 2. REGISTER FORM
+// 2. REGISTER FORM (TỐI GIẢN - KHÔNG Ô TỔ CHỨC - VÀO THẲNG DASHBOARD)
 // =========================================================================
 export function RegisterForm() {
   const router = useRouter();
@@ -243,13 +241,10 @@ export function RegisterForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [company, setCompany] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [agreedTerms, setAgreedTerms] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [showTermsModal, setShowTermsModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -281,11 +276,6 @@ export function RegisterForm() {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
 
-    if (!agreedTerms) {
-      setErrorMessage("Bạn bắt buộc phải đọc và đồng ý với Điều khoản Dịch vụ & Miễn trừ trách nhiệm để tạo tài khoản.");
-      return;
-    }
-
     if (!cleanName || !cleanEmail || !cleanPassword) {
       setErrorMessage("Vui lòng điền đầy đủ các thông tin bắt buộc.");
       return;
@@ -305,13 +295,9 @@ export function RegisterForm() {
         name: cleanName,
         email: cleanEmail,
         password: cleanPassword,
-        company: company.trim() || undefined,
       });
 
       if (res && res.accessToken) {
-        if (typeof window !== "undefined") {
-          localStorage.setItem("adq_terms_accepted_v1", "true");
-        }
         router.replace("/dashboard");
       }
     } catch (err: any) {
@@ -340,19 +326,6 @@ export function RegisterForm() {
 
   return (
     <>
-      <TermsModal
-        isOpen={showTermsModal}
-        onAccept={() => {
-          setAgreedTerms(true);
-          setShowTermsModal(false);
-          if (errorMessage) setErrorMessage(null);
-        }}
-        onDecline={() => {
-          setAgreedTerms(false);
-          setShowTermsModal(false);
-        }}
-      />
-
       {googleLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-xl font-sans">
           <div className="flex flex-col items-center gap-4 rounded-3xl border border-cyan-500/30 bg-slate-900/90 p-8 shadow-[0_0_60px_rgba(6,182,212,0.2)] text-center max-w-sm">
@@ -370,7 +343,7 @@ export function RegisterForm() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-3.5">
+      <form onSubmit={handleSubmit} className="space-y-4">
         {errorMessage && (
           <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in duration-200">
             <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
@@ -385,7 +358,7 @@ export function RegisterForm() {
           </div>
         )}
 
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
             Họ và Tên *
           </label>
@@ -402,9 +375,9 @@ export function RegisterForm() {
           </div>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-            Email Doanh Nghiệp / Cá Nhân *
+            Email *
           </label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
@@ -420,7 +393,7 @@ export function RegisterForm() {
           </div>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
               Mật khẩu (Tối thiểu 8 ký tự) *
@@ -461,50 +434,6 @@ export function RegisterForm() {
           )}
         </div>
 
-        <div className="space-y-1">
-          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-            Tên Tổ chức / Công ty (Tùy chọn)
-          </label>
-          <div className="relative">
-            <Building className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-            <Input
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              disabled={loading || googleLoading}
-              placeholder="Security Lab, FinTech Inc..."
-              className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
-            />
-          </div>
-        </div>
-
-        <div className="pt-1">
-          <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={agreedTerms}
-              onChange={(e) => {
-                setAgreedTerms(e.target.checked);
-                if (errorMessage) setErrorMessage(null);
-              }}
-              className="h-4 w-4 mt-0.5 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-400 accent-cyan-500 cursor-pointer"
-            />
-            <span className="leading-snug">
-              Tôi đồng ý với{" "}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setShowTermsModal(true);
-                }}
-                className="text-cyan-400 underline font-semibold hover:text-cyan-300"
-              >
-                Điều khoản Dịch vụ & Tuyên bố Miễn trừ Trách nhiệm
-              </button>{" "}
-              theo đúng pháp luật an ninh mạng.
-            </span>
-          </label>
-        </div>
-
         <Button
           type="submit"
           disabled={loading || googleLoading}
@@ -517,7 +446,7 @@ export function RegisterForm() {
             </span>
           ) : (
             <span className="flex items-center gap-1.5">
-              Tạo Tài Khoản & Chấp Nhận Điều Khoản <ArrowRight className="h-3.5 w-3.5" />
+              Tạo Tài Khoản & Vào Console <ArrowRight className="h-3.5 w-3.5" />
             </span>
           )}
         </Button>

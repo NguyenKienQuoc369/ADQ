@@ -71,6 +71,7 @@ function DashboardShellContent({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [syncPulse, setSyncPulse] = useState(99);
 
+  // KIỂM TRA ĐIỀU KHOẢN: TỰ ĐỘNG BẬT KHI USER VÀO CONSOLE LẦN ĐẦU
   const needsTerms = useMemo(() => {
     if (loading || !user) return false;
     if (user.termsAccepted) return false;
@@ -121,12 +122,11 @@ function DashboardShellContent({
     router.replace("/");
   };
 
-  const handleAcceptTerms = async (extraData?: { company?: string }) => {
-    await acceptTermsAndCompleteProfile({ company: extraData?.company });
+  const handleAcceptTerms = async () => {
+    await acceptTermsAndCompleteProfile({});
     setShowTermsModal(false);
   };
 
-  // Nếu đang load session, hiện placeholder cực nhẹ (không bị kẹt)
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#020617] text-cyan-400 font-sans">
@@ -141,7 +141,6 @@ function DashboardShellContent({
     );
   }
 
-  // Nếu không có user, để trống chờ useEffect redirect sang /login
   if (!user || (area === "admin" && user.role !== "ADMIN")) {
     return <div className="min-h-screen bg-[#020617]" />;
   }
