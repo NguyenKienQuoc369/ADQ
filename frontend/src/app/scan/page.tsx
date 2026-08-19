@@ -197,6 +197,9 @@ function ScanLandingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+
+  const isFreeLimitExceeded = (user?.packageTier === "FREE" || !user?.packageTier) && (user?.scansToday ?? 0) >= 2;
+
   const userTier = (user?.packageTier || "FREE").toUpperCase();
   const projectId = searchParams.get("projectId");
   const chatBottomRef = useRef<HTMLDivElement>(null);

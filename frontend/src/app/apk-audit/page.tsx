@@ -1,4 +1,9 @@
 "use client";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useRouter } from "next/navigation";
+import { Shield } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
 
 import React, { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -92,6 +97,33 @@ function ApkAuditContent() {
       console.error('copy failed', e);
     }
   };
+
+  
+  const { user } = useAuth();
+  const router = useRouter();
+  const isAllowed = user?.packageTier === "PRO_MAX" || (user?.packageTier as string) === "ENTERPRISE";
+
+  if (!isAllowed) {
+    return (
+      <DashboardShell area="dashboard">
+        <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center max-w-lg mx-auto font-sans">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 mb-4 shadow-lg shadow-purple-950/50">
+            <Shield className="h-8 w-8" />
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300 text-xs font-mono mb-3">
+            TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO MAX
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Kiểm Toán An Ninh Ứng Dụng Mobile APK</h2>
+          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+            Tính năng phân tích dịch ngược APK, phát hiện mã độc và kiểm toán phân quyền chỉ khả dụng trên gói <span className="text-purple-400 font-bold">PRO MAX</span>.
+          </p>
+          <Button onClick={() => router.push("/dashboard/billing")} className="h-10 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-950/50">
+            Nâng Cấp PRO MAX Ngay
+          </Button>
+        </div>
+      </DashboardShell>
+    );
+  }
 
   return (
     <DashboardShell area="dashboard">
