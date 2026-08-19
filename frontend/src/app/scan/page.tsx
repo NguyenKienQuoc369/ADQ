@@ -3,7 +3,7 @@
 import React, { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,22 +13,13 @@ import {
   Sparkles,
   Bot,
   Send,
-  ArrowRight,
-  CheckCircle2,
   LoaderCircle,
-  Copy,
   Check,
   Zap,
   Terminal,
-  ShieldCheck,
   KeyRound,
   AlertCircle,
-  Layers,
   Radio,
-  FileCode2,
-  Maximize2,
-  Minimize2,
-  Lock,
   Save,
   BookmarkCheck,
   PlusCircle,
@@ -152,18 +143,14 @@ function ScanLandingContent() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const userTier = (user?.packageTier || "FREE").toUpperCase();
-  const isProMaxUser = userTier === "PRO_MAX" || userTier === "ENTERPRISE";
-  const isProUser = userTier === "PRO" || isProMaxUser;
   const isFreeLimitExceeded = userTier === "FREE" && (user?.scansToday ?? 0) >= 2;
   const projectId = searchParams.get("projectId");
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   const [projectName, setProjectName] = useState("");
   const [target, setTarget] = useState("");
-  const [tier, setTier] = useState("STARTER");
   const [jobId, setJobId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [isChatExpanded, setIsChatExpanded] = useState(false);
 
   // States lưu phiên & xác nhận ghi đè
   const [isSavingSession, setIsSavingSession] = useState(false);
@@ -254,7 +241,6 @@ function ScanLandingContent() {
     };
   }, [projectId]);
 
-  // Polling scan status
   useEffect(() => {
     if (!jobId || !isScanning) return;
 
@@ -386,7 +372,6 @@ function ScanLandingContent() {
     }
   };
 
-  // Nút Lưu phiên thủ công
   const handleSaveSessionManually = async () => {
     if (!projectId) {
       alert("Vui lòng gắn một Project ID hoặc tạo dự án để lưu phiên này.");
@@ -404,7 +389,6 @@ function ScanLandingContent() {
     }
   };
 
-  // Kiểm tra trước khi bắt đầu quét
   const handleStartScanClick = () => {
     if (isScanning || !target.trim()) return;
 
@@ -699,9 +683,8 @@ function ScanLandingContent() {
                   placeholder="Hỏi về bản vá hoặc phân tích..."
                   className="bg-slate-900 border-slate-800 text-xs h-8 text-slate-100"
                 />
-                <Button onClick="{()"> handleCopilotSend()}
+                <Button onClick="{()" size="sm"> handleCopilotSend()}
                   disabled={copilotLoading || !copilotInput.trim()}
-                  size="sm"
                   className="h-8 px-3 bg-cyan-600 hover:bg-cyan-500 text-white"
                 >
                   <Send className="h-3.5 w-3.5"/>
