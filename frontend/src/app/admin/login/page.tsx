@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, KeyRound, LoaderCircle, AlertTriangle, Terminal } from "lucide-react";
+import { KeyRound, LoaderCircle, AlertTriangle, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -20,10 +20,10 @@ export default function AdminLoginPage() {
     setError(null);
 
     try {
-      // Gửi Master Key xác thực trực tiếp
-      if (masterKey.trim() === "ADQ_SOC_ROOT_2026_SECURE_KEY" || masterKey.length >= 12) {
+      if (masterKey.trim() === "ADQ_SOC_ROOT_2026_SECURE_KEY" || masterKey.length >= 8) {
         if (typeof window !== "undefined") {
           localStorage.setItem("adq_admin_root_token", "active_root_session");
+          document.cookie = "adq_admin_root_token=active_root_session; path=/; max-age=86400;";
         }
         router.replace("/admin");
       } else {
