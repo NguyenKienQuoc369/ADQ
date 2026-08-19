@@ -517,19 +517,30 @@ function ScanLandingContent() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button className="h-8 text-xs border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition-all" disabled="{isSavingSession" isScanning} onClick="{handleSaveSessionManually}" size="sm" variant="outline" ||>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isSavingSession || isScanning}
+              onClick={handleSaveSessionManually}
+              className="h-8 text-xs border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition-all"
+            >
               {isSavingSession ? (
-                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
+                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" />
               ) : isSavedSuccess ? (
-                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400"/>
+                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
               ) : (
-                <Save className="h-3.5 w-3.5 mr-1.5"/>
+                <Save className="h-3.5 w-3.5 mr-1.5" />
               )}
               {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Phiên Quét"}
             </Button>
 
-            <Button className="h-8 text-xs border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800" onClick="{handleCreateNewSession}" size="sm" variant="outline">
-              <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400"/> Phiên Mới
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCreateNewSession}
+              className="h-8 text-xs border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
+            >
+              <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400" /> Phiên Mới
             </Button>
           </div>
         </div>
@@ -539,28 +550,34 @@ function ScanLandingContent() {
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
-                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
-                <Input onChange="{(e)" value="{target}"> setTarget(e.target.value)}
+                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <Input
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
                   disabled={isScanning}
                   placeholder="Nhập tên miền mục tiêu (vd: target.com hoặc api.domain.vn)"
                   className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-cyan-500 text-sm h-10"
                 />
               </div>
-              <Button !target.trim()} className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50" disabled="{isScanning" isFreeLimitExceeded onClick="{handleStartScanClick}" ||>
+              <Button
+                disabled={isScanning || isFreeLimitExceeded || !target.trim()}
+                onClick={handleStartScanClick}
+                className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50"
+              >
                 {isScanning ? (
                   <>
-                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin"/> Đang Rà Quét...
+                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin" /> Đang Rà Quét...
                   </>
                 ) : (
                   <>
-                    <Zap className="h-4 w-4 mr-2"/> Bắt Đầu Quét
+                    <Zap className="h-4 w-4 mr-2" /> Bắt Đầu Quét
                   </>
                 )}
               </Button>
             </div>
             {scanError && (
               <p className="text-xs text-rose-400 mt-2 flex items-center gap-1.5">
-                <AlertCircle className="h-3.5 w-3.5"/> {scanError}
+                <AlertCircle className="h-3.5 w-3.5" /> {scanError}
               </p>
             )}
           </CardContent>
@@ -604,11 +621,11 @@ function ScanLandingContent() {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <Icon className="h-4 w-4"/>
+                  <Icon className="h-4 w-4" />
                   {isDone ? (
-                    <Check className="h-3 w-3 text-emerald-400"/>
+                    <Check className="h-3 w-3 text-emerald-400" />
                   ) : isRun ? (
-                    <LoaderCircle className="h-3 w-3 text-cyan-400 animate-spin"/>
+                    <LoaderCircle className="h-3 w-3 text-cyan-400 animate-spin" />
                   ) : (
                     <span className="text-[10px] font-mono">{n.step}</span>
                   )}
@@ -628,7 +645,7 @@ function ScanLandingContent() {
             <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
               <CardHeader className="pb-3 border-b border-slate-800">
                 <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-rose-400"/> Danh Sách Lỗ Hổng Chi Tiết
+                  <ShieldAlert className="h-4 w-4 text-rose-400" /> Danh Sách Lỗ Hổng Chi Tiết
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -642,7 +659,10 @@ function ScanLandingContent() {
                       <div key={v.id} className="p-3.5 hover:bg-slate-900/40 flex items-start justify-between gap-3 text-xs">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <Badge "CRITICAL" "HIGH" "default"} "destructive" : ? className="text-[9px] font-mono px-1.5 py-0" v.severity="==" variant="{v.severity" ||>
+                            <Badge
+                              variant={v.severity === "CRITICAL" || v.severity === "HIGH" ? "destructive" : "default"}
+                              className="text-[9px] font-mono px-1.5 py-0"
+                            >
                               {v.severity}
                             </Badge>
                             <span className="font-bold text-slate-200">{v.title}</span>
@@ -657,7 +677,10 @@ function ScanLandingContent() {
             </Card>
 
             {/* AI Action Advice Card */}
-            <AiAnalysisCard advice="{actionAdvice}" onGenerateFix="{(adv)" rawAdvice="{rawActionAdvice}">
+            <AiAnalysisCard
+              advice={actionAdvice}
+              rawAdvice={rawActionAdvice}
+              onGenerateFix={(adv) =>
                 handleCopilotSend(
                   `Hãy tạo mã vá hoặc file cấu hình chi tiết để xử lý lỗ hổng này: ${adv.title} - ${adv.rootCause}`
                 )
@@ -670,7 +693,7 @@ function ScanLandingContent() {
             <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl flex flex-col h-[520px]">
               <CardHeader className="pb-3 border-b border-slate-800 flex flex-row items-center justify-between">
                 <CardTitle className="text-xs font-bold text-white flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-cyan-400"/> Copilot Tương Tác
+                  <Bot className="h-4 w-4 text-cyan-400" /> Copilot Tương Tác
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex-1 p-3 overflow-y-auto space-y-3 text-xs">
@@ -688,23 +711,26 @@ function ScanLandingContent() {
                 ))}
                 {copilotLoading && (
                   <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center gap-2 text-slate-400 text-xs">
-                    <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-400"/> Copilot đang suy nghĩ...
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-400" /> Copilot đang suy nghĩ...
                   </div>
                 )}
                 <div ref={chatBottomRef} />
               </CardContent>
               <div className="p-3 border-t border-slate-800 flex gap-2">
-                <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
+                <Input
+                  value={copilotInput}
+                  onChange={(e) => setCopilotInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
                   placeholder="Hỏi về bản vá hoặc phân tích..."
                   className="bg-slate-900 border-slate-800 text-xs h-8 text-slate-100"
                 />
-                <Button onClick="{()"> handleCopilotSend()}
+                <Button
+                  onClick={() => handleCopilotSend()}
                   disabled={copilotLoading || !copilotInput.trim()}
                   size="sm"
                   className="h-8 px-3 bg-cyan-600 hover:bg-cyan-500 text-white"
                 >
-                  <Send className="h-3.5 w-3.5"/>
+                  <Send className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </Card>
@@ -712,7 +738,9 @@ function ScanLandingContent() {
         </div>
 
         {/* Modal Xác Nhận Ghi Đè */}
-        <RescanConfirmModal isOpen="{showRescanModal}" onClose="{()"> setShowRescanModal(false)}
+        <RescanConfirmModal
+          isOpen={showRescanModal}
+          onClose={() => setShowRescanModal(false)}
           onConfirm={handleConfirmRescan}
           onCreateNewSession={handleCreateNewSession}
         />
@@ -723,8 +751,8 @@ function ScanLandingContent() {
 
 export default function ScanPage() {
   return (
-    <Suspense className="min-h-screen bg-[#020617]" fallback="{<div"/>}>
-      <ScanLandingContent/>
+    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
+      <ScanLandingContent />
     </Suspense>
   );
 }
