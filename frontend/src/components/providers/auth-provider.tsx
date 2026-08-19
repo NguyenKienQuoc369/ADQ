@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
@@ -14,7 +14,7 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<AuthResponse>;
   register: (payload: { name: string; email: string; password: string; company?: string; phone?: string }) => Promise<AuthResponse>;
   completeGoogleProfile: (payload: { name: string; company?: string; phone?: string; password?: string }) => Promise<User>;
-  loginWithGoogle: () => Promise<AuthResponse>;
+  loginWithGoogle: (redirectTo?: string) => Promise<AuthResponse>;
   logout: () => Promise<void>;
   refreshUser: (showLoader?: boolean) => Promise<void>;
   updateUser: (user: User) => void;
@@ -30,7 +30,6 @@ function normalizeRole(rawRole: unknown): User["role"] {
 
 function mapSupabaseUserToAppUser(user: SupabaseUser): User {
   const metadata = user.user_metadata ?? {};
-  // Há»— trá»£ cáº£ `user_metadata.role` vÃ  `app_metadata.role` (nhiá»u script seed hay set `admin` dáº¡ng lowercase).
   const role = normalizeRole(metadata.role ?? (user.app_metadata as Record<string, unknown> | undefined)?.role);
   const packageTier = (metadata.packageTier === "PRO_MAX"
     ? "PRO_MAX"
@@ -40,7 +39,7 @@ function mapSupabaseUserToAppUser(user: SupabaseUser): User {
 
   return {
     id: user.id,
-    name: metadata.name || metadata.full_name || user.email?.split("@")[0] || "NgÆ°á»i dÃ¹ng",
+    name: metadata.name || metadata.full_name || user.email?.split("@")[0] || "Chuyên gia An ninh",
     email: user.email ?? "",
     avatar: metadata.avatar_url || metadata.picture || undefined,
     role,
@@ -50,7 +49,7 @@ function mapSupabaseUserToAppUser(user: SupabaseUser): User {
     scansToday: 0,
     telegramConnected: false,
     planExpiresAt: null,
-    oauthProvider: metadata.provider === "google" ? "google" : null,
+    oauthProvider: metadata.provider === "google" || user.app_metadata?.provider === "google" ? "google" : null,
     lastLoginAt: new Date().toISOString(),
   };
 }
@@ -68,7 +67,7 @@ function getFriendlyAuthError(error: unknown, fallback = "Đăng nhập thất b
   const normalized = message.toLowerCase();
 
   if (normalized.includes("error sending confirmation email") || normalized.includes("smtp") || normalized.includes("email provider") || normalized.includes("unable to send confirmation email")) {
-    return "Email xác nhận chưa được cấu hình trên Supabase. Vui lòng bật SMTP hoặc tắt xác nhận email trong Dashboard để đăng ký hoạt động.";
+    return "Email xác nhận chưa được cấu hình. Vui lòng kiểm tra cài đặt xác nhận email trong Supabase Dashboard.";
   }
 
   if (normalized.includes("user not found") || normalized.includes("no user found") || normalized.includes("email not found")) {
@@ -80,7 +79,7 @@ function getFriendlyAuthError(error: unknown, fallback = "Đăng nhập thất b
   }
 
   if (normalized.includes("email not confirmed") || normalized.includes("confirm your email") || normalized.includes("not confirmed")) {
-    return "Tài khoản chưa được xác nhận. Vui lòng kiểm tra email và xác nhận tài khoản.";
+    return "Tài khoản chưa được kích hoạt. Vui lòng kiểm tra hộp thư email.";
   }
 
   if (normalized.includes("already registered") || normalized.includes("user already registered") || normalized.includes("already exists")) {
@@ -93,7 +92,7 @@ function getFriendlyAuthError(error: unknown, fallback = "Đăng nhập thất b
 function getPendingOAuthUser(): User {
   return {
     id: "oauth_pending",
-    name: "Äang chuyá»ƒn hÆ°á»›ng...",
+    name: "Đang đồng bộ SOC...",
     email: "",
     role: "USER",
     packageTier: "FREE",
@@ -117,7 +116,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!supabaseRef.current) {
       supabaseRef.current = createSupabaseBrowserClient();
     }
-
     return supabaseRef.current;
   }, []);
 
@@ -126,19 +124,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
     }
     try {
-      // Call server-side account endpoint which also checks admin_users status
-      try {
-        const supabase = getSupabaseClient();
-        // Try to attach token from client session so server can validate immediately
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData?.session?.access_token;
-        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      const supabase = getSupabaseClient();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
+      try {
         const res = await fetch('/api/account/me', { credentials: 'include', headers });
         if (res.status === 200) {
           const payload = await res.json();
           if (payload?.user) {
-            // Map server-shaped user to client User (matches mapSupabaseUserToAppUser fields)
             setUser({
               id: payload.user.id,
               name: payload.user.name,
@@ -160,19 +155,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (res.status === 403) {
-          // Account is locked (or forbidden) - sign out locally and set lock message
           try {
             await supabase.auth.signOut();
-          } catch {
-            // ignore
-          }
+          } catch {}
           setUser(null);
           setLockMessage('Tài khoản của bạn đã bị khóa');
           return;
         }
-      } catch (err) {
-        // Fallback to reading supabase client user if server endpoint fails
-        const supabase = getSupabaseClient();
+      } catch {
+        // Fallback đọc trực tiếp từ Supabase Session
         const { data, error } = await supabase.auth.getUser();
         if (error) {
           setUser(null);
@@ -189,7 +180,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const supabase = getSupabaseClient();
-
     let active = true;
     const frameHandle = window.requestAnimationFrame(() => {
       void refreshUser(true).finally(() => {
@@ -198,11 +188,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
-      // When auth state changes (login/logout), re-sync via server to enforce lock/status
-      refreshUser().catch(() => {
-        // ignore
-      });
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, _session) => {
+      refreshUser().catch(() => {});
     });
 
     return () => {
@@ -214,23 +201,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const supabase = getSupabaseClient();
-
-    try {
-      const check = await fetch('/api/auth/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const payload = await check.json();
-      if (payload && payload.exists === false) {
-        throw new Error('Tài khoản chưa tồn tại');
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message === 'Tài khoản chưa tồn tại') {
-        throw error;
-      }
-    }
-
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       throw new Error(getFriendlyAuthError(error, 'Mật khẩu không đúng'));
@@ -238,52 +208,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const nextUser = data.user ? mapSupabaseUserToAppUser(data.user) : null;
     if (!nextUser) throw new Error("Không thể lấy thông tin người dùng sau khi đăng nhập.");
-
-    try {
-      const token = data.session?.access_token;
-      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch('/api/account/me', { credentials: 'include', headers });
-      if (res.status === 200) {
-        const payload = await res.json();
-        if (payload?.user) {
-          setUser({
-            id: payload.user.id,
-            name: payload.user.name,
-            email: payload.user.email,
-            avatar: payload.user.avatar,
-            role: payload.user.role,
-            packageTier: payload.user.packageTier,
-            status: payload.user.status,
-            dailyLimit: payload.user.dailyLimit,
-            scansToday: payload.user.scansToday,
-            telegramConnected: payload.user.telegramConnected,
-            planExpiresAt: payload.user.planExpiresAt,
-            oauthProvider: payload.user.oauthProvider,
-            lastLoginAt: payload.user.lastLoginAt,
-          });
-          setLockMessage(null);
-          return mapSessionToAuthResponse(nextUser, data.session);
-        }
-      }
-
-      if (res.status === 403) {
-        try {
-          await supabase.auth.signOut();
-        } catch (e) {
-          // ignore
-        }
-        setUser(null);
-        setLockMessage('Tài khoản của bạn đã bị khóa');
-        throw new Error('Tài khoản của bạn đã bị khóa');
-      }
-    } catch (e) {
-      if (e instanceof Error && e.message === 'Tài khoản của bạn đã bị khóa') {
-        throw e;
-      }
-      setUser(nextUser);
-      setLockMessage(null);
-      return mapSessionToAuthResponse(nextUser, data.session);
-    }
 
     setUser(nextUser);
     setLockMessage(null);
@@ -293,23 +217,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const register = useCallback(
     async (payload: { name: string; email: string; password: string; company?: string; phone?: string }) => {
       const supabase = getSupabaseClient();
-
-      try {
-        const check = await fetch('/api/auth/check-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: payload.email }),
-        });
-        const j = await check.json();
-        if (j && j.exists) {
-          throw new Error('Tài khoản đã tồn tại');
-        }
-      } catch (error) {
-        if (error instanceof Error && error.message === 'Tài khoản đã tồn tại') {
-          throw error;
-        }
-      }
-
       const { data, error } = await supabase.auth.signUp({
         email: payload.email,
         password: payload.password,
@@ -321,21 +228,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             role: 'USER',
             packageTier: 'FREE',
           },
-          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/confirm-email` : undefined,
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined,
         },
       });
 
       if (error) {
-        throw new Error(getFriendlyAuthError(error, 'Không thể tạo tài khoản. Hãy kiểm tra cấu hình email xác nhận trong Supabase Dashboard.'));
+        throw new Error(getFriendlyAuthError(error, 'Không thể tạo tài khoản.'));
       }
 
       if (!data.session) {
-        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận. Vui lòng kiểm tra hộp thư và kích hoạt tài khoản để hoàn tất đăng ký.');
+        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận. Vui lòng kiểm tra hộp thư để kích hoạt tài khoản.');
       }
 
       const nextUser = data.user ? mapSupabaseUserToAppUser(data.user) : null;
       if (!nextUser) {
-        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận. Vui lòng kiểm tra hộp thư và kích hoạt tài khoản để hoàn tất đăng ký.');
+        throw new Error('EMAIL_CONFIRM_SENT: Đã gửi email xác nhận. Vui lòng kiểm tra hộp thư để kích hoạt tài khoản.');
       }
 
       setUser(nextUser);
@@ -343,6 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [getSupabaseClient],
   );
+
   const completeGoogleProfile = useCallback(async (payload: { name: string; company?: string; phone?: string; password?: string }) => {
     const supabase = getSupabaseClient();
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -356,7 +264,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Vui lòng nhập họ và tên.");
     }
 
-    // If caller provided a password, set it on the Supabase auth user so they can use password auth later.
     let updateArgs: {
       data: {
         name: string;
@@ -383,7 +290,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const { data, error } = await supabase.auth.updateUser(updateArgs);
-
     if (error) {
       throw new Error(getFriendlyAuthError(error, "Không thể cập nhật hồ sơ Google."));
     }
@@ -397,13 +303,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return nextUser;
   }, [getSupabaseClient]);
 
-  const loginWithGoogle = useCallback(async () => {
+  // ĐĂNG NHẬP GOOGLE: CHUYỂN THẲNG VÀO CONSOLE (/dashboard HOẶC URL ĐÍCH)
+  const loginWithGoogle = useCallback(async (targetRedirect?: string) => {
     const supabase = getSupabaseClient();
+    const destination = targetRedirect || `${window.location.origin}/dashboard`;
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/register?oauth=google`,
+        redirectTo: destination,
       },
     });
 
@@ -418,7 +326,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     const supabase = getSupabaseClient();
-
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     setUser(null);
@@ -451,12 +358,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-
   if (!context) {
     throw new Error("useAuth must be used within AuthProvider");
   }
-
   return context;
 }
-
-

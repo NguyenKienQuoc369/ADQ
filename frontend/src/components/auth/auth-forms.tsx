@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   Building,
   Radio,
-  FileCheck,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
@@ -64,7 +63,7 @@ export function LoginForm() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Bắt lỗi Google OAuth từ URL Hash
+  // Xử lý lỗi Google OAuth nếu bị hủy hoặc tài khoản không tồn tại
   useEffect(() => {
     if (typeof window !== "undefined") {
       const hash = window.location.hash;
@@ -101,7 +100,8 @@ export function LoginForm() {
     setGoogleLoading(true);
     setErrorMessage(null);
     try {
-      await loginWithGoogle();
+      const targetDestination = typeof window !== "undefined" ? `${window.location.origin}${redirectUrl}` : undefined;
+      await loginWithGoogle(targetDestination);
     } catch (err: any) {
       setErrorMessage(err.message || "Không thể kết nối với tài khoản Google.");
       setGoogleLoading(false);
@@ -110,7 +110,7 @@ export function LoginForm() {
 
   return (
     <>
-      {/* Màn hình Loading Cyber SOC Google */}
+      {/* Màn hình Cyber SOC Loading khi Đăng nhập Google */}
       {googleLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-xl font-sans">
           <div className="flex flex-col items-center gap-4 rounded-3xl border border-cyan-500/30 bg-slate-900/90 p-8 shadow-[0_0_60px_rgba(6,182,212,0.2)] text-center max-w-sm">
@@ -122,7 +122,7 @@ export function LoginForm() {
             </div>
             <div>
               <h3 className="text-sm font-bold text-white tracking-wide">Đang xác thực Google SOC Gateway...</h3>
-              <p className="text-xs text-slate-400 mt-1 font-mono">Khởi tạo phiên mã hóa OAuth 2.0</p>
+              <p className="text-xs text-slate-400 mt-1 font-mono">Đồng bộ phiên và chuyển hướng vào Console</p>
             </div>
             <div className="flex items-center gap-2 text-[10px] font-mono text-cyan-400">
               <Radio className="h-3 w-3 animate-pulse text-emerald-400" />
@@ -209,7 +209,7 @@ export function LoginForm() {
             </span>
           ) : (
             <span className="flex items-center gap-1.5">
-              Đăng Nhập <ArrowRight className="h-3.5 w-3.5" />
+              Đăng Nhập Console <ArrowRight className="h-3.5 w-3.5" />
             </span>
           )}
         </Button>
@@ -229,7 +229,7 @@ export function LoginForm() {
           className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-200 transition-all rounded-xl flex items-center justify-center gap-2"
         >
           <GoogleIcon className="h-4 w-4" />
-          <span>Đăng nhập với Google</span>
+          <span>Đăng nhập trực tiếp với Google</span>
         </Button>
       </form>
     </>
@@ -241,7 +241,7 @@ export function LoginForm() {
 // =========================================================================
 export function RegisterForm() {
   const router = useRouter();
-  const { register, loginWithGoogle, user, logout } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -256,7 +256,6 @@ export function RegisterForm() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Thước đo độ mạnh mật khẩu
   const passwordStrength = useMemo(() => {
     if (!password) return { score: 0, label: "Trống", color: "bg-slate-700" };
     let s = 0;
@@ -313,6 +312,9 @@ export function RegisterForm() {
       });
 
       if (res && res.accessToken) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem("adq_terms_accepted_v1", "true");
+        }
         router.replace("/dashboard");
       }
     } catch (err: any) {
@@ -331,7 +333,8 @@ export function RegisterForm() {
     setGoogleLoading(true);
     setErrorMessage(null);
     try {
-      await loginWithGoogle();
+      const targetDestination = typeof window !== "undefined" ? `${window.location.origin}/dashboard` : undefined;
+      await loginWithGoogle(targetDestination);
     } catch (err: any) {
       setErrorMessage(err.message || "Không thể kết nối với tài khoản Google.");
       setGoogleLoading(false);
@@ -340,7 +343,6 @@ export function RegisterForm() {
 
   return (
     <>
-      {/* Modal Điều khoản Dịch vụ & Miễn trừ Trách nhiệm */}
       <TermsModal
         isOpen={showTermsModal}
         onAccept={() => {
@@ -354,7 +356,6 @@ export function RegisterForm() {
         }}
       />
 
-      {/* Loading Overlay khi đăng ký với Google */}
       {googleLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-xl font-sans">
           <div className="flex flex-col items-center gap-4 rounded-3xl border border-cyan-500/30 bg-slate-900/90 p-8 shadow-[0_0_60px_rgba(6,182,212,0.2)] text-center max-w-sm">
@@ -366,7 +367,7 @@ export function RegisterForm() {
             </div>
             <div>
               <h3 className="text-sm font-bold text-white tracking-wide">Đang khởi tạo tài khoản Google...</h3>
-              <p className="text-xs text-slate-400 mt-1 font-mono">Đồng bộ Identity & Workspace Security</p>
+              <p className="text-xs text-slate-400 mt-1 font-mono">Đồng bộ Identity & Chuyển hướng Console</p>
             </div>
           </div>
         </div>
@@ -479,7 +480,7 @@ export function RegisterForm() {
           </div>
         </div>
 
-        {/* Checkbox Bắt buộc Điều Khoản & Miễn trừ trách nhiệm */}
+        {/* Bắt buộc đồng ý Điều khoản & Miễn trừ trách nhiệm */}
         <div className="pt-1">
           <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer select-none">
             <input
@@ -533,199 +534,9 @@ export function RegisterForm() {
           className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-200 transition-all rounded-xl flex items-center justify-center gap-2 mt-2"
         >
           <GoogleIcon className="h-4 w-4" />
-          <span>Đăng ký nhanh với Google</span>
+          <span>Đăng ký trực tiếp với Google</span>
         </Button>
       </form>
     </>
-  );
-}
-
-// =========================================================================
-// 3. FORGOT PASSWORD FORM
-// =========================================================================
-export function ForgotPasswordForm() {
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) return;
-
-    setLoading(true);
-    setErrorMessage(null);
-
-    try {
-      await new Promise((r) => setTimeout(r, 1200));
-      setSubmitted(true);
-    } catch {
-      setErrorMessage("Không thể gửi email khôi phục. Vui lòng thử lại.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (submitted) {
-    return (
-      <div className="text-center space-y-4 py-3">
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-          <CheckCircle2 className="h-6 w-6" />
-        </div>
-        <div className="space-y-1">
-          <h3 className="text-sm font-bold text-white">Đã gửi liên kết khôi phục</h3>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Chúng tôi đã gửi hướng dẫn đặt lại mật khẩu đến <strong className="text-cyan-400">{email}</strong>. Vui lòng kiểm tra hộp thư (bao gồm cả thư rác).
-          </p>
-        </div>
-        <Link
-          href="/login"
-          className="inline-block text-xs font-bold text-cyan-400 hover:text-cyan-300 transition pt-2"
-        >
-          ← Quay lại Đăng nhập
-        </Link>
-      </div>
-    );
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {errorMessage && (
-        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Email đã đăng ký
-        </label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={loading}
-            placeholder="admin@adqsecurity.com"
-            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
-            required
-          />
-        </div>
-      </div>
-
-      <Button
-        type="submit"
-        disabled={loading || !email.trim()}
-        className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl"
-      >
-        {loading ? (
-          <span className="flex items-center gap-2">
-            <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
-            Đang gửi liên kết...
-          </span>
-        ) : (
-          "Gửi Liên Kết Đặt Lại Mật Khẩu"
-        )}
-      </Button>
-    </form>
-  );
-}
-
-// =========================================================================
-// 4. RESET PASSWORD FORM
-// =========================================================================
-export function ResetPasswordForm() {
-  const router = useRouter();
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password.length < 8) {
-      setErrorMessage("Mật khẩu mới phải có tối thiểu 8 ký tự.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setErrorMessage("Mật khẩu xác nhận không khớp.");
-      return;
-    }
-
-    setLoading(true);
-    setErrorMessage(null);
-
-    try {
-      await new Promise((r) => setTimeout(r, 1200));
-      router.replace("/login?reset=success");
-    } catch {
-      setErrorMessage("Không thể cập nhật mật khẩu. Vui lòng thử lại.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {errorMessage && (
-        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Mật khẩu mới (Tối thiểu 8 ký tự)
-        </label>
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
-            placeholder="••••••••••••"
-            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
-            required
-          />
-        </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Xác nhận mật khẩu mới
-        </label>
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            disabled={loading}
-            placeholder="••••••••••••"
-            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
-            required
-          />
-        </div>
-      </div>
-
-      <Button
-        type="submit"
-        disabled={loading}
-        className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl"
-      >
-        {loading ? (
-          <span className="flex items-center gap-2">
-            <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
-            Đang cập nhật...
-          </span>
-        ) : (
-          "Cập Nhật Mật Khẩu"
-        )}
-      </Button>
-    </form>
   );
 }

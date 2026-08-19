@@ -27,6 +27,7 @@ import {
 import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { TermsModal } from "@/components/auth/terms-modal";
 
 type ShellArea = "dashboard" | "admin";
 
@@ -69,6 +70,19 @@ function DashboardShellContent({
   const { user, loading, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [syncPulse, setSyncPulse] = useState(99);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+
+  // Kiểm tra nếu người dùng chưa duyệt Điều khoản (Lần đầu đăng nhập Google)
+  useEffect(() => {
+    if (!loading && user) {
+      if (typeof window !== "undefined") {
+        const accepted = localStorage.getItem("adq_terms_accepted_v1");
+        if (!accepted) {
+          setShowTermsModal(true);
+        }
+      }
+    }
+  }, [loading, user]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -97,6 +111,21 @@ function DashboardShellContent({
     [area]
   );
 
+  // Xử lý từ chối điều khoản -> Đăng xuất ngay lập tức
+  const handleDeclineTerms = async () => {
+    setShowTermsModal(false);
+    await logout();
+    router.replace("/");
+  };
+
+  const handleAcceptTerms = () => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("adq_terms_accepted_v1", "true");
+    }
+    setShowTermsModal(false);
+  };
+
+  // MÀN HÌNH LOADING CYBER SOC MƯỢT MÀ KHI ĐỒNG BỘ SESSION
   if (loading || !user || (area === "admin" && user.role !== "ADMIN")) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#020617] text-cyan-400 font-sans">
@@ -111,10 +140,16 @@ function DashboardShellContent({
     );
   }
 
-  // 1. PROJECT WORKSPACE (ẨN SIDEBAR HOÀN TOÀN)
+  // 1. PROJECT WORKSPACE (ẨN SIDEBAR)
   if (isProjectWorkspace) {
     return (
       <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
+        <TermsModal
+          isOpen={showTermsModal}
+          onAccept={handleAcceptTerms}
+          onDecline={handleDeclineTerms}
+        />
+
         <div
           className="fixed inset-0 pointer-events-none opacity-15"
           style={{
@@ -234,7 +269,7 @@ function DashboardShellContent({
     );
   }
 
-  // 2. DASHBOARD & ADMIN WORKSPACE (SIDEBAR HIỂN THỊ)
+  // 2. DASHBOARD / SETTINGS / ADMIN (CÓ SIDEBAR)
   const sidebarContent = (
     <div className="relative flex h-full flex-col justify-between border-r border-white/[0.07] bg-slate-950/80 p-4 backdrop-blur-2xl">
       <div className="space-y-5">
@@ -337,6 +372,12 @@ function DashboardShellContent({
 
   return (
     <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
+      <TermsModal
+        isOpen={showTermsModal}
+        onAccept={handleAcceptTerms}
+        onDecline={handleDeclineTerms}
+      />
+
       <div
         className="fixed inset-0 pointer-events-none opacity-15"
         style={{
