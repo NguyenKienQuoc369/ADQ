@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -15,14 +15,15 @@ import {
   ArrowRight,
   ShieldCheck,
   Building,
-  Phone,
+  Radio,
+  FileCheck,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TermsModal } from "./terms-modal";
 
-// Google SVG Icon chuẩn phẳng
 function GoogleIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className}>
@@ -63,6 +64,16 @@ export function LoginForm() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Bắt lỗi Google OAuth từ URL Hash
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash;
+      if (hash.includes("error=access_denied") || hash.includes("error_description")) {
+        setErrorMessage("Tài khoản Google không tồn tại hoặc phiên đăng nhập đã bị hủy.");
+      }
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = email.trim().toLowerCase();
@@ -98,116 +109,130 @@ export function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Alert Lỗi */}
-      {(errorMessage || lockMessage) && (
-        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in duration-200">
-          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-          <div className="flex-1">{errorMessage || lockMessage}</div>
+    <>
+      {/* Màn hình Loading Cyber SOC Google */}
+      {googleLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-xl font-sans">
+          <div className="flex flex-col items-center gap-4 rounded-3xl border border-cyan-500/30 bg-slate-900/90 p-8 shadow-[0_0_60px_rgba(6,182,212,0.2)] text-center max-w-sm">
+            <div className="relative flex h-16 w-16 items-center justify-center">
+              <span className="absolute h-full w-full animate-ping rounded-full bg-cyan-400/20" />
+              <div className="h-12 w-12 rounded-2xl bg-slate-950 border border-cyan-500/40 flex items-center justify-center shadow-lg">
+                <GoogleIcon className="h-6 w-6 animate-pulse" />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white tracking-wide">Đang xác thực Google SOC Gateway...</h3>
+              <p className="text-xs text-slate-400 mt-1 font-mono">Khởi tạo phiên mã hóa OAuth 2.0</p>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-mono text-cyan-400">
+              <Radio className="h-3 w-3 animate-pulse text-emerald-400" />
+              <span>TLS Handshake Active</span>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Input Email */}
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Email
-        </label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            type="email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              if (errorMessage) setErrorMessage(null);
-            }}
-            disabled={loading || googleLoading}
-            placeholder="admin@adqsecurity.com"
-            className="h-10 pl-9 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:bg-slate-900/90 transition-all rounded-xl"
-            required
-          />
-        </div>
-      </div>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {(errorMessage || lockMessage) && (
+          <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in duration-200">
+            <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="flex-1">{errorMessage || lockMessage}</div>
+          </div>
+        )}
 
-      {/* Input Mật khẩu */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-            Mật khẩu
+            Email
           </label>
-          <Link
-            href="/forgot-password"
-            className="text-[11px] text-cyan-400 hover:text-cyan-300 transition"
-          >
-            Quên mật khẩu?
-          </Link>
+          <div className="relative">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              disabled={loading || googleLoading}
+              placeholder="admin@adqsecurity.com"
+              className="h-10 pl-9 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:bg-slate-900/90 transition-all rounded-xl"
+              required
+            />
+          </div>
         </div>
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              if (errorMessage) setErrorMessage(null);
-            }}
-            disabled={loading || googleLoading}
-            placeholder="••••••••••••"
-            className="h-10 pl-9 pr-10 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:bg-slate-900/90 transition-all rounded-xl"
-            required
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition p-1"
-          >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+              Mật khẩu
+            </label>
+            <Link
+              href="/forgot-password"
+              className="text-[11px] text-cyan-400 hover:text-cyan-300 transition"
+            >
+              Quên mật khẩu?
+            </Link>
+          </div>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <Input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              disabled={loading || googleLoading}
+              placeholder="••••••••••••"
+              className="h-10 pl-9 pr-10 border-slate-800 bg-slate-900/60 font-sans text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:bg-slate-900/90 transition-all rounded-xl"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition p-1"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* Nút Đăng nhập */}
-      <Button
-        type="submit"
-        disabled={loading || googleLoading}
-        className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl"
-      >
-        {loading ? (
-          <span className="flex items-center gap-2">
-            <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
-            Đang xác thực...
+        <Button
+          type="submit"
+          disabled={loading || googleLoading}
+          className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl"
+        >
+          {loading ? (
+            <span className="flex items-center gap-2">
+              <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
+              Đang xác thực...
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              Đăng Nhập <ArrowRight className="h-3.5 w-3.5" />
+            </span>
+          )}
+        </Button>
+
+        <div className="relative flex items-center justify-center my-3">
+          <div className="border-t border-slate-800 w-full" />
+          <span className="bg-slate-950 px-2 text-[10px] uppercase font-mono text-slate-500">
+            HOẶC
           </span>
-        ) : (
-          <span className="flex items-center gap-1.5">
-            Đăng Nhập <ArrowRight className="h-3.5 w-3.5" />
-          </span>
-        )}
-      </Button>
+        </div>
 
-      {/* Divider */}
-      <div className="relative flex items-center justify-center my-3">
-        <div className="border-t border-slate-800 w-full" />
-        <span className="bg-slate-950 px-2 text-[10px] uppercase font-mono text-slate-500">
-          HOẶC
-        </span>
-      </div>
-
-      {/* Google OAuth Button */}
-      <Button
-        type="button"
-        variant="outline"
-        onClick={handleGoogleLogin}
-        disabled={loading || googleLoading}
-        className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-200 transition-all rounded-xl flex items-center justify-center gap-2"
-      >
-        {googleLoading ? (
-          <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400" />
-        ) : (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleGoogleLogin}
+          disabled={loading || googleLoading}
+          className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-200 transition-all rounded-xl flex items-center justify-center gap-2"
+        >
           <GoogleIcon className="h-4 w-4" />
-        )}
-        <span>Đăng nhập với Google</span>
-      </Button>
-    </form>
+          <span>Đăng nhập với Google</span>
+        </Button>
+      </form>
+    </>
   );
 }
 
@@ -216,20 +241,22 @@ export function LoginForm() {
 // =========================================================================
 export function RegisterForm() {
   const router = useRouter();
-  const { register, loginWithGoogle } = useAuth();
+  const { register, loginWithGoogle, user, logout } = useAuth();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [company, setCompany] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [agreedTerms, setAgreedTerms] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Thước đo độ mạnh mật khẩu (Password Strength Meter)
+  // Thước đo độ mạnh mật khẩu
   const passwordStrength = useMemo(() => {
     if (!password) return { score: 0, label: "Trống", color: "bg-slate-700" };
     let s = 0;
@@ -257,6 +284,11 @@ export function RegisterForm() {
     const cleanName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
+
+    if (!agreedTerms) {
+      setErrorMessage("Bạn bắt buộc phải đọc và đồng ý với Điều khoản Dịch vụ & Miễn trừ trách nhiệm để tạo tài khoản.");
+      return;
+    }
 
     if (!cleanName || !cleanEmail || !cleanPassword) {
       setErrorMessage("Vui lòng điền đầy đủ các thông tin bắt buộc.");
@@ -295,151 +327,216 @@ export function RegisterForm() {
     }
   };
 
+  const handleGoogleSignup = async () => {
+    setGoogleLoading(true);
+    setErrorMessage(null);
+    try {
+      await loginWithGoogle();
+    } catch (err: any) {
+      setErrorMessage(err.message || "Không thể kết nối với tài khoản Google.");
+      setGoogleLoading(false);
+    }
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-3.5">
-      {/* Alert Lỗi */}
-      {errorMessage && (
-        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in duration-200">
-          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-          <div className="flex-1">{errorMessage}</div>
+    <>
+      {/* Modal Điều khoản Dịch vụ & Miễn trừ Trách nhiệm */}
+      <TermsModal
+        isOpen={showTermsModal}
+        onAccept={() => {
+          setAgreedTerms(true);
+          setShowTermsModal(false);
+          if (errorMessage) setErrorMessage(null);
+        }}
+        onDecline={() => {
+          setAgreedTerms(false);
+          setShowTermsModal(false);
+        }}
+      />
+
+      {/* Loading Overlay khi đăng ký với Google */}
+      {googleLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-xl font-sans">
+          <div className="flex flex-col items-center gap-4 rounded-3xl border border-cyan-500/30 bg-slate-900/90 p-8 shadow-[0_0_60px_rgba(6,182,212,0.2)] text-center max-w-sm">
+            <div className="relative flex h-16 w-16 items-center justify-center">
+              <span className="absolute h-full w-full animate-ping rounded-full bg-cyan-400/20" />
+              <div className="h-12 w-12 rounded-2xl bg-slate-950 border border-cyan-500/40 flex items-center justify-center shadow-lg">
+                <GoogleIcon className="h-6 w-6 animate-pulse" />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white tracking-wide">Đang khởi tạo tài khoản Google...</h3>
+              <p className="text-xs text-slate-400 mt-1 font-mono">Đồng bộ Identity & Workspace Security</p>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Alert Thành Công (Xác nhận Email) */}
-      {successMessage && (
-        <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-xs text-emerald-300 flex items-start gap-2 animate-in fade-in duration-200">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-          <div className="flex-1">{successMessage}</div>
-        </div>
-      )}
-
-      {/* Họ và tên */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Họ và Tên *
-        </label>
-        <div className="relative">
-          <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={loading || googleLoading}
-            placeholder="Nguyễn Văn A"
-            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
-            required
-          />
-        </div>
-      </div>
-
-      {/* Email */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Email Doanh Nghiệp / Cá Nhân *
-        </label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={loading || googleLoading}
-            placeholder="name@company.com"
-            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
-            required
-          />
-        </div>
-      </div>
-
-      {/* Mật khẩu & Thước đo độ mạnh */}
-      <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-            Mật khẩu (Tối thiểu 8 ký tự) *
-          </label>
-          {password && (
-            <span className="text-[10px] font-mono font-medium text-cyan-400">
-              {passwordStrength.label}
-            </span>
-          )}
-        </div>
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={loading || googleLoading}
-            placeholder="Tối thiểu 8 ký tự"
-            className="h-10 pl-9 pr-10 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
-            required
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition p-1"
-          >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-        </div>
-
-        {/* Thanh đo độ mạnh mật khẩu */}
-        {password && (
-          <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden mt-1.5">
-            <div
-              className={`h-full ${passwordStrength.color} transition-all duration-300`}
-              style={{ width: `${passwordStrength.score}%` }}
-            />
+      <form onSubmit={handleSubmit} className="space-y-3.5">
+        {errorMessage && (
+          <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in duration-200">
+            <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="flex-1">{errorMessage}</div>
           </div>
         )}
-      </div>
 
-      {/* Tên Tổ chức / Công ty (Tùy chọn) */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
-          Tên Tổ chức / Đơn vị (Tùy chọn)
-        </label>
-        <div className="relative">
-          <Building className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-            disabled={loading || googleLoading}
-            placeholder="Security Lab, FinTech Inc..."
-            className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
-          />
-        </div>
-      </div>
-
-      {/* Nút Đăng ký */}
-      <Button
-        type="submit"
-        disabled={loading || googleLoading}
-        className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl mt-1"
-      >
-        {loading ? (
-          <span className="flex items-center gap-2">
-            <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
-            Đang khởi tạo tài khoản...
-          </span>
-        ) : (
-          <span className="flex items-center gap-1.5">
-            Tạo Tài Khoản Miễn Phí <ArrowRight className="h-3.5 w-3.5" />
-          </span>
+        {successMessage && (
+          <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-xs text-emerald-300 flex items-start gap-2 animate-in fade-in duration-200">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="flex-1">{successMessage}</div>
+          </div>
         )}
-      </Button>
 
-      {/* Google OAuth Button */}
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => loginWithGoogle()}
-        disabled={loading || googleLoading}
-        className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-200 transition-all rounded-xl flex items-center justify-center gap-2 mt-2"
-      >
-        <GoogleIcon className="h-4 w-4" />
-        <span>Đăng ký với Google</span>
-      </Button>
-    </form>
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+            Họ và Tên *
+          </label>
+          <div className="relative">
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={loading || googleLoading}
+              placeholder="Nguyễn Văn A"
+              className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+            Email Doanh Nghiệp / Cá Nhân *
+          </label>
+          <div className="relative">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={loading || googleLoading}
+              placeholder="name@company.com"
+              className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+              Mật khẩu (Tối thiểu 8 ký tự) *
+            </label>
+            {password && (
+              <span className="text-[10px] font-mono font-medium text-cyan-400">
+                {passwordStrength.label}
+              </span>
+            )}
+          </div>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <Input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading || googleLoading}
+              placeholder="Tối thiểu 8 ký tự"
+              className="h-10 pl-9 pr-10 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition p-1"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+
+          {password && (
+            <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden mt-1.5">
+              <div
+                className={`h-full ${passwordStrength.color} transition-all duration-300`}
+                style={{ width: `${passwordStrength.score}%` }}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+            Tên Tổ chức / Công ty (Tùy chọn)
+          </label>
+          <div className="relative">
+            <Building className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <Input
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              disabled={loading || googleLoading}
+              placeholder="Security Lab, FinTech Inc..."
+              className="h-10 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+            />
+          </div>
+        </div>
+
+        {/* Checkbox Bắt buộc Điều Khoản & Miễn trừ trách nhiệm */}
+        <div className="pt-1">
+          <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={agreedTerms}
+              onChange={(e) => {
+                setAgreedTerms(e.target.checked);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              className="h-4 w-4 mt-0.5 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-400 accent-cyan-500 cursor-pointer"
+            />
+            <span className="leading-snug">
+              Tôi đồng ý với{" "}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setShowTermsModal(true);
+                }}
+                className="text-cyan-400 underline font-semibold hover:text-cyan-300"
+              >
+                Điều khoản Dịch vụ & Tuyên bố Miễn trừ Trách nhiệm
+              </button>{" "}
+              theo đúng pháp luật an ninh mạng.
+            </span>
+          </label>
+        </div>
+
+        <Button
+          type="submit"
+          disabled={loading || googleLoading}
+          className="h-10 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-98 transition rounded-xl mt-1"
+        >
+          {loading ? (
+            <span className="flex items-center gap-2">
+              <LoaderCircle className="h-4 w-4 animate-spin text-slate-950" />
+              Đang khởi tạo tài khoản...
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              Tạo Tài Khoản & Chấp Nhận Điều Khoản <ArrowRight className="h-3.5 w-3.5" />
+            </span>
+          )}
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleGoogleSignup}
+          disabled={loading || googleLoading}
+          className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-200 transition-all rounded-xl flex items-center justify-center gap-2 mt-2"
+        >
+          <GoogleIcon className="h-4 w-4" />
+          <span>Đăng ký nhanh với Google</span>
+        </Button>
+      </form>
+    </>
   );
 }
 
@@ -460,7 +557,6 @@ export function ForgotPasswordForm() {
     setErrorMessage(null);
 
     try {
-      // Giả lập gửi link phục hồi
       await new Promise((r) => setTimeout(r, 1200));
       setSubmitted(true);
     } catch {
