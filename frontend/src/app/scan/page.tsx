@@ -690,12 +690,16 @@ function ScanLandingContent() {
                 <div ref={chatBottomRef} />
               </CardContent>
               <div className="p-3 border-t border-slate-800 flex gap-2">
-                <Input onChange="{(e)" value="{copilotInput}"> setCopilotInput(e.target.value)}
+                <Input
+                  value={copilotInput}
+                  onChange={(e) => setCopilotInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
                   placeholder="Hỏi về bản vá hoặc phân tích..."
                   className="bg-slate-900 border-slate-800 text-xs h-8 text-slate-100"
                 />
-                <Button onClick="{()" size="sm"> handleCopilotSend()}
+                <Button
+                  onClick={() => handleCopilotSend()}
+                  size="sm"
                   disabled={copilotLoading || !copilotInput.trim()}
                   className="h-8 px-3 bg-cyan-600 hover:bg-cyan-500 text-white"
                 >
