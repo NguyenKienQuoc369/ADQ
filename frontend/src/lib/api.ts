@@ -641,3 +641,10 @@ export async function discoverEndpoints(targetUrl: string) {
     body: JSON.stringify({ target_url: targetUrl }),
   });
 }
+
+export async function verifyBypass(payload: { target_url: string; bypass_code: string; waf_type: string }) {
+  return requestJson<{ ok: boolean; is_valid: boolean; status_no_bypass: number; status_with_bypass: number; message: string }>("/api/stress/verify-bypass", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}

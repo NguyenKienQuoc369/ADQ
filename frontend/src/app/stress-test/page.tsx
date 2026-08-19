@@ -17,8 +17,10 @@ import {
   ShieldCheck,
   KeyRound,
   Zap,
+  CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
-import { getProjectById, saveProjectDetail, detectWaf, runStressTest, discoverEndpoints } from "@/lib/api";
+import { getProjectById, saveProjectDetail, detectWaf, discoverEndpoints, verifyBypass, API_BASE_URL } from "@/lib/api";
 
 interface StressMetrics {
   totalRequests: number;
@@ -27,7 +29,6 @@ interface StressMetrics {
   status403WafBlocked: number;
   status429RateLimited: number;
   status500Crashed: number;
-  otherStatus: number;
   p95LatencyMs: string | number;
 }
 
@@ -61,12 +62,10 @@ interface Spark {
 function HologramWarRoomCanvas({
   logs,
   running,
-  targetName,
   metrics,
 }: {
   logs: LogEntry[];
   running: boolean;
-  targetName: string;
   metrics: StressMetrics | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -75,45 +74,42 @@ function HologramWarRoomCanvas({
   const ipClustersRef = useRef<Array<{ ip: string; y: number; count: number }>>([]);
   const shieldHitRef = useRef<number>(0);
 
+  // Đẩy beam ngay lập tức khi nhận được logs streaming
   useEffect(() => {
     if (!logs.length) return;
-    const latest = logs.slice(-14);
+    const latest = logs.slice(0, 8);
 
     latest.forEach((l) => {
       const isBlocked = l.status === 403 || l.status === 429;
-      let color = "#34d399"; // 200 OK Green
-      if (l.status === 403) color = "#fb7185"; // 403 WAF Red
-      else if (l.status === 429) color = "#fbbf24"; // 429 Rate Limit Amber
-      else if (l.status >= 500) color = "#c084fc"; // 500 Crash Purple
+      let color = "#10b981"; // Green 200
+      if (l.status === 403) color = "#f43f5e"; // Red 403
+      else if (l.status === 429) color = "#f59e0b"; // Amber 429
+      else if (l.status >= 500) color = "#a855f7"; // Purple 500
 
       const canvas = canvasRef.current;
       const w = canvas ? canvas.width : 780;
-      const h = canvas ? canvas.height : 260;
+      const h = canvas ? canvas.height : 280;
 
-      // Group IP theo prefix
-      const ipParts = l.ip.split(".");
-      const ipGroupKey = `${ipParts[0]}.${ipParts[1]}.${ipParts[2]}.*`;
-
-      let existingIp = ipClustersRef.current.find((item) => item.ip === ipGroupKey);
+      let existingIp = ipClustersRef.current.find((item) => item.ip === l.ip);
       if (!existingIp) {
-        const randomY = Math.floor(Math.random() * (h - 60)) + 30;
-        existingIp = { ip: ipGroupKey, y: randomY, count: 1 };
-        ipClustersRef.current = [existingIp, ...ipClustersRef.current.slice(0, 10)];
+        const randomY = Math.floor(Math.random() * (h - 40)) + 20;
+        existingIp = { ip: l.ip, y: randomY, count: 1 };
+        ipClustersRef.current = [existingIp, ...ipClustersRef.current.slice(0, 12)];
       } else {
         existingIp.count += 1;
       }
 
-      const targetCoreX = w - 75;
-      const shieldX = targetCoreX - 58;
+      const targetCoreX = w - 80;
+      const shieldX = targetCoreX - 60;
 
       beamsRef.current.push({
-        x: 185,
+        x: 170,
         y: existingIp.y,
         targetX: isBlocked ? shieldX : targetCoreX,
         targetY: h / 2,
-        speed: Math.random() * 5 + 8,
+        speed: Math.random() * 6 + 8,
         color,
-        radius: Math.random() * 2 + 1.8,
+        radius: Math.random() * 2 + 2,
         isBlocked,
       });
     });
@@ -131,83 +127,79 @@ function HologramWarRoomCanvas({
       const w = canvas.width;
       const h = canvas.height;
 
-      ctx.fillStyle = "rgba(2, 6, 23, 0.32)";
+      ctx.fillStyle = "rgba(2, 6, 23, 0.35)";
       ctx.fillRect(0, 0, w, h);
 
-      // Lưới Hologram
-      ctx.strokeStyle = "rgba(51, 65, 85, 0.25)";
+      // Grid
+      ctx.strokeStyle = "rgba(30, 41, 59, 0.35)";
       ctx.lineWidth = 1;
-      for (let x = 0; x < w; x += 36) {
+      for (let x = 0; x < w; x += 40) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, h);
         ctx.stroke();
       }
 
-      const targetCoreX = w - 75;
+      const targetCoreX = w - 80;
       const targetCoreY = h / 2;
-      const shieldX = targetCoreX - 58;
+      const shieldX = targetCoreX - 60;
 
-      // VẼ TẤM KHIÊN WAF (CHẶN TIA 403/429)
-      const shieldPulse = Math.sin(Date.now() / 140) * 2;
+      // 1. TẤM KHIÊN NĂNG LƯỢNG WAF
+      const shieldPulse = Math.sin(Date.now() / 150) * 2;
       const shieldHitActive = shieldHitRef.current > 0;
-      if (shieldHitRef.current > 0) shieldHitRef.current -= 0.06;
+      if (shieldHitRef.current > 0) shieldHitRef.current -= 0.05;
 
       ctx.save();
       ctx.beginPath();
-      ctx.arc(shieldX + 45, targetCoreY, 70 + shieldPulse, Math.PI * 0.73, Math.PI * 1.27);
+      ctx.arc(shieldX + 50, targetCoreY, 78 + shieldPulse, Math.PI * 0.72, Math.PI * 1.28);
       ctx.lineWidth = shieldHitActive ? 5 : 3;
-      ctx.strokeStyle = shieldHitActive ? "rgba(251, 113, 133, 0.95)" : "rgba(34, 211, 238, 0.85)";
-      ctx.shadowColor = shieldHitActive ? "#fb7185" : "#22d3ee";
-      ctx.shadowBlur = 16;
+      ctx.strokeStyle = shieldHitActive ? "rgba(244, 63, 94, 0.95)" : "rgba(6, 182, 212, 0.85)";
+      ctx.shadowColor = shieldHitActive ? "#f43f5e" : "#06b6d4";
+      ctx.shadowBlur = 18;
       ctx.stroke();
       ctx.restore();
 
-      ctx.fillStyle = shieldHitActive ? "#fb7185" : "#67e8f9";
-      ctx.font = "bold 9px ui-monospace, monospace";
+      ctx.fillStyle = shieldHitActive ? "#f43f5e" : "#38bdf8";
+      ctx.font = "bold 9px monospace";
       ctx.textAlign = "center";
-      ctx.fillText("WAF SHIELD", shieldX - 5, targetCoreY - 48);
+      ctx.fillText("WAF SHIELD", shieldX - 5, targetCoreY - 50);
 
-      // VẼ TARGET CORE
-      const radGrad = ctx.createRadialGradient(targetCoreX, targetCoreY, 3, targetCoreX, targetCoreY, 26);
+      // 2. TARGET CORE
+      const radGrad = ctx.createRadialGradient(targetCoreX, targetCoreY, 4, targetCoreX, targetCoreY, 30);
       radGrad.addColorStop(0, "rgba(255, 255, 255, 0.95)");
-      radGrad.addColorStop(0.3, "rgba(52, 211, 153, 0.8)");
-      radGrad.addColorStop(0.8, "rgba(34, 211, 238, 0.2)");
+      radGrad.addColorStop(0.3, "rgba(16, 185, 129, 0.8)");
+      radGrad.addColorStop(0.8, "rgba(6, 182, 212, 0.2)");
       radGrad.addColorStop(1, "rgba(2, 6, 23, 0)");
 
       ctx.fillStyle = radGrad;
       ctx.beginPath();
-      ctx.arc(targetCoreX, targetCoreY, 26, 0, Math.PI * 2);
+      ctx.arc(targetCoreX, targetCoreY, 30, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
-      ctx.arc(targetCoreX, targetCoreY, 9, 0, Math.PI * 2);
+      ctx.arc(targetCoreX, targetCoreY, 10, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = "#a7f3d0";
-      ctx.font = "bold 10px ui-monospace, monospace";
+      ctx.fillStyle = "#10b981";
+      ctx.font = "bold 10px monospace";
       ctx.textAlign = "center";
-      ctx.fillText("TARGET CORE", targetCoreX, targetCoreY + 26);
+      ctx.fillText("TARGET CORE", targetCoreX, targetCoreY + 28);
 
-      // VẼ DANH SÁCH IP NGUỒN (PREFIX + COUNT)
+      // 3. IP NGUỒN
       ctx.textAlign = "left";
       ipClustersRef.current.forEach((node) => {
-        ctx.fillStyle = "#94a3b8";
-        ctx.font = "10px ui-monospace, monospace";
+        ctx.fillStyle = "rgba(148, 163, 184, 0.9)";
+        ctx.font = "10px monospace";
         ctx.fillText(node.ip, 16, node.y + 3);
 
-        ctx.fillStyle = "#38bdf8";
-        ctx.font = "9px ui-monospace, monospace";
-        ctx.fillText(`(${node.count})`, 138, node.y + 3);
-
-        ctx.fillStyle = running ? "#22d3ee" : "#64748b";
+        ctx.fillStyle = running ? "#06b6d4" : "#64748b";
         ctx.beginPath();
-        ctx.arc(175, node.y, 3, 0, Math.PI * 2);
+        ctx.arc(160, node.y, 3, 0, Math.PI * 2);
         ctx.fill();
       });
 
-      // CẬP NHẬT & VẼ CHÙM TIA LASER
+      // 4. CHÙM TIA LASER
       beamsRef.current.forEach((beam, idx) => {
         const dx = beam.targetX - beam.x;
         const dy = beam.targetY - beam.y;
@@ -227,10 +219,10 @@ function HologramWarRoomCanvas({
               });
             }
           } else {
-            ctx.strokeStyle = "#34d399";
+            ctx.strokeStyle = "#10b981";
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(targetCoreX, targetCoreY, 15, 0, Math.PI * 2);
+            ctx.arc(targetCoreX, targetCoreY, 16, 0, Math.PI * 2);
             ctx.stroke();
           }
 
@@ -261,7 +253,7 @@ function HologramWarRoomCanvas({
         }
       });
 
-      // VẼ TIA LỬA NỔ TẠI KHIÊN
+      // 5. TIA LỬA NỔ
       sparksRef.current.forEach((sp, sIdx) => {
         sp.x += sp.vx;
         sp.y += sp.vy;
@@ -284,20 +276,20 @@ function HologramWarRoomCanvas({
 
     render();
     return () => cancelAnimationFrame(animId);
-  }, [running, targetName]);
+  }, [running]);
 
   return (
-    <div className="relative w-full h-[245px] rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-2xl shrink-0">
-      <canvas ref={canvasRef} width={800} height={245} className="w-full h-full block" />
+    <div className="relative w-full h-[270px] rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-2xl shrink-0">
+      <canvas ref={canvasRef} width={780} height={270} className="w-full h-full block" />
 
-      <div className="absolute top-2 left-3 flex items-center gap-2">
+      <div className="absolute top-2.5 left-3 flex items-center gap-2">
         <Badge className="bg-slate-900/90 border-slate-700 text-cyan-300 font-mono text-[10px] backdrop-blur-md">
           <Zap className="h-3 w-3 mr-1 text-cyan-400 fill-cyan-400" />
-          {metrics ? `${metrics.actualRps} req/s` : running ? "Executing Traffic..." : "War Room Ready"}
+          {metrics ? `${metrics.actualRps} req/s` : running ? "Executing Live..." : "War Room Ready"}
         </Badge>
       </div>
 
-      <div className="absolute top-2 right-3 flex items-center gap-2 text-[10px] font-mono">
+      <div className="absolute top-2.5 right-3 flex items-center gap-2 text-[10px] font-mono">
         <span className="flex items-center gap-1 text-emerald-400 font-bold">
           <span className="h-2 w-2 rounded-full bg-emerald-400" /> 200 OK (Thủng Khiên)
         </span>
@@ -327,6 +319,10 @@ function StressTestContent() {
   const [inputLabel, setInputLabel] = useState<string>("Mã Bypass / Secret Token");
   const [inputPlaceholder, setInputPlaceholder] = useState<string>("Nhập mã bypass");
   const [bypassCode, setBypassCode] = useState<string>("");
+
+  // Trạng thái kiểm tra mã Bypass
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{ is_valid: boolean; message: string } | null>(null);
 
   const [running, setRunning] = useState(false);
   const [metrics, setMetrics] = useState<StressMetrics | null>(null);
@@ -387,6 +383,34 @@ function StressTestContent() {
     }
   };
 
+  // NÚT KIỂM TRA MÃ BYPASS TRỰC TIẾP
+  const handleVerifyBypass = async () => {
+    const target = selectedEndpoint || baseDomain;
+    if (!target || !bypassCode.trim() || running) return;
+    setVerifying(true);
+    setVerifyResult(null);
+
+    try {
+      const res = await verifyBypass({
+        target_url: target,
+        bypass_code: bypassCode.trim(),
+        waf_type: detectedWaf,
+      });
+      setVerifyResult({
+        is_valid: res.is_valid,
+        message: res.message,
+      });
+    } catch (err: any) {
+      setVerifyResult({
+        is_valid: false,
+        message: "Không thể kết nối đến máy chủ mục tiêu.",
+      });
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // KÍCH HOẠT STRESS TEST VỚI REAL-TIME STREAMING
   const handleStartStress = async () => {
     const finalUrl = selectedEndpoint || baseDomain;
     if (!finalUrl || running) return;
@@ -405,34 +429,54 @@ function StressTestContent() {
     };
 
     try {
-      const response = await runStressTest(payload);
-      const resData = response.result?.metrics || response.metrics || {};
-      const realSampleLogs = response.result?.sample_logs || response.sample_logs || [];
+      const resp = await fetch(`${API_BASE_URL}/api/stress/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-      const computedMetrics: StressMetrics = {
-        totalRequests: resData.total_requests || targetRequests,
-        actualRps: resData.rps || calculatedRps,
-        status200: resData.status_200 || 0,
-        status403WafBlocked: resData.status_403_waf_blocked || 0,
-        status429RateLimited: resData.status_429_rate_limited || 0,
-        status500Crashed: resData.status_500_crashed || 0,
-        otherStatus: resData.other_status || 0,
-        p95LatencyMs: resData.p95_latency || "16ms",
-      };
+      if (!resp.ok || !resp.body) {
+        throw new Error("Không thể khởi tạo luồng dữ liệu Stress Test.");
+      }
 
-      setMetrics(computedMetrics);
-      setLiveLogs(realSampleLogs);
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      if (projectId) {
-        await saveProjectDetail(projectId, {
-          title: baseDomain,
-          module: "stress-test",
-          findings: {
-            stressMetrics: computedMetrics,
-            testedEndpoint: finalUrl,
-            wafName: detectedWafName,
-          },
-        });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === "update") {
+                setMetrics(data.metrics);
+                if (data.logs && data.logs.length > 0) {
+                  setLiveLogs((prev) => [...data.logs, ...prev].slice(0, 50));
+                }
+              } else if (data.type === "done") {
+                setMetrics(data.metrics);
+                if (projectId) {
+                  await saveProjectDetail(projectId, {
+                    title: baseDomain,
+                    module: "stress-test",
+                    findings: {
+                      stressMetrics: data.metrics,
+                      testedEndpoint: finalUrl,
+                      wafName: detectedWafName,
+                    },
+                  });
+                }
+              }
+            } catch {}
+          }
+        }
       }
     } catch (err: any) {
       setErrorMsg(err.message || "Kiểm thử tải thất bại.");
@@ -442,7 +486,7 @@ function StressTestContent() {
   };
 
   return (
-    <div className="h-[calc(100vh-5rem)] max-h-[calc(100vh-5rem)] overflow-hidden flex flex-col justify-between p-2.5 bg-slate-950 text-slate-100 font-sans">
+    <div className="h-[calc(100vh-5.5rem)] max-h-[calc(100vh-5.5rem)] overflow-hidden flex flex-col justify-between p-2.5 bg-slate-950 text-slate-100 font-sans">
       {/* 1. Header Bar Tối Giản */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 shrink-0">
         <div className="flex items-center gap-2">
@@ -462,11 +506,11 @@ function StressTestContent() {
         </div>
 
         <div className="flex items-center gap-2">
-          {detectedWafName && (
+          {detectedWafName ? (
             <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-300 font-mono text-[10px]" variant="muted">
               <ShieldCheck className="h-3 w-3 mr-1" /> {detectedWafName}
             </Badge>
-          )}
+          ) : null}
           <Badge className="border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono text-[10px]" variant="muted">
             Tốc độ: {calculatedRps.toLocaleString()} req/sec
           </Badge>
@@ -474,8 +518,8 @@ function StressTestContent() {
       </div>
 
       {/* 2. Bố Cục 2 Cột Vừa Khít 1 Màn Hình Không Cần Cuộn */}
-      <div className="grid gap-2.5 lg:grid-cols-12 flex-1 my-1.5 min-h-0 overflow-hidden">
-        {/* CỘT TRÁI (5 phần): Cấu hình & Ô Nhập Khóa Khi Bắn */}
+      <div className="grid gap-3 lg:grid-cols-12 flex-1 my-1.5 min-h-0 overflow-hidden">
+        {/* CỘT TRÁI (45% - 5.5 cols): Cấu hình & Ô Nhập Khóa Khi Bắn */}
         <div className="lg:col-span-5 flex flex-col justify-between gap-2 min-h-0">
           <Card className="border-slate-800 bg-slate-900/90 shadow-md">
             <CardContent className="p-3 space-y-2">
@@ -560,41 +604,64 @@ function StressTestContent() {
             </CardContent>
           </Card>
 
-          {/* Quét WAF & Ô Nhập Mã Bypass Tự Động Khóa */}
+          {/* Quét WAF & Kiểm Tra Mã Bypass */}
           <Card className="border-slate-800 bg-slate-900/90 shadow-md flex-1 flex flex-col justify-between">
             <CardContent className="p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-semibold uppercase text-slate-400 flex items-center gap-1">
                   <KeyRound className="h-3 w-3 text-amber-400" /> {inputLabel}
                 </label>
+                <div className="flex gap-1.5">
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                    onClick={handleDetectWaf}
+                    disabled={running || detectingWaf}
+                    className="h-5 px-2 text-[9px] border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+                  >
+                    {detectingWaf ? <LoaderCircle className="h-2.5 w-2.5 animate-spin mr-1" /> : <Activity className="h-2.5 w-2.5 mr-1" />}
+                    Quét WAF
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex gap-1.5">
+                <Input
+                  value={bypassCode}
+                  onChange={(e) => {
+                    setBypassCode(e.target.value);
+                    setVerifyResult(null);
+                  }}
+                  disabled={running}
+                  placeholder={inputPlaceholder}
+                  className="h-8 border-slate-800 bg-slate-950 font-mono text-xs text-cyan-300 placeholder:text-slate-600 disabled:opacity-60 flex-1"
+                />
                 <Button
                   size="sm"
                   type="button"
-                  variant="outline"
-                  onClick={handleDetectWaf}
-                  disabled={running || detectingWaf}
-                  className="h-5 px-2 text-[9px] border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+                  onClick={handleVerifyBypass}
+                  disabled={running || verifying || !bypassCode.trim()}
+                  className="h-8 px-2.5 text-[10px] bg-amber-600/90 hover:bg-amber-500 text-white font-medium shrink-0"
                 >
-                  {detectingWaf ? <LoaderCircle className="h-2.5 w-2.5 animate-spin mr-1" /> : <Activity className="h-2.5 w-2.5 mr-1" />}
-                  Quét WAF
+                  {verifying ? <LoaderCircle className="h-3 w-3 animate-spin mr-1" /> : <ShieldCheck className="h-3 w-3 mr-1" />}
+                  Kiểm Tra
                 </Button>
               </div>
 
-              <Input
-                value={bypassCode}
-                onChange={(e) => setBypassCode(e.target.value)}
-                disabled={running}
-                placeholder={inputPlaceholder}
-                className="h-8 border-slate-800 bg-slate-950 font-mono text-xs text-cyan-300 placeholder:text-slate-600 disabled:opacity-60"
-              />
-
-              <p className="text-[9px] text-slate-400 leading-relaxed">
-                {detectedWaf === "vercel"
-                  ? "Dán chuỗi Secret (rsE...), hệ thống tự tiêm 3 tầng vào URL, Header & Cookie."
-                  : detectedWaf === "cloudflare"
-                  ? "Dán trực tiếp token cf_clearance hoặc Service Secret."
-                  : "Hỗ trợ nạp token hoặc chuỗi header/cookie tùy chỉnh."}
-              </p>
+              {/* Thông báo kết quả kiểm tra mã bypass */}
+              {verifyResult && (
+                <div
+                  className={`p-2 rounded-lg text-[10px] flex items-center gap-1.5 border font-medium ${
+                    verifyResult.is_valid
+                      ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+                      : "bg-rose-950/40 border-rose-500/40 text-rose-300"
+                  }`}
+                >
+                  {verifyResult.is_valid ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0" />}
+                  <span className="truncate">{verifyResult.message}</span>
+                </div>
+              )}
 
               <div className="pt-1">
                 {errorMsg && <p className="mb-1 text-[10px] text-rose-400">{errorMsg}</p>}
@@ -606,7 +673,7 @@ function StressTestContent() {
                   {running ? (
                     <span className="flex items-center gap-1.5">
                       <LoaderCircle className="h-3.5 w-3.5 animate-spin text-white" />
-                      Đang thực thi ({calculatedRps.toLocaleString()} req/s)...
+                      Đang bắn tải Real-Time ({calculatedRps.toLocaleString()} req/s)...
                     </span>
                   ) : (
                     <span className="flex items-center gap-1.5">
@@ -620,12 +687,11 @@ function StressTestContent() {
           </Card>
         </div>
 
-        {/* CỘT PHẢI (7 phần): War Room Hologram Canvas với Tấm Khiên WAF & Thẻ HTTP */}
+        {/* CỘT PHẢI (55% - 7 cols): War Room Hologram Canvas & Thẻ HTTP */}
         <div className="lg:col-span-7 flex flex-col justify-between gap-2 min-h-0">
           <HologramWarRoomCanvas
             logs={liveLogs}
             running={running}
-            targetName={selectedEndpoint || baseDomain}
             metrics={metrics}
           />
 
