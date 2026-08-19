@@ -22,7 +22,10 @@ export const metadata: Metadata = {
   title: "ADQ SECURITY",
   description: "Security operations platform for asset monitoring, vulnerability management and access control.",
   icons: {
-    icon: "/logo.png",
+    icon: [
+      { url: "/logo.png", type: "image/png" },
+      { url: "/favicon.ico" },
+    ],
     shortcut: "/logo.png",
     apple: "/logo.png",
   },
