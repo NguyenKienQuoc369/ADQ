@@ -7,6 +7,7 @@ import LockBanner from "@/components/ui/lock-banner";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ThemeScript } from "@/components/providers/theme-script";
 import { LanguageProvider } from "@/lib/i18n";
+import { MaintenanceGate } from "@/components/maintenance/maintenance-gate";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,7 +46,7 @@ export default function RootLayout({
             <AuthProvider>
               <LockBanner />
               <div className="app-background flex min-h-screen flex-col">
-                <AppChrome>{children}</AppChrome>
+                <AppChrome><MaintenanceGate>{children}</MaintenanceGate></AppChrome>
               </div>
             </AuthProvider>
           </LanguageProvider>
