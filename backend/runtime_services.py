@@ -326,6 +326,16 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
             env_key = f"SCAN_HEADER_{k.upper().replace('-', '_')}"
             env[env_key] = v
 
+    progress_state = {
+        "recon": "pending",
+        "port_scan": "pending",
+        "crawl": "pending",
+        "nuclei": "pending",
+        "secrets": "pending",
+        "logic": "pending",
+        "ai_remediation": "pending",
+    }
+
     running_status = {
         "status": "running",
         "worker_id": worker_id,
@@ -334,11 +344,35 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         "request": req_data,
         "stdout_tail": "",
         "stderr_tail": "",
+        "current_step": 0,
+        "current_stage": None,
+        "progress": progress_state,
     }
-    redis_client.set(f"job_result:{job_id}", json.dumps(running_status))
 
-    # Mỗi scan chạy trong process group riêng để watchdog có thể
-    # dừng toàn bộ cây process (quoc_omni + nuclei/ffuf/katana/...).
+    result_key = f"job_result:{job_id}"
+    redis_client.set(result_key, json.dumps(running_status))
+
+    def _publish_progress(event: Dict[str, Any]) -> None:
+        key = str(event.get("key") or "").strip()
+        stage_status = str(event.get("status") or "running").strip().lower()
+
+        if key in progress_state:
+            progress_state[key] = stage_status
+
+        running_status["status"] = "running"
+        running_status["progress"] = dict(progress_state)
+        running_status["current_step"] = int(event.get("step") or 0)
+        running_status["current_stage"] = key or None
+        running_status["stage_message"] = str(event.get("message") or "")
+        running_status["updated_at"] = time.time()
+
+        redis_client.set(
+            result_key,
+            json.dumps(running_status, ensure_ascii=False),
+        )
+
+    # Mỗi scan vẫn chạy trong process group riêng để watchdog
+    # dừng được toàn bộ cây quoc_omni + nuclei/ffuf/katana/...
     scan_timeout = int(os.getenv("SCAN_JOB_TIMEOUT_SECONDS", "1800"))
     timed_out = False
 
@@ -347,20 +381,76 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        bufsize=1,
         env=env,
         cwd=BASE_DIR,
         start_new_session=True,
     )
 
+    stdout_lines = []
+    stderr_lines = []
+
+    def _read_stdout() -> None:
+        if proc.stdout is None:
+            return
+
+        for line in iter(proc.stdout.readline, ""):
+            stdout_lines.append(line)
+
+            marker = line.strip()
+            if marker.startswith("ADQ_PROGRESS:"):
+                try:
+                    event = json.loads(
+                        marker[len("ADQ_PROGRESS:"):]
+                    )
+                    if isinstance(event, dict):
+                        _publish_progress(event)
+                except Exception as exc:
+                    print(
+                        f"[{worker_id}] Invalid progress marker: {exc}",
+                        flush=True,
+                    )
+
+            # Giữ log scanner hiển thị trong docker logs.
+            print(
+                f"[{worker_id}:scan] {line.rstrip()}",
+                flush=True,
+            )
+
+    def _read_stderr() -> None:
+        if proc.stderr is None:
+            return
+
+        for line in iter(proc.stderr.readline, ""):
+            stderr_lines.append(line)
+            print(
+                f"[{worker_id}:scan:stderr] {line.rstrip()}",
+                flush=True,
+            )
+
+    stdout_thread = threading.Thread(
+        target=_read_stdout,
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_read_stderr,
+        daemon=True,
+    )
+
+    stdout_thread.start()
+    stderr_thread.start()
+
+    timeout_message = ""
+
     try:
-        out, err = proc.communicate(timeout=scan_timeout)
+        proc.wait(timeout=scan_timeout)
 
     except subprocess.TimeoutExpired:
         timed_out = True
 
         timeout_message = (
             f"SCAN_TIMEOUT: Job exceeded {scan_timeout} seconds "
-            f"and was terminated by worker watchdog."
+            "and was terminated by worker watchdog."
         )
 
         print(
@@ -368,8 +458,6 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
             flush=True,
         )
 
-        # SIGTERM toàn bộ process group trước để các tool có cơ hội
-        # đóng file/output sạch sẽ.
         try:
             os.killpg(proc.pid, signal.SIGTERM)
         except ProcessLookupError:
@@ -382,8 +470,7 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
             )
 
         try:
-            out, err = proc.communicate(timeout=10)
-
+            proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             print(
                 f"[{worker_id}] Job {job_id} ignored SIGTERM; "
@@ -402,8 +489,15 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
                     flush=True,
                 )
 
-            out, err = proc.communicate()
+            proc.wait()
 
+    stdout_thread.join(timeout=5)
+    stderr_thread.join(timeout=5)
+
+    out = "".join(stdout_lines)
+    err = "".join(stderr_lines)
+
+    if timeout_message:
         err = ((err or "") + "\n" + timeout_message).strip()
 
     final_status = (
@@ -466,6 +560,101 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
                 flush=True,
             )
 
+    # ========================================================
+    # STEP 7: Gemini AI Analysis
+    # ========================================================
+    fallback_advice = str(
+        scan_tree_data.get("action_advice")
+        or scan_tree_data.get("human_summary")
+        or ""
+    )
+
+    ai_analysis = ""
+
+    if final_status == "done":
+        progress_state["ai_remediation"] = "running"
+        _publish_progress({
+            "step": 7,
+            "key": "ai_remediation",
+            "status": "running",
+            "message": "Gemini đang phân tích toàn bộ kết quả bước 1-6",
+        })
+
+        if job_data.get("skip_ai"):
+            # FREE tier vẫn có kết quả scanner/rule-based,
+            # UI có thể khóa phần AI theo package.
+            ai_analysis = fallback_advice
+
+        else:
+            try:
+                try:
+                    from backend.core.ai_copilot.copilot_engine import (
+                        ADQSecurityCopilot,
+                    )
+                except ImportError:
+                    from core.ai_copilot.copilot_engine import (
+                        ADQSecurityCopilot,
+                    )
+
+                copilot = ADQSecurityCopilot()
+
+                # Giới hạn kích thước prompt nhưng giữ dữ liệu có cấu trúc:
+                # hosts, URLs, ports, nuclei, secrets, logic, highlights...
+                structured_context = json.dumps(
+                    scan_tree_data,
+                    ensure_ascii=False,
+                    default=str,
+                )[:24000]
+
+                ai_prompt = (
+                    "Bạn là ADQ Security Copilot. "
+                    "Hãy phân tích KẾT QUẢ QUÉT THỰC TẾ dưới đây. "
+                    "Không được tự tạo finding không tồn tại trong dữ liệu. "
+                    "Ưu tiên Critical/High, secrets, exposed endpoints, "
+                    "logic vulnerabilities và attack surface. "
+                    "Trả lời bằng tiếng Việt, gồm: "
+                    "1) tổng quan rủi ro, "
+                    "2) finding quan trọng, "
+                    "3) nguyên nhân, "
+                    "4) cách khắc phục ưu tiên theo thứ tự. "
+                    f"\n\nTARGET: {target}"
+                    f"\n\nSCAN_CONTEXT:\n{structured_context}"
+                )
+
+                raw_ai = copilot._call_gemini_api(ai_prompt)
+
+                if isinstance(raw_ai, dict):
+                    ai_analysis = str(
+                        raw_ai.get("text")
+                        or raw_ai.get("content")
+                        or raw_ai.get("message")
+                        or ""
+                    )
+                else:
+                    ai_analysis = str(raw_ai or "")
+
+            except Exception as exc:
+                print(
+                    f"[{worker_id}] AI analysis failed for "
+                    f"{job_id}: {exc}",
+                    flush=True,
+                )
+                scan_tree_data["ai_error"] = str(exc)
+                ai_analysis = fallback_advice
+
+        scan_tree_data["ai_analysis"] = ai_analysis
+        scan_tree_data["recommendations"] = (
+            ai_analysis or fallback_advice
+        )
+
+        progress_state["ai_remediation"] = "done"
+        _publish_progress({
+            "step": 7,
+            "key": "ai_remediation",
+            "status": "done",
+            "message": "AI analysis hoàn tất",
+        })
+
     completed_result = {
         "status": final_status,
         "worker_id": worker_id,
@@ -475,6 +664,9 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         "stdout_tail": out[-4000:] if out else "",
         "stderr_tail": err[-4000:] if err else "",
         "completed_at": time.time(),
+        "current_step": 7 if final_status == "done" else running_status.get("current_step", 0),
+        "current_stage": "ai_remediation" if final_status == "done" else running_status.get("current_stage"),
+        "progress": dict(progress_state),
     }
     # Hợp nhất toàn bộ dữ liệu quét (subdomains, vulnerabilities, action_advice) vào Redis
     completed_result.update(scan_tree_data)

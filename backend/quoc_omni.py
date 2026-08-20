@@ -737,23 +737,60 @@ def _parse_nuclei_findings(file_path):
 
 def _parse_ffuf_findings(file_path):
     findings = []
+    current = None
 
-    for line in _read_txt_lines(file_path):
-        stripped = line.strip()
+    # ANSI CSI, ví dụ: \x1b[2K, \x1b[0m
+    ansi_re = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
-        # FFuf -v in ra nhiều dòng metadata như:
-        # ":: Matcher : Response status: 200"
-        # Đây không phải endpoint/finding thực tế.
+    for raw_line in _read_txt_lines(file_path):
+        stripped = ansi_re.sub("", raw_line).strip()
+
+        if not stripped:
+            continue
+
+        # Metadata cấu hình của ffuf, không phải finding.
         if stripped.startswith("::"):
             continue
 
-        # Result thực tế của FFuf verbose bắt đầu bằng "[Status:"
-        if not stripped.lower().startswith("[status:"):
+        lowered = stripped.lower()
+
+        # Ví dụ:
+        # [Status: 200, Size: 1024, Words: 160, Lines: 32, Duration: 5ms]
+        if lowered.startswith("[status:"):
+            status_match = re.search(r"status:\s*(\d+)", stripped, re.I)
+            size_match = re.search(r"size:\s*(\d+)", stripped, re.I)
+            words_match = re.search(r"words:\s*(\d+)", stripped, re.I)
+            lines_match = re.search(r"lines:\s*(\d+)", stripped, re.I)
+
+            current = {
+                "status_code": int(status_match.group(1)) if status_match else None,
+                "length": int(size_match.group(1)) if size_match else None,
+                "words": int(words_match.group(1)) if words_match else None,
+                "lines": int(lines_match.group(1)) if lines_match else None,
+                "raw": stripped,
+            }
             continue
 
-        findings.append({"raw": stripped})
+        # FFuf verbose:
+        # | URL | http://127.0.0.1:8000/docs
+        if stripped.startswith("| URL |"):
+            url = stripped.split("| URL |", 1)[1].strip()
+
+            finding = dict(current or {})
+            finding["url"] = url
+            finding["endpoint"] = url
+            finding["method"] = "GET"
+
+            if current and current.get("raw"):
+                finding["raw"] = current["raw"] + " | URL | " + url
+            else:
+                finding["raw"] = stripped
+
+            findings.append(finding)
+            current = None
 
     return findings
+
 
 def build_result_json_tree(target, folder, counts, highlights, output_path, logic_results=None):
     logic_results = logic_results or {}
@@ -1168,6 +1205,21 @@ def compute_flag_likelihood(highlights):
 # HÀM CHÍNH
 # =================================================================
 
+def emit_adq_progress(step, key, status, message=""):
+    """Machine-readable progress marker cho runtime worker."""
+    payload = {
+        "step": int(step),
+        "key": str(key),
+        "status": str(status),
+        "message": str(message or ""),
+        "timestamp": time.time(),
+    }
+    print(
+        "ADQ_PROGRESS:" + json.dumps(payload, ensure_ascii=False),
+        flush=True,
+    )
+
+
 def main():
     args = parse_args()
 
@@ -1228,7 +1280,8 @@ def main():
     if missing_tools:
         log(f"[!] Cảnh báo: Thiếu các công cụ sau ({', '.join(missing_tools)}). Hệ thống sẽ bỏ qua và tiếp tục.", Colors.Y)
 
-    # BƯỚC 1: Subdomain
+    # BƯỚC 1: Recon & DNS
+    emit_adq_progress(1, "recon", "running", "Subfinder / DNSX")
     log("⏳ [*] Quét Subfinder...", Colors.C)
     sub_file = f"{folder}/subdomains.txt"
     if tool_available("subfinder"):
@@ -1249,15 +1302,25 @@ def main():
     else:
         sub_file_for_httpx = sub_file
 
-    # BƯỚC 1.5: Port Scan (naabu)
+    emit_adq_progress(1, "recon", "done", f"Recon hoàn tất: {sub_count} subdomain")
+
+    # BƯỚC 2: Port Scan
+    emit_adq_progress(2, "port_scan", "running", "Naabu Fast Port")
     ports_file = f"{folder}/open_ports.txt"
     if tool_available("naabu"):
         run_command("Naabu", ["naabu", "-l", sub_file, "-silent"], ports_file, timeout=args.timeout)
     else:
         log("[!] Cảnh báo: naabu không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(ports_file)
+    emit_adq_progress(
+        2,
+        "port_scan",
+        "done",
+        f"Port scan hoàn tất: {count_lines(ports_file)} kết quả",
+    )
 
-    # BƯỚC 2: Live Host
+    # BƯỚC 3: Live Host + Crawl URL
+    emit_adq_progress(3, "crawl", "running", "HTTPX / Katana / GAU / Wayback / SubJS")
     log(f"✅ [*] Tìm thấy {sub_count} Subdomains. Đang chạy HTTPX...", Colors.G)
     live_file = f"{folder}/live_sites.txt"
     if tool_available("httpx-toolkit"):
@@ -1266,6 +1329,82 @@ def main():
         log("[!] Cảnh báo: httpx-toolkit không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(live_file)
 
+    # Với explicit URL như http://127.0.0.1:8000, một số phiên bản
+    # httpx có thể không giữ scheme/port đúng khi đọc qua -l.
+    # Nếu list scan không trả live host, thử trực tiếp target gốc.
+    if (
+        count_lines(live_file) == 0
+        and str(target_url).startswith(("http://", "https://"))
+        and tool_available("httpx-toolkit")
+    ):
+        run_command(
+            "HTTPX-Direct",
+            [
+                "httpx-toolkit",
+                "-u",
+                target_url,
+                "-silent",
+                "-mc",
+                "200,301,302,403",
+            ],
+            live_file,
+            timeout=args.timeout,
+            retries=args.retries,
+            backoff=args.retry_backoff,
+        )
+        ensure_file(live_file)
+
+    # Fallback cho explicit HTTP(S) target.
+    # Một số môi trường/httpx build không trả kết quả với loopback/private host
+    # dù HTTP service thực tế đang phản hồi.
+    if (
+        count_lines(live_file) == 0
+        and str(target_url).startswith(("http://", "https://"))
+    ):
+        try:
+            import ssl
+            import urllib.error
+            import urllib.request
+
+            request = urllib.request.Request(
+                target_url,
+                method="GET",
+                headers={"User-Agent": "ADQ-LiveProbe/1.0"},
+            )
+
+            ssl_context = ssl._create_unverified_context()
+
+            try:
+                response = urllib.request.urlopen(
+                    request,
+                    timeout=min(int(args.timeout), 10),
+                    context=ssl_context,
+                )
+                status_code = int(response.getcode() or 0)
+                response.close()
+
+            except urllib.error.HTTPError as http_exc:
+                status_code = int(http_exc.code or 0)
+
+            # Bất kỳ HTTP response hợp lệ nào cũng chứng minh host đang sống.
+            # 401/404/405/500... vẫn là một web service reachable.
+            if 100 <= status_code < 600:
+                with open(live_file, "a", encoding="utf-8") as f:
+                    f.write(target_url + "\n")
+
+                log(
+                    f"✅ [HTTP Probe] Live target: {target_url} "
+                    f"(HTTP {status_code})",
+                    Colors.G,
+                )
+
+        except Exception as probe_exc:
+            log(
+                f"[!] HTTP fallback probe thất bại: {probe_exc}",
+                Colors.Y,
+            )
+
+    dedupe_file(live_file)
     live_count = count_lines(live_file)
 
     tech_file = f"{folder}/httpx_tech.txt"
@@ -1307,11 +1446,15 @@ def main():
         run_command("SubJS", ["subjs"], js_file, input_file=combined_urls, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
     ensure_file(js_file)
 
-    # BƯỚC 4.5: Phân tích Tĩnh JS Secrets & Arjun IDOR Discovery
-    analyze_js_secrets_deep(js_file, folder)
-    arjun_results = run_arjun_idor_scan(combined_urls, folder, timeout=args.timeout)
+    emit_adq_progress(
+        3,
+        "crawl",
+        "done",
+        f"Crawl hoàn tất: {count_lines(combined_urls)} URL",
+    )
 
-    # BƯỚC 5: Nuclei
+    # BƯỚC 4: Nuclei
+    emit_adq_progress(4, "nuclei", "running", "CVE / Misconfiguration scan")
     log("⏳ [*] Quét lỗ hổng bằng Nuclei...", Colors.C)
     vuln_file = f"{folder}/nuclei_results.txt"
     nuclei_tags = []
@@ -1364,8 +1507,32 @@ def main():
             nuclei_args = build_nuclei_args(base_args, args, nuclei_tags)
             run_command("Nuclei", nuclei_args, vuln_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
     ensure_file(vuln_file)
+    emit_adq_progress(
+        4,
+        "nuclei",
+        "done",
+        f"Nuclei hoàn tất: {count_lines(vuln_file)} finding",
+    )
 
-    # BƯỚC 6: FFuf
+    # BƯỚC 5: Secrets Hunter
+    emit_adq_progress(5, "secrets", "running", "JS Secrets / Hardcoded Credentials")
+    analyze_js_secrets_deep(js_file, folder)
+    secrets_found = analyze_urls_for_secrets(combined_urls)
+    emit_adq_progress(
+        5,
+        "secrets",
+        "done",
+        "Hoàn tất phân tích secrets/hardcoded credentials",
+    )
+
+    # BƯỚC 6: Logic / Attack Surface
+    emit_adq_progress(6, "logic", "running", "FFuf / Arjun / Logic Flaws")
+    arjun_results = run_arjun_idor_scan(
+        combined_urls,
+        folder,
+        timeout=args.timeout,
+    )
+
     log("⏳ [*] Dò tìm thư mục bằng FFuf...", Colors.C)
     ffuf_out = f"{folder}/ffuf_main.txt"
     if os.path.exists(args.wordlist) and tool_available("ffuf"):
@@ -1392,7 +1559,6 @@ def main():
             if alerts: critical_alerts = "\n\n🚨 <b>[LỖ HỔNG] NGHIÊM TRỌNG (HIGH/CRITICAL):</b>\n" + "\n".join([f"• <code>{a}</code>" for a in alerts[:7]])
             else: critical_alerts = "\n\n✅ <b>[LỖ HỔNG]</b> An toàn. Không có lỗi High/Critical."
 
-    secrets_found = analyze_urls_for_secrets(combined_urls)
     secrets_msg = f"\n\n💎 <b>[DỮ LIỆU NHẠY CẢM] BỊ LỘ:</b>\n{secrets_found}" if secrets_found else "\n\n✅ <b>[DỮ LIỆU NHẠY CẢM]</b> An toàn. Không rò rỉ Key/Token."
 
     juicy_ffuf = analyze_ffuf(ffuf_out)
@@ -1478,11 +1644,51 @@ def main():
         except Exception as e:
             logic_results["error"] = str(e)
 
+    logic_results["arjun"] = arjun_results
+    emit_adq_progress(
+        6,
+        "logic",
+        "done",
+        "Hoàn tất attack surface và logic analysis",
+    )
+
     json_report_path = f"{folder}/summary.json"
     build_json_report(target, start_time, end_time, counts, highlights, json_report_path)
 
     result_json_path = f"{folder}/result.json"
-    build_result_json_tree(target, folder, counts, highlights, result_json_path, logic_results=logic_results)
+    build_result_json_tree(
+        target,
+        folder,
+        counts,
+        highlights,
+        result_json_path,
+        logic_results=logic_results,
+    )
+
+    # Bổ sung lớp dữ liệu tổng hợp để worker AI và Copilot có context thật.
+    try:
+        with open(result_json_path, "r", encoding="utf-8") as f:
+            result_payload = json.load(f)
+
+        result_payload["human_summary"] = human_summary
+        result_payload["risk_notes"] = risk_notes
+        result_payload["action_advice"] = (
+            "\n".join(action_advice)
+            if isinstance(action_advice, list)
+            else str(action_advice or "")
+        )
+        result_payload["secrets_summary"] = secrets_found or ""
+        result_payload["logic_vulnerabilities"] = logic_results
+
+        with open(result_json_path, "w", encoding="utf-8") as f:
+            json.dump(
+                result_payload,
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except Exception as exc:
+        log(f"[!] Không thể enrich result.json: {exc}", Colors.Y)
 
     html_report_path = f"{folder}/report.html"
     build_html_report(target, start_time, end_time, counts, highlights, html_report_path)

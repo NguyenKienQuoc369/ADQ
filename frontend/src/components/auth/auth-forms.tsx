@@ -42,7 +42,11 @@ function GoogleIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-const triggerGoogleOAuth = async (setLoadingState: (b: boolean) => void, setError: (msg: string | null) => void) => {
+const triggerGoogleOAuth = async (
+  setLoadingState: (b: boolean) => void,
+  setError: (msg: string | null) => void,
+  nextPath = "/dashboard"
+) => {
   setLoadingState(true);
   setError(null);
   try {
@@ -51,7 +55,7 @@ const triggerGoogleOAuth = async (setLoadingState: (b: boolean) => void, setErro
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${origin}/auth/callback?next=/dashboard`,
+        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`,
         queryParams: {
           access_type: "offline",
           prompt: "select_account",
@@ -218,11 +222,25 @@ export function RegisterForm() {
     if (!name || !email || !password) return;
     setLoading(true);
 
+    setErrorMessage(null);
+
     try {
-      await register({ name, email, password });
-      window.location.href = "/dashboard";
-    } catch {
-      window.location.href = "/dashboard";
+      const result = await register({ name, email, password });
+
+      if (result?.session) {
+        window.location.href = "/onboarding";
+        return;
+      }
+
+      setErrorMessage(
+        "Tài khoản đã được tạo. Vui lòng kiểm tra email để xác minh tài khoản, sau đó đăng nhập để tiếp tục."
+      );
+      setLoading(false);
+    } catch (err: any) {
+      setErrorMessage(
+        err?.message || "Không thể tạo tài khoản. Vui lòng kiểm tra thông tin và thử lại."
+      );
+      setLoading(false);
     }
   };
 
@@ -300,7 +318,7 @@ export function RegisterForm() {
       <Button
         type="button"
         variant="outline"
-        onClick={() => triggerGoogleOAuth(setGoogleLoading, setErrorMessage)}
+        onClick={() => triggerGoogleOAuth(setGoogleLoading, setErrorMessage, "/onboarding")}
         disabled={loading || googleLoading}
         className="h-10 w-full border-slate-800 bg-slate-900/60 hover:bg-slate-800 text-xs font-semibold text-slate-200 rounded-xl flex items-center justify-center gap-2 mt-2 cursor-pointer"
       >

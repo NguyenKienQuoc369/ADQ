@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     if (error) throw error;
     if (data.session) await fetchAccountData(data.session.access_token);
-    return { ok: true, user: data.user };
+    return { ok: true, user: data.user, session: data.session };
   };
 
   const loginWithGoogle = async (targetDestination?: string) => {

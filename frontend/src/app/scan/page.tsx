@@ -167,13 +167,13 @@ function ScanLandingContent() {
   const [showRescanModal, setShowRescanModal] = useState(false);
 
   const [nodes, setNodes] = useState<Record<string, DAGNodeState>>({
-    node_recon: { step: 1, id: "node_recon", label: "Recon & DNS", sublabel: "Subfinder / DNSX", icon: Globe, status: "pending" },
-    node_port: { step: 2, id: "node_port", label: "Port Scan", sublabel: "Naabu Fast Port", icon: Radio, status: "pending" },
-    node_crawl: { step: 3, id: "node_crawl", label: "Crawl URL", sublabel: "Katana & GAU", icon: Terminal, status: "pending" },
-    node_nuclei: { step: 4, id: "node_nuclei", label: "Nuclei Engine", sublabel: "CVE / Misconfigs", icon: ShieldAlert, status: "pending" },
-    node_secrets: { step: 5, id: "node_secrets", label: "Secrets Hunter", sublabel: "Hardcoded Keys", icon: KeyRound, status: "pending" },
-    node_logic: { step: 6, id: "node_logic", label: "Logic Flaws", sublabel: "Attack Vector", icon: Zap, status: "pending" },
-    node_ai: { step: 7, id: "node_ai", label: "AI Advice", sublabel: "Gemini Copilot", icon: Sparkles, status: "pending" },
+    node_recon: { step: 1, id: "node_recon", label: "Asset Discovery", sublabel: "External asset inventory", icon: Globe, status: "pending" },
+    node_port: { step: 2, id: "node_port", label: "Network Exposure", sublabel: "Reachable services & ports", icon: Radio, status: "pending" },
+    node_crawl: { step: 3, id: "node_crawl", label: "Web Surface Mapping", sublabel: "Routes, URLs & resources", icon: Terminal, status: "pending" },
+    node_nuclei: { step: 4, id: "node_nuclei", label: "Vulnerability Analysis", sublabel: "Known weaknesses & exposure", icon: ShieldAlert, status: "pending" },
+    node_secrets: { step: 5, id: "node_secrets", label: "Sensitive Data Exposure", sublabel: "Credentials & leaked secrets", icon: KeyRound, status: "pending" },
+    node_logic: { step: 6, id: "node_logic", label: "Application Security", sublabel: "Behavior & logic analysis", icon: Zap, status: "pending" },
+    node_ai: { step: 7, id: "node_ai", label: "AI Risk Assessment", sublabel: "Risk synthesis & remediation", icon: Sparkles, status: "pending" },
   });
 
   const [subdomains, setSubdomains] = useState(0);
@@ -186,6 +186,7 @@ function ScanLandingContent() {
   const [discoveredEndpoints, setDiscoveredEndpoints] = useState<ScanEndpoint[]>([]);
   const [actionAdvice, setActionAdvice] = useState<ActionAdvice[]>([]);
   const [rawActionAdvice, setRawActionAdvice] = useState<string>("");
+  const [scanContext, setScanContext] = useState<Record<string, any>>({});
   const [scanError, setScanError] = useState<string | null>(null);
 
   const [copilotMessages, setCopilotMessages] = useState<ChatMessage[]>([
@@ -434,6 +435,24 @@ function ScanLandingContent() {
           job.raw_action_advice ??
           "";
 
+        // Structured context cho Copilot.
+        setScanContext({
+          jobId,
+          target,
+          counts: job.counts ?? {},
+          highlights: job.highlights ?? {},
+          subdomains: job.subdomains ?? {},
+          ports: job.ports ?? live_data?.open_ports ?? [],
+          urls: job.urls ?? {},
+          vulnerabilities: job.vulnerabilities ?? {},
+          secretsSummary: job.secrets_summary ?? "",
+          logicVulnerabilities: job.logic_vulnerabilities ?? {},
+          humanSummary: job.human_summary ?? "",
+          riskNotes: job.risk_notes ?? [],
+          aiAnalysis: job.ai_analysis ?? "",
+          recommendations,
+        });
+
         // Job lỗi phải dừng polling ngay, không quay loading vô hạn.
         if (status === "FAILED" || status === "ERROR") {
           const failureMessage =
@@ -460,15 +479,35 @@ function ScanLandingContent() {
           return;
         }
 
+        const stageStatus = (value: any): DAGNodeState["status"] => {
+          const normalized = String(value || "").toLowerCase();
+
+          if (normalized === "done" || normalized === "skipped") {
+            return "completed";
+          }
+
+          if (normalized === "failed" || normalized === "error") {
+            return "failed";
+          }
+
+          if (normalized === "pending" || !normalized) {
+            return "pending";
+          }
+
+          return "running";
+        };
+
         setNodes((prev) => {
           const next = { ...prev };
-          if (progress?.recon) next.node_recon.status = progress.recon === "done" ? "completed" : "running";
-          if (progress?.port_scan) next.node_port.status = progress.port_scan === "done" ? "completed" : "running";
-          if (progress?.crawl) next.node_crawl.status = progress.crawl === "done" ? "completed" : "running";
-          if (progress?.nuclei) next.node_nuclei.status = progress.nuclei === "done" ? "completed" : "running";
-          if (progress?.secrets) next.node_secrets.status = progress.secrets === "done" ? "completed" : "running";
-          if (progress?.logic) next.node_logic.status = progress.logic === "done" ? "completed" : "running";
-          if (progress?.ai_remediation) next.node_ai.status = progress.ai_remediation === "done" ? "completed" : "running";
+
+          if (progress?.recon) next.node_recon.status = stageStatus(progress.recon);
+          if (progress?.port_scan) next.node_port.status = stageStatus(progress.port_scan);
+          if (progress?.crawl) next.node_crawl.status = stageStatus(progress.crawl);
+          if (progress?.nuclei) next.node_nuclei.status = stageStatus(progress.nuclei);
+          if (progress?.secrets) next.node_secrets.status = stageStatus(progress.secrets);
+          if (progress?.logic) next.node_logic.status = stageStatus(progress.logic);
+          if (progress?.ai_remediation) next.node_ai.status = stageStatus(progress.ai_remediation);
+
           return next;
         });
 
@@ -492,15 +531,10 @@ function ScanLandingContent() {
         setVulnCount(nuclei.length);
         setVulnerabilities(nuclei);
 
-        if (status === "completed" || status === "COMPLETED") {
+        if (status === "COMPLETED" || status === "DONE") {
           setIsScanning(false);
-          setNodes((prev) => {
-            const finished = { ...prev };
-            Object.keys(finished).forEach((k) => {
-              finished[k] = { ...finished[k], status: "completed" };
-            });
-            return finished;
-          });
+          // Giữ nguyên trạng thái thực của từng stage từ worker progress;
+          // không ép stage failed/skipped thành completed.
 
           let parsedAdvice: ActionAdvice[] = [];
           const rawAdv = safeString(recommendations);
@@ -644,6 +678,7 @@ function ScanLandingContent() {
     if (isScanning || !target.trim()) return;
 
     setScanError(null);
+    setScanContext({});
     setDiscoveredEndpoints([]);
     setIsScanning(true);
     setNodes((prev) => {
@@ -685,7 +720,17 @@ function ScanLandingContent() {
     setCopilotLoading(true);
 
     try {
-      const promptContext = `Target: ${target || "Chưa xác định"}. Context kết quả scan: ${rawActionAdvice || "Chưa có khuyến nghị."}. Câu hỏi của tôi: ${query}`;
+      const structuredContext = JSON.stringify(scanContext).slice(0, 12000);
+
+      const promptContext = [
+        `Target: ${target || "Chưa xác định"}.`,
+        `Scan ID: ${jobId || "unknown"}.`,
+        `Structured scan context: ${structuredContext || "{}"}`,
+        `AI analysis / remediation: ${rawActionAdvice || "Chưa có khuyến nghị."}`,
+        `Câu hỏi của tôi: ${query}`,
+        "Chỉ dựa trên dữ liệu scan đã cung cấp; nếu thiếu dữ liệu hãy nói rõ, không tự tạo finding.",
+      ].join("\\n\\n");
+
       const res = await copilotChat(promptContext);
       const answerText = safeString(res.copilot_response);
       const finalMessages: ChatMessage[] = [...nextMessages, { sender: "copilot", text: answerText }];
@@ -704,6 +749,53 @@ function ScanLandingContent() {
 
   const nodeArray = Object.values(nodes);
 
+  // Presentation layer: chỉ hiển thị dữ liệu bảo mật đã chuẩn hóa,
+  // không phơi bày implementation/tooling nội bộ của ADQ Security Engine.
+  const resultSubdomains = Array.isArray(scanContext?.subdomains?.all)
+    ? scanContext.subdomains.all
+    : [];
+  const resultLiveHosts = Array.isArray(scanContext?.subdomains?.http_live)
+    ? scanContext.subdomains.http_live
+    : [];
+  const resultUrls = Array.isArray(scanContext?.urls?.combined)
+    ? scanContext.urls.combined
+    : [];
+  const resultJsLinks = Array.isArray(scanContext?.urls?.js_links)
+    ? scanContext.urls.js_links
+    : [];
+  const resultPorts = Array.isArray(scanContext?.ports)
+    ? scanContext.ports
+    : Array.isArray(scanContext?.ports?.open)
+    ? scanContext.ports.open
+    : [];
+  const exposedEndpoints = Array.isArray(scanContext?.vulnerabilities?.ffuf)
+    ? scanContext.vulnerabilities.ffuf
+    : [];
+  const logicResults = scanContext?.logicVulnerabilities ?? {};
+  const logicFindingCount = Object.values(logicResults).reduce((total: number, value: any) => {
+    if (Array.isArray(value)) return total + value.length;
+    if (value && typeof value === "object") return total + Object.keys(value).length;
+    return total;
+  }, 0);
+  const secretsSummary = safeString(scanContext?.secretsSummary);
+  const aiAssessment = safeString(scanContext?.aiAnalysis);
+  const humanSummary = safeString(scanContext?.humanSummary);
+  const riskNotes = Array.isArray(scanContext?.riskNotes) ? scanContext.riskNotes : [];
+
+  const severityCounts = {
+    critical: vulnerabilities.filter((v) => v.severity === "CRITICAL").length,
+    high: vulnerabilities.filter((v) => v.severity === "HIGH").length,
+    medium: vulnerabilities.filter((v) => v.severity === "MEDIUM").length,
+    low: vulnerabilities.filter((v) => v.severity === "LOW").length,
+    info: vulnerabilities.filter((v) => v.severity === "INFO").length,
+  };
+
+  const totalSurfaceItems =
+    resultSubdomains.length +
+    resultLiveHosts.length +
+    resultUrls.length +
+    exposedEndpoints.length;
+
   return (
     <DashboardShell area="dashboard">
       <div className="space-y-6 text-slate-100 font-sans">
@@ -711,7 +803,7 @@ function ScanLandingContent() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-white tracking-tight">Trung Tâm Rà Quét Lỗ Hổng</h1>
+              <h1 className="text-xl font-bold text-white tracking-tight">ADQ Autonomous Security Assessment</h1>
               {projectId && (
                 <Badge className="text-[10px] font-mono border border-cyan-500/30 text-cyan-400 bg-cyan-950/40">
                   DỰ ÁN: {projectName || projectId}
@@ -719,7 +811,7 @@ function ScanLandingContent() {
               )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Rà quét tự động đa tầng (Recon, Port, Crawl, Nuclei, Hardcoded Secrets & AI Copilot)
+              Phân tích bảo mật đa tầng trên tài sản, dịch vụ mạng, bề mặt web, lỗ hổng, dữ liệu nhạy cảm và rủi ro ứng dụng.
             </p>
           </div>
 
@@ -773,10 +865,10 @@ function ScanLandingContent() {
           </CardContent>
         </Card>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Security Overview */}
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
           <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
-            <p className="text-[11px] text-slate-400">Tên Miền Phụ</p>
+            <p className="text-[11px] text-slate-400">Assets</p>
             <p className="text-xl font-bold text-cyan-400 font-mono mt-1">{subdomains}</p>
           </Card>
           <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
@@ -784,12 +876,89 @@ function ScanLandingContent() {
             <p className="text-xl font-bold text-emerald-400 font-mono mt-1">{liveHosts}</p>
           </Card>
           <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
-            <p className="text-[11px] text-slate-400">Endpoints Crawl</p>
+            <p className="text-[11px] text-slate-400">Open Services</p>
+            <p className="text-xl font-bold text-sky-400 font-mono mt-1">{openPorts}</p>
+          </Card>
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">Mapped URLs</p>
             <p className="text-xl font-bold text-amber-400 font-mono mt-1">{crawledUrls}</p>
           </Card>
           <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
-            <p className="text-[11px] text-slate-400">Lỗ Hổng Phát Hiện</p>
+            <p className="text-[11px] text-slate-400">Security Findings</p>
             <p className="text-xl font-bold text-rose-400 font-mono mt-1">{vulnCount}</p>
+          </Card>
+          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
+            <p className="text-[11px] text-slate-400">Surface Signals</p>
+            <p className="text-xl font-bold text-violet-300 font-mono mt-1">{totalSurfaceItems}</p>
+          </Card>
+        </div>
+
+        {/* Attack Surface Inventory */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
+            <CardHeader className="pb-3 border-b border-slate-800">
+              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                <Globe className="h-4 w-4 text-cyan-400"/> Asset & Host Inventory
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Discovered assets</p>
+                <div className="max-h-32 overflow-y-auto space-y-1">
+                  {resultSubdomains.length ? resultSubdomains.map((item: any, idx: number) => (
+                    <p key={`asset-${idx}`} className="text-[11px] font-mono text-slate-300 break-all">{safeString(item)}</p>
+                  )) : <p className="text-[11px] text-slate-600">Không có dữ liệu.</p>}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Reachable hosts</p>
+                <div className="max-h-32 overflow-y-auto space-y-1">
+                  {resultLiveHosts.length ? resultLiveHosts.map((item: any, idx: number) => (
+                    <p key={`live-${idx}`} className="text-[11px] font-mono text-emerald-300 break-all">{safeString(item)}</p>
+                  )) : <p className="text-[11px] text-slate-600">Không có dữ liệu.</p>}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
+            <CardHeader className="pb-3 border-b border-slate-800">
+              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                <Radio className="h-4 w-4 text-sky-400"/> Network Exposure
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="max-h-72 overflow-y-auto space-y-2">
+                {resultPorts.length ? resultPorts.map((item: any, idx: number) => (
+                  <div key={`port-${idx}`} className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
+                    <p className="text-[11px] font-mono text-sky-300 break-all">{safeString(item)}</p>
+                  </div>
+                )) : <p className="text-[11px] text-slate-600">Không có dịch vụ mạng mở được ghi nhận.</p>}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
+            <CardHeader className="pb-3 border-b border-slate-800">
+              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-rose-400"/> Severity Distribution
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 grid grid-cols-2 gap-2">
+              {[
+                ["Critical", severityCounts.critical, "text-rose-300"],
+                ["High", severityCounts.high, "text-orange-300"],
+                ["Medium", severityCounts.medium, "text-amber-300"],
+                ["Low", severityCounts.low, "text-sky-300"],
+                ["Info", severityCounts.info, "text-slate-300"],
+                ["Logic", logicFindingCount, "text-violet-300"],
+              ].map(([label, value, color]) => (
+                <div key={String(label)} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                  <p className="text-[10px] text-slate-500">{label}</p>
+                  <p className={`text-lg font-bold font-mono ${String(color)}`}>{String(value)}</p>
+                </div>
+              ))}
+            </CardContent>
           </Card>
         </div>
 
@@ -803,7 +972,7 @@ function ScanLandingContent() {
                   Endpoints Đã Phát Hiện
                 </CardTitle>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  URL thu thập từ Katana, GAU, Wayback và FFuf
+                  Toàn bộ endpoint được ADQ Security Engine xác nhận trong phạm vi phiên quét hiện tại.
                 </p>
               </div>
 
@@ -818,7 +987,7 @@ function ScanLandingContent() {
           <CardContent className="p-0">
             {discoveredEndpoints.length === 0 ? (
               <div className="p-6 text-center text-xs text-slate-500 font-mono">
-                Chưa có endpoint discovery được lưu cho phiên này.
+                Chưa có endpoint nào được xác nhận trong phiên này.
               </div>
             ) : (
               <div className="max-h-80 overflow-y-auto divide-y divide-slate-800/70">
@@ -830,7 +999,7 @@ function ScanLandingContent() {
                     <Badge
                       className="mt-0.5 shrink-0 uppercase text-[9px] font-mono border border-cyan-500/30 text-cyan-300 bg-cyan-950/20"
                     >
-                      {endpoint.source || "unknown"}
+                      DISCOVERED
                     </Badge>
 
                     <div className="min-w-0 flex-1">
@@ -865,6 +1034,61 @@ function ScanLandingContent() {
             )}
           </CardContent>
         </Card>
+
+        {/* Web Surface & Exposure Details */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
+            <CardHeader className="pb-3 border-b border-slate-800">
+              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-amber-400"/> Web Surface Mapping
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/70">
+                {resultUrls.length ? resultUrls.map((url: any, idx: number) => (
+                  <div key={`url-${idx}`} className="px-4 py-2.5 text-[11px] font-mono text-slate-300 break-all">
+                    {safeString(url)}
+                  </div>
+                )) : <div className="p-5 text-xs text-slate-600">Chưa có URL nào được lập bản đồ.</div>}
+              </div>
+              {resultJsLinks.length > 0 && (
+                <div className="border-t border-slate-800 p-4">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Client-side resources ({resultJsLinks.length})</p>
+                  <div className="max-h-28 overflow-y-auto space-y-1">
+                    {resultJsLinks.map((url: any, idx: number) => (
+                      <p key={`js-${idx}`} className="text-[10px] font-mono text-slate-400 break-all">{safeString(url)}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
+            <CardHeader className="pb-3 border-b border-slate-800">
+              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-orange-400"/> Exposed Application Endpoints
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/70">
+                {exposedEndpoints.length ? exposedEndpoints.map((item: any, idx: number) => (
+                  <div key={`exposed-${idx}`} className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className="text-[9px] font-mono border border-orange-500/30 bg-orange-950/20 text-orange-300">
+                        {safeString(item.method) || "GET"}
+                      </Badge>
+                      {item.status_code != null && <span className="text-[10px] font-mono text-slate-500">HTTP {String(item.status_code)}</span>}
+                    </div>
+                    <p className="mt-1.5 text-[11px] font-mono text-slate-200 break-all">
+                      {safeString(item.endpoint || item.url || item.raw)}
+                    </p>
+                  </div>
+                )) : <div className="p-5 text-xs text-slate-600">Chưa phát hiện endpoint ứng dụng bổ sung.</div>}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* DAG 7 Steps */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
@@ -927,7 +1151,9 @@ function ScanLandingContent() {
                             </Badge>
                             <span className="font-bold text-slate-200">{v.title}</span>
                           </div>
-                          <p className="font-mono text-[11px] text-slate-400">{v.endpoint}</p>
+                          <p className="font-mono text-[11px] text-slate-400 break-all">{v.endpoint}</p>
+                          {v.cve && <p className="text-[10px] font-mono text-amber-300">{v.cve}</p>}
+                          {v.description && <p className="text-[11px] text-slate-500 leading-relaxed">{v.description}</p>}
                         </div>
                       </div>
                     ))
@@ -935,6 +1161,46 @@ function ScanLandingContent() {
                 </div>
               </CardContent>
             </Card>
+
+            {(humanSummary || riskNotes.length > 0 || secretsSummary) && (
+              <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
+                <CardHeader className="pb-3 border-b border-slate-800">
+                  <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-violet-400"/> Assessment Evidence
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 space-y-4 text-xs">
+                  {humanSummary && <div className="text-slate-300 leading-relaxed">{parseMarkdown(humanSummary)}</div>}
+                  {riskNotes.length > 0 && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Risk notes</p>
+                      <div className="space-y-1">
+                        {riskNotes.map((note: any, idx: number) => <p key={`risk-${idx}`} className="text-slate-400">• {safeString(note)}</p>)}
+                      </div>
+                    </div>
+                  )}
+                  {secretsSummary && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Sensitive data assessment</p>
+                      <div className="text-slate-300">{parseMarkdown(secretsSummary)}</div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {aiAssessment && (
+              <Card className="border border-cyan-500/20 bg-cyan-950/10 shadow-xl">
+                <CardHeader className="pb-3 border-b border-cyan-500/10">
+                  <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-cyan-400"/> AI Risk Assessment
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 text-xs leading-relaxed">
+                  {parseMarkdown(aiAssessment)}
+                </CardContent>
+              </Card>
+            )}
 
             {/* AI Action Advice Card */}
             <AiAnalysisCard aiSummary={rawActionAdvice} target={target} userTier={userTier}/>
@@ -945,7 +1211,7 @@ function ScanLandingContent() {
             <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl flex flex-col h-[520px]">
               <CardHeader className="pb-3 border-b border-slate-800 flex flex-row items-center justify-between">
                 <CardTitle className="text-xs font-bold text-white flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-cyan-400"/> Copilot Tương Tác
+                  <Bot className="h-4 w-4 text-cyan-400"/> ADQ Security Copilot
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex-1 p-3 overflow-y-auto space-y-3 text-xs">
