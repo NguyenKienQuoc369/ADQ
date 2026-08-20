@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { User } from "@/lib/api";
 
@@ -35,6 +35,7 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   // Initial render phải giống nhau giữa server và client.
   // Không đọc localStorage trong useState initializer vì sẽ gây hydration mismatch.
   const [user, setUser] = useState<User | null>(null);
@@ -121,6 +122,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     fetchAccountData();
   }, [pathname]);
 
+  // ======================================================
+  // GLOBAL ONBOARDING GATE
+  //
+  // Tài khoản mới có onboardingRequired=true không thể
+  // truy cập Dashboard hoặc route khác trước khi hoàn tất.
+  // Kiểm tra trực tiếp Supabase metadata thay vì appUser,
+  // vì /api/account không expose toàn bộ user_metadata.
+  // ======================================================
+  useEffect(() => {
+    if (loading) return;
+
+    let active = true;
+
+    const enforceOnboarding = async () => {
+      const supabase = createSupabaseBrowserClient();
+
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+
+      if (!active || !authUser) return;
+
+      const metadata = authUser.user_metadata ?? {};
+
+      const onboardingRequired =
+        metadata.onboardingRequired === true;
+
+      const onboardingCompleted =
+        metadata.onboardingCompleted === true;
+
+      if (!onboardingRequired || onboardingCompleted) {
+        return;
+      }
+
+      // Những route phải được phép truy cập trong onboarding.
+      const allowed =
+        pathname === "/onboarding" ||
+        pathname === "/maintenance" ||
+        pathname.startsWith("/auth/callback");
+
+      if (!allowed) {
+        router.replace("/onboarding");
+      }
+    };
+
+    enforceOnboarding();
+
+    return () => {
+      active = false;
+    };
+  }, [loading, pathname, router]);
+
   const login = async (email: string, pass: string) => {
     const supabase = createSupabaseBrowserClient();
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -137,7 +190,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase.auth.signUp({
       email: payload.email,
       password: payload.password,
-      options: { data: { name: payload.name, full_name: payload.name } },
+      options: {
+        data: {
+          name: payload.name,
+          full_name: payload.name,
+          onboardingRequired: true,
+          onboardingCompleted: false,
+          termsAccepted: false,
+        },
+      },
     });
     if (error) throw error;
     if (data.session) await fetchAccountData(data.session.access_token);

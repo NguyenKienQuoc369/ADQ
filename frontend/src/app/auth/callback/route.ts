@@ -29,7 +29,28 @@ export async function GET(request: Request) {
     );
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
+
     if (!error) {
+      // Nếu OAuth được khởi tạo từ luồng REGISTER,
+      // callback /onboarding sẽ đánh dấu tài khoản phải
+      // hoàn tất onboarding trước khi vào Dashboard.
+      if (next === "/onboarding") {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user && user.user_metadata?.onboardingCompleted !== true) {
+          await supabase.auth.updateUser({
+            data: {
+              onboardingRequired: true,
+              onboardingCompleted: false,
+              termsAccepted:
+                user.user_metadata?.termsAccepted === true,
+            },
+          });
+        }
+      }
+
       return NextResponse.redirect(`${origin}${next}`);
     }
   }

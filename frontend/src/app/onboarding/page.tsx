@@ -148,6 +148,7 @@ export default function OnboardingPage() {
 
       const { error } = await supabase.auth.updateUser({
         data: {
+          onboardingRequired: false,
           onboardingCompleted: true,
           onboardingCompletedAt: new Date().toISOString(),
         },

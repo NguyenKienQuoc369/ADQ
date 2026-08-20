@@ -6,6 +6,7 @@ from backend.core.config import settings
 from backend.routers.scan_router import router as scan_router
 from backend.routers.project_router import router as project_router
 from backend.routers.admin_router import router as admin_router
+from backend.routers.maintenance_router import router as maintenance_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -13,6 +14,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+app.include_router(maintenance_router)
 
 allowed_origins = [
     "http://localhost:3000",
