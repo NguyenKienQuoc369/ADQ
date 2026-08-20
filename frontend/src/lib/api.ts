@@ -203,12 +203,13 @@ export interface SystemStats {
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   let url = path;
-  try {
-    if (!/^(https?:)?\/\//.test(path)) {
-      url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
+  if (!/^(https?:)?\/\//.test(path)) {
+    if (typeof window === "undefined") {
+      const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")).replace(/\/$/, "");
+      url = `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
+    } else {
+      url = path;
     }
-  } catch {
-    url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
   }
 
   let authHeader: Record<string, string> = {};
@@ -219,9 +220,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       if (data?.session?.access_token) {
         authHeader["Authorization"] = `Bearer ${data.session.access_token}`;
       }
-    } catch {
-      // Ignore auth error if Supabase client fails
-    }
+    } catch {}
   }
 
   const res = await fetch(url, {
@@ -235,7 +234,6 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (res.status === 401 && typeof window !== "undefined") {
-    // localStorage.clear();
     window.location.href = "/login?error=session_expired";
     throw new Error("UNAUTHORIZED: Session expired");
   }
@@ -397,14 +395,34 @@ export async function getScanResults(): Promise<ScanResult[]> {
   return res.scans;
 }
 
+async function getAuthHeader(): Promise<Record<string, string>> {
+  let authHeader: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        authHeader["Authorization"] = `Bearer ${data.session.access_token}`;
+      }
+    } catch {}
+  }
+  return authHeader;
+}
+
 export async function getProjects(): Promise<any[]> {
-  const res = await requestJson<{ ok: true; projects: any[] }>("/api/projects");
-  return res.projects ?? [];
+  const headers = await getAuthHeader();
+  const res = await fetch("/api/projects", { headers });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.projects ?? [];
 }
 
 export async function getProjectById(projectId: string): Promise<any> {
-  const res = await requestJson<{ ok: true; project: any }>(`/api/projects/${encodeURIComponent(projectId)}`);
-  return res.project;
+  const headers = await getAuthHeader();
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { headers });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.project;
 }
 
 export async function createProject(input: {
@@ -414,18 +432,24 @@ export async function createProject(input: {
   password?: string;
   module?: string;
 }): Promise<any> {
-  const res = await requestJson<{ ok: true; project: any }>("/api/projects", {
+  const headers = await getAuthHeader();
+  const res = await fetch("/api/projects", {
     method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(input),
   });
-  return res.project;
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Không thể tạo dự án.");
+  return data.project;
 }
 
 export async function deleteProject(projectId: string): Promise<boolean> {
-  const res = await requestJson<{ ok: true; deleted: boolean }>(`/api/projects/${encodeURIComponent(projectId)}`, {
+  const headers = await getAuthHeader();
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
     method: "DELETE",
+    headers,
   });
-  return Boolean(res.deleted);
+  return res.ok;
 }
 
 export async function saveProjectDetail(projectId: string, payload: Record<string, any>) {
@@ -496,11 +520,31 @@ export async function getPackagePlans(): Promise<PackagePlan[]> {
 }
 
 export async function redeemCode(code: string): Promise<User> {
-  const res = await requestJson<{ user: User }>("/api/account/redeem", {
+  let authHeader: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        authHeader["Authorization"] = `Bearer ${data.session.access_token}`;
+      }
+    } catch {}
+  }
+
+  const res = await fetch("/api/account/redeem", {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader,
+    },
     body: JSON.stringify({ code }),
   });
-  return res.user;
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || "Mã kích hoạt không hợp lệ hoặc đã hết hạn.");
+  }
+  return data.user;
 }
 
 export async function getSystemStats(): Promise<SystemStats> {
@@ -628,10 +672,28 @@ export async function detectWaf(targetUrl: string) {
   });
 }
 
-export async function runStressTest(payload: any) {
+export async function runStressTest(payload: {
+  target_url: string;
+  target_requests?: number;
+  duration?: string | number;
+  bypass_code?: string;
+  waf_type?: string;
+  custom_headers?: Record<string, string>;
+  project_id?: string;
+}) {
+  const formattedPayload = {
+    target_url: payload.target_url,
+    target_requests: Number(payload.target_requests ?? 1000),
+    duration: typeof payload.duration === "number" ? `${payload.duration}s` : String(payload.duration || "5s"),
+    bypass_code: String(payload.bypass_code || ""),
+    waf_type: String(payload.waf_type || "standard"),
+    custom_headers: payload.custom_headers || null,
+    project_id: payload.project_id || null,
+  };
+
   return requestJson<any>("/api/stress", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(formattedPayload),
   });
 }
 
@@ -647,4 +709,84 @@ export async function verifyBypass(payload: { target_url: string; bypass_code: s
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function streamStressTest(
+  payload: {
+    target_url: string;
+    target_requests?: number;
+    duration?: string | number;
+    bypass_code?: string;
+    waf_type?: string;
+    custom_headers?: Record<string, string>;
+  },
+  onData: (chunk: any) => void
+) {
+  let url = "/api/stress/stream";
+  if (!/^(https?:)?\/\//.test(url)) {
+    url = `${API_BASE_URL.replace(/\/$/, "")}/api/stress/stream`;
+  }
+
+  let authHeader: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        authHeader["Authorization"] = `Bearer ${data.session.access_token}`;
+      }
+    } catch {}
+  }
+
+  const formattedPayload = {
+    target_url: payload.target_url,
+    target_requests: Number(payload.target_requests || 1000),
+    duration: typeof payload.duration === "number" ? `${payload.duration}s` : String(payload.duration || "5s"),
+    bypass_code: String(payload.bypass_code || ""),
+    waf_type: String(payload.waf_type || "standard"),
+    custom_headers: payload.custom_headers || null,
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader,
+    },
+    credentials: "include",
+    body: JSON.stringify(formattedPayload),
+  });
+
+  if (!res.ok) {
+    let errDetail = `HTTP ${res.status} ${res.statusText}`;
+    try {
+      const errJson = await res.json();
+      if (errJson.detail) errDetail = errJson.detail;
+    } catch {}
+    throw new Error(errDetail);
+  }
+
+  const reader = res.body?.getReader();
+  const decoder = new TextDecoder();
+  if (!reader) return;
+
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+
+    for (const part of parts) {
+      const line = part.trim();
+      if (line.startsWith("data: ")) {
+        try {
+          const parsed = JSON.parse(line.slice(6));
+          onData(parsed);
+        } catch {}
+      }
+    }
+  }
 }

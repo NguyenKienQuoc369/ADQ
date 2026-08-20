@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -23,9 +23,6 @@ import {
 import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { TermsModal } from "@/components/auth/terms-modal";
-import { GoogleSetupModal } from "@/components/auth/google-setup-modal";
-import { PlansModal } from "@/components/auth/plans-modal";
 
 type ShellArea = "dashboard" | "admin";
 
@@ -65,49 +62,8 @@ function DashboardShellContent({
   const searchParams = useSearchParams();
   const projectId = searchParams?.get("projectId") || null;
 
-  const { user, loading, logout, acceptTerms, setupGoogleRecovery } = useAuth();
+  const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  // 1. Kiểm tra tài khoản Google có cần hoàn thiện thông tin trước không
-  const needsGoogleRecovery = useMemo(() => {
-    if (loading || !user) return false;
-    if (user.oauthProvider !== "google") return false;
-    if ((user as any).hasRecoveryPassword) return false;
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem(`adq_recovery_setup_${user.id}`);
-      if (cached === "true") return false;
-    }
-    return true;
-  }, [loading, user]);
-
-  // 2. Kiểm tra điều khoản
-  const needsTerms = useMemo(() => {
-    if (loading || !user) return false;
-    if ((user as any).termsAccepted) return false;
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem(`adq_terms_accepted_${user.id}`);
-      if (cached === "true") return false;
-    }
-    return true;
-  }, [loading, user]);
-
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
-  const [showTermsModal, setShowTermsModal] = useState(false);
-  const [showPlansModal, setShowPlansModal] = useState(false);
-
-  // Thứ tự ưu tiên: 1. Setup Thông tin -> 2. Duyệt Điều khoản -> 3. Bảng gói cước
-  useEffect(() => {
-    if (needsGoogleRecovery) {
-      setShowGoogleModal(true);
-      setShowTermsModal(false);
-    } else if (needsTerms) {
-      setShowGoogleModal(false);
-      setShowTermsModal(true);
-    } else {
-      setShowGoogleModal(false);
-      setShowTermsModal(false);
-    }
-  }, [needsGoogleRecovery, needsTerms]);
 
   const isProjectWorkspace = PROJECT_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
@@ -118,69 +74,8 @@ function DashboardShellContent({
     [area]
   );
 
-  // Sau khi hoàn tất bổ sung thông tin -> chuyển tiếp sang duyệt điều khoản (nếu chưa duyệt)
-  const handleCompleteGoogleRecovery = async (data: { name: string; username: string; password: string }) => {
-    await setupGoogleRecovery(data);
-    setShowGoogleModal(false);
-    if (needsTerms) {
-      setShowTermsModal(true);
-    }
-  };
-
-  const handleDeclineTerms = async () => {
-    setShowTermsModal(false);
-    await logout();
-    window.location.href = "/";
-  };
-
-  // Sau khi duyệt điều khoản xong -> mở Modal xem bảng Gói cước
-  const handleAcceptTerms = async () => {
-    await acceptTerms();
-    setShowTermsModal(false);
-    setShowPlansModal(true);
-  };
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#020617] text-cyan-400 font-sans">
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-cyan-500/20 bg-slate-950/80 p-8 backdrop-blur-2xl shadow-2xl">
-          <div className="relative flex h-12 w-12 items-center justify-center">
-            <span className="absolute h-full w-full animate-ping rounded-full bg-cyan-400/20" />
-            <Image src="/logo.png" alt="ADQ logo" width={48} height={48} className="h-full w-full object-contain animate-pulse" />
-          </div>
-          <p className="font-mono text-xs tracking-widest text-slate-400 uppercase mt-2">Đang kết nối SOC Cluster...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user && typeof window !== "undefined") {
-    const host = window.location.hostname.toLowerCase();
-    if (!host.includes("adq-soc.click") && !pathname?.startsWith("/admin")) {
-      window.location.href = "/login";
-      return null;
-    }
-  }
-
   return (
     <div className="relative min-h-screen bg-[#020617] text-slate-100 selection:bg-cyan-500 selection:text-black overflow-hidden font-sans">
-      <GoogleSetupModal
-        isOpen={showGoogleModal}
-        userEmail={user?.email || ""}
-        defaultName={user?.name || ""}
-        onComplete={handleCompleteGoogleRecovery}
-      />
-      <TermsModal
-        isOpen={showTermsModal}
-        onAccept={handleAcceptTerms}
-        onDecline={handleDeclineTerms}
-        userEmail={user?.email || ""}
-      />
-      <PlansModal
-        isOpen={showPlansModal}
-        onClose={() => setShowPlansModal(false)}
-      />
-
       {isProjectWorkspace ? (
         <div className="relative min-h-screen flex flex-col">
           <header className="sticky top-0 z-30 shrink-0 border-b border-white/[0.08] bg-slate-950/80 backdrop-blur-xl px-4 py-2 flex items-center justify-between gap-4">
@@ -196,16 +91,48 @@ function DashboardShellContent({
 
             {projectId && (
               <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/60 border border-white/[0.08] backdrop-blur-md">
-                <Link href={`/scan?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/scan" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" : "text-slate-400 hover:text-slate-200")}>
+                <Link
+                  href={`/scan?projectId=${projectId}`}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                    pathname === "/scan"
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
                   <Shield className="h-3 w-3" /> Quét DAST
                 </Link>
-                <Link href={`/stress-test?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/stress-test" ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "text-slate-400 hover:text-slate-200")}>
+                <Link
+                  href={`/stress-test?projectId=${projectId}`}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                    pathname === "/stress-test"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                      : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
                   <Zap className="h-3 w-3" /> Stress Test
                 </Link>
-                <Link href={`/apk-audit?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/apk-audit" ? "bg-amber-500/20 text-amber-300 border border-amber-500/40" : "text-slate-400 hover:text-slate-200")}>
+                <Link
+                  href={`/apk-audit?projectId=${projectId}`}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                    pathname === "/apk-audit"
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                      : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
                   <Smartphone className="h-3 w-3" /> APK Audit
                 </Link>
-                <Link href={`/copilot?projectId=${projectId}`} className={cn("flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all", pathname === "/copilot" ? "bg-purple-500/20 text-purple-300 border border-purple-500/40" : "text-slate-400 hover:text-slate-200")}>
+                <Link
+                  href={`/copilot?projectId=${projectId}`}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all",
+                    pathname === "/copilot"
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                      : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
                   <Bot className="h-3 w-3" /> AI Copilot
                 </Link>
               </div>
@@ -222,7 +149,7 @@ function DashboardShellContent({
                   <Image src="/logo.png" alt="ADQ logo" width={32} height={32} className="object-contain" />
                   <div>
                     <span className="font-bold text-sm tracking-wide text-white">ADQ<span className="text-cyan-400">.SEC</span></span>
-                    <p className="text-[10px] font-mono text-slate-400">{user?.packageTier || "FREE"}</p>
+                    <p className="text-[10px] font-mono text-cyan-400" suppressHydrationWarning>{user?.packageTier || "FREE"}</p>
                   </div>
                 </Link>
                 <div className="space-y-1">
@@ -232,7 +159,16 @@ function DashboardShellContent({
                         const Icon = item.icon;
                         const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
                         return (
-                          <Link key={item.href} href={item.href} className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium transition", active ? "border border-cyan-500/40 bg-cyan-950/40 text-cyan-300" : "text-slate-400 hover:bg-slate-900/60")}>
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className={cn(
+                              "flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium transition",
+                              active
+                                ? "border border-cyan-500/40 bg-cyan-950/40 text-cyan-300"
+                                : "text-slate-400 hover:bg-slate-900/60"
+                            )}
+                          >
                             <Icon className={cn("h-4 w-4", active ? "text-cyan-400" : "text-slate-400")} />
                             <span>{item.label}</span>
                           </Link>

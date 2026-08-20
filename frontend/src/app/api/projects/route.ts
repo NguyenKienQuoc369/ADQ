@@ -1,15 +1,70 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { getPrismaClient } from "@/lib/prisma";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const prisma = getPrismaClient();
 
-export async function GET() {
+// Helper lấy thông tin user đang đăng nhập từ Supabase
+async function getAuthenticatedUser(request: Request) {
+  let authUser: any = null;
+
   try {
-    const targets = await prisma.target.findMany({
+    const supabase = await createSupabaseServerClient();
+    const { data } = await supabase.auth.getUser();
+    authUser = data.user ?? null;
+  } catch {
+    authUser = null;
+  }
+
+  if (!authUser) {
+    const authHeader = request.headers.get("authorization") || request.headers.get("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (url && anonKey && token) {
+        const client = createClient(url, anonKey);
+        try {
+          (client.auth as any).setAuth(token);
+          const { data } = await client.auth.getUser();
+          authUser = data.user ?? null;
+        } catch {
+          authUser = null;
+        }
+      }
+    }
+  }
+  return authUser;
+}
+
+export async function GET(request: Request) {
+  try {
+    const authUser = await getAuthenticatedUser(request);
+    if (!authUser) {
+      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
+
+    const userEmail = (authUser.email ?? "").toLowerCase().trim();
+    const userId = authUser.id;
+
+    // Lấy toàn bộ targets kèm chi tiết
+    const allTargets = await prisma.target.findMany({
       orderBy: { createdAt: "desc" },
       include: { projectDetail: true },
     });
-    return NextResponse.json({ ok: true, projects: targets });
+
+    // Lọc các dự án thuộc về tài khoản hiện tại
+    const userTargets = allTargets.filter((t) => {
+      const summary = (t.projectDetail?.summary as any) || {};
+      const ownerEmail = (summary.userEmail ?? "").toLowerCase().trim();
+      const ownerId = summary.userId ?? "";
+
+      // Khớp email hoặc Supabase User ID
+      return ownerEmail === userEmail || ownerId === userId;
+    });
+
+    return NextResponse.json({ ok: true, projects: userTargets });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 });
   }
@@ -17,18 +72,31 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const authUser = await getAuthenticatedUser(req);
+    if (!authUser) {
+      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
+
+    const userEmail = (authUser.email ?? "").toLowerCase().trim();
+    const userId = authUser.id;
+
     const body = await req.json();
-    const name = (body.name || "untitled").toString();
+    const name = (body.name || "untitled").toString().trim();
     const description = (body.description || body.projectInfo || "").toString();
     const module = (body.module || "web").toString();
     const password = body.password !== undefined && body.password !== null ? String(body.password) : "";
-    const domain = (body.domain || `${name.replace(/\s+/g, "-").toLowerCase()}`).toString();
+
+    // Domain được tạo duy nhất cho từng user để tránh trùng lặp
+    const rawDomain = (body.domain || `${name.replace(/\s+/g, "-").toLowerCase()}`).toString();
+    const domain = rawDomain.includes("@") ? rawDomain : `${rawDomain}-${userId.slice(0, 6)}`;
 
     const summary = {
       projectInfo: description,
       password: password || null,
       module,
-      domain,
+      domain: rawDomain,
+      userEmail,
+      userId,
     };
 
     let existing = await prisma.target.findUnique({ where: { domain } });
@@ -72,7 +140,16 @@ export async function POST(req: Request) {
       include: { projectDetail: true },
     });
 
-    return NextResponse.json({ ok: true, project: { ...created, name: created.projectDetail?.title ?? name, description, module, password } });
+    return NextResponse.json({
+      ok: true,
+      project: {
+        ...created,
+        name: created.projectDetail?.title ?? name,
+        description,
+        module,
+        password,
+      },
+    });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 });
   }

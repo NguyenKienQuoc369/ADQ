@@ -1,4 +1,5 @@
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
 import { getPrismaClient } from "@/lib/prisma";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -28,10 +29,8 @@ export function normaliseStatus(value?: string | null): AppStatus {
 
 export function getDailyLimitForPackage(packageTier: AppPackageTier) {
   if (packageTier === "PRO" || packageTier === "PRO_MAX") return 999999;
-  return 2; // Gói FREE: đúng 2 lượt duy nhất
+  return 2;
 }
-
-
 
 export function toUserRecord(row: any) {
   return {
@@ -67,6 +66,29 @@ export function toRedeemCodeRecord(row: any) {
   };
 }
 
+export async function getAuthenticatedUserFromRequest(request: Request): Promise<SupabaseUser | null> {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (!error && user) return user;
+  } catch {}
+
+  const authHeader = request.headers.get("authorization") || request.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.split(" ")[1];
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (url && anonKey && token) {
+      try {
+        const client = createClient(url, anonKey, { auth: { persistSession: false } });
+        const { data: { user }, error } = await client.auth.getUser(token);
+        if (!error && user) return user;
+      } catch {}
+    }
+  }
+  return null;
+}
+
 export async function requireAdminRequest() {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.getUser();
@@ -76,9 +98,7 @@ export async function requireAdminRequest() {
 
   const role = normaliseRole(
     data.user.user_metadata?.role ??
-      (data.user.app_metadata as Record<string, unknown> | undefined)?.role ??
-      (data.user as any).raw_user_meta_data?.role ??
-      (data.user as any).raw_app_meta_data?.role,
+      (data.user.app_metadata as Record<string, unknown> | undefined)?.role,
   );
 
   if (role !== "ADMIN") {
@@ -105,23 +125,12 @@ export async function listAllSupabaseAuthUsers() {
 
   while (true) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) {
-      throw new Error(error.message);
-    }
-
+    if (error) throw new Error(error.message);
     const batch = data?.users ?? [];
     users.push(...batch);
-
-    if (batch.length < perPage) {
-      break;
-    }
-
+    if (batch.length < perPage || page > 50) break;
     page += 1;
-    if (page > 50) {
-      break;
-    }
   }
-
   return users;
 }
 
@@ -135,9 +144,7 @@ export async function findSupabaseAuthUserByEmail(email: string) {
 export async function getSupabaseAuthUserById(userId: string) {
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin.auth.admin.getUserById(userId);
-  if (error) {
-    return null;
-  }
+  if (error) return null;
   return data.user ?? null;
 }
 
@@ -146,7 +153,6 @@ export async function resolveSupabaseAuthUser(record: { authUserId?: string | nu
     const userById = await getSupabaseAuthUserById(record.authUserId);
     if (userById) return userById;
   }
-
   return findSupabaseAuthUserByEmail(record.email);
 }
 
@@ -157,29 +163,31 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
     throw new Error("Auth user không có email hợp lệ.");
   }
 
-  const role = normaliseRole(
-    fallback?.role ??
-      authUser.user_metadata?.role ??
-      (authUser.app_metadata as Record<string, unknown> | undefined)?.role,
-  );
-  const packageTier = normalisePackageTier(
-    fallback?.packageTier ??
-      authUser.user_metadata?.packageTier ??
-      (authUser.app_metadata as Record<string, unknown> | undefined)?.packageTier,
-  );
-  const status = normaliseStatus(fallback?.status ?? "ACTIVE");
-  const name =
-    (fallback?.name as string | undefined) ??
-    (authUser.user_metadata?.name as string | undefined) ??
-    (authUser.user_metadata?.full_name as string | undefined) ??
-    authUser.email?.split("@")[0] ??
-    "Người dùng";
-
   const existing = await prisma.adminUser.findFirst({
     where: {
       OR: [{ authUserId: authUser.id }, { email }],
     },
   });
+
+  const role = normaliseRole(
+    fallback?.role ??
+      existing?.role ??
+      authUser.user_metadata?.role ??
+      (authUser.app_metadata as Record<string, unknown> | undefined)?.role,
+  );
+
+  const existingTier = existing ? normalisePackageTier(existing.packageTier) : "FREE";
+  const fallbackTier = fallback?.packageTier ? normalisePackageTier(fallback.packageTier) : null;
+  const packageTier: AppPackageTier = fallbackTier ?? (existingTier !== "FREE" ? existingTier : normalisePackageTier(authUser.user_metadata?.packageTier));
+
+  const status = normaliseStatus(fallback?.status ?? existing?.status ?? "ACTIVE");
+  const name =
+    (fallback?.name as string | undefined) ??
+    existing?.name ??
+    (authUser.user_metadata?.name as string | undefined) ??
+    (authUser.user_metadata?.full_name as string | undefined) ??
+    authUser.email?.split("@")[0] ??
+    "Người dùng";
 
   if (existing) {
     return prisma.adminUser.update({
@@ -195,11 +203,6 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
         scansToday: Number(fallback?.scansToday ?? existing.scansToday ?? 0),
         telegramConnected: Boolean(fallback?.telegramConnected ?? existing.telegramConnected ?? false),
         planExpiresAt: fallback?.planExpiresAt !== undefined ? (fallback.planExpiresAt as Date | null) : existing.planExpiresAt,
-        oauthProvider:
-          typeof fallback?.oauthProvider === "string"
-            ? String(fallback.oauthProvider)
-            : ((authUser.app_metadata as Record<string, unknown> | undefined)?.provider as string | undefined) ??
-              ((authUser.user_metadata?.provider as string | undefined) ?? null),
         lastLoginAt: authUser.last_sign_in_at ? new Date(authUser.last_sign_in_at) : existing.lastLoginAt ?? new Date(),
       },
     });
@@ -217,11 +220,6 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
       scansToday: Number(fallback?.scansToday ?? 0),
       telegramConnected: Boolean(fallback?.telegramConnected ?? false),
       planExpiresAt: (fallback?.planExpiresAt as Date | null | undefined) ?? null,
-      oauthProvider:
-        typeof fallback?.oauthProvider === "string"
-          ? String(fallback.oauthProvider)
-          : ((authUser.app_metadata as Record<string, unknown> | undefined)?.provider as string | undefined) ??
-            ((authUser.user_metadata?.provider as string | undefined) ?? null),
       lastLoginAt: authUser.last_sign_in_at ? new Date(authUser.last_sign_in_at) : new Date(),
     },
   });
@@ -243,36 +241,27 @@ export async function syncSupabaseMetadataForAdminUser(input: {
   status?: AppStatus;
   password?: string;
 }) {
-  const admin = createSupabaseAdminClient();
-  const existing = await getSupabaseAuthUserById(input.authUserId);
-  if (!existing) {
-    throw new Error("Không tìm thấy tài khoản Auth tương ứng.");
-  }
+  try {
+    const admin = createSupabaseAdminClient();
+    const existing = await admin.auth.admin.getUserById(input.authUserId);
+    if (!existing.data.user) return;
 
-  const nextUserMetadata = {
-    ...(existing.user_metadata ?? {}),
-    ...(input.name ? { name: input.name } : {}),
-    role: input.role,
-    packageTier: input.packageTier,
-    status: input.status ?? normaliseStatus((existing.user_metadata as any)?.status),
-  };
-
-  const nextAppMetadata = {
-    ...(existing.app_metadata ?? {}),
-    role: input.role,
-    packageTier: input.packageTier,
-    status: input.status ?? normaliseStatus((existing.app_metadata as any)?.status),
-  };
-
-  const { error } = await admin.auth.admin.updateUserById(input.authUserId, {
-    ...(input.password ? { password: input.password } : {}),
-    user_metadata: nextUserMetadata,
-    app_metadata: nextAppMetadata,
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
+    await admin.auth.admin.updateUserById(input.authUserId, {
+      user_metadata: {
+        ...(existing.data.user.user_metadata ?? {}),
+        ...(input.name ? { name: input.name } : {}),
+        role: input.role,
+        packageTier: input.packageTier,
+        status: input.status ?? "ACTIVE",
+      },
+      app_metadata: {
+        ...(existing.data.user.app_metadata ?? {}),
+        role: input.role,
+        packageTier: input.packageTier,
+        status: input.status ?? "ACTIVE",
+      },
+    });
+  } catch (err) {}
 }
 
 export function parseDurationLabelToDays(durationLabel: string) {
@@ -281,13 +270,10 @@ export function parseDurationLabelToDays(durationLabel: string) {
   if (raw.includes("vĩnh viễn") || raw.includes("permanent") || raw.includes("forever") || raw.includes("lifetime")) {
     return null;
   }
-
   const match = raw.match(/(\d+)/);
   if (!match) return null;
-
   const value = Number(match[1]);
   if (Number.isNaN(value) || value <= 0) return null;
-
   if (raw.includes("năm") || raw.includes("year")) return value * 365;
   if (raw.includes("tháng") || raw.includes("month")) return value * 30;
   if (raw.includes("tuần") || raw.includes("week")) return value * 7;
@@ -296,7 +282,7 @@ export function parseDurationLabelToDays(durationLabel: string) {
 
 export function computePlanExpiry(durationDays: number | null, from = new Date()) {
   if (durationDays === null) return null;
-  const days = durationDays && durationDays > 0 ? durationDays : 30;
+  const days = durationDays && durationDays > 0 ? durationDays : 365;
   const expiry = new Date(from);
   expiry.setDate(expiry.getDate() + days);
   return expiry;

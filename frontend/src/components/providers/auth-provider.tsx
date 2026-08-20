@@ -35,61 +35,72 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("adq_cached_user");
+      if (cached) {
+        try { return JSON.parse(cached); } catch {}
+      }
+    }
+    return null;
+  });
   const [loading, setLoading] = useState(true);
   const [lockMessage, setLockMessage] = useState<string | null>(null);
 
-  const fetchCurrentSession = async () => {
+  const fetchAccountData = async (accessToken?: string) => {
     try {
       const supabase = createSupabaseBrowserClient();
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error || !session?.user) {
+      let token = accessToken;
+      if (!token) {
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token;
+      }
+
+      if (!token) {
         setUser(null);
+        localStorage.removeItem("adq_cached_user");
         return;
       }
 
-      const metadata = session.user.user_metadata || {};
-      const appMetadata = session.user.app_metadata || {};
-      const isGoogle = appMetadata.provider === "google" || session.user.identities?.some(i => i.provider === "google");
+      const res = await fetch("/api/account", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      const currentUser: User = {
-        id: session.user.id,
-        name: metadata.name || metadata.full_name || session.user.email?.split("@")[0] || "User",
-        email: session.user.email || "",
-        avatar: metadata.avatar_url || metadata.picture || undefined,
-        role: metadata.role === "ADMIN" ? "ADMIN" : "USER",
-        packageTier: metadata.packageTier || "FREE",
-        status: metadata.status || "ACTIVE",
-        dailyLimit: (metadata?.packageTier === "PRO" || metadata?.packageTier === "PRO_MAX" || metadata?.packageTier === "ENTERPRISE") ? 999999 : 2,
-        scansToday: metadata.scansToday || 0,
-        telegramConnected: Boolean(metadata.telegramConnected),
-        planExpiresAt: metadata.planExpiresAt || null,
-        oauthProvider: isGoogle ? "google" : null,
-        lastLoginAt: new Date().toISOString(),
-        ...(metadata.termsAccepted ? { termsAccepted: true } : {}),
-        ...(metadata.hasRecoveryPassword ? { hasRecoveryPassword: true } : {}),
-      };
-
-      setUser(currentUser);
-      if (currentUser.status === "LOCKED") {
-        setLockMessage("Tài khoản của bạn tạm thời bị khóa. Vui lòng liên hệ quản trị viên.");
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.user) {
+          setUser(json.user);
+          localStorage.setItem("adq_cached_user", JSON.stringify(json.user));
+          if (json.user.status === "LOCKED") {
+            setLockMessage("Tài khoản của bạn tạm thời bị khóa. Vui lòng liên hệ quản trị viên.");
+          }
+        }
       }
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
+    } catch {}
   };
 
   useEffect(() => {
-    fetchCurrentSession();
+    const initAuth = async () => {
+      const supabase = createSupabaseBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await fetchAccountData(session.access_token);
+      } else {
+        setUser(null);
+        localStorage.removeItem("adq_cached_user");
+      }
+      setLoading(false);
+    };
+
+    initAuth();
+
     const supabase = createSupabaseBrowserClient();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        fetchCurrentSession();
+        fetchAccountData(session.access_token);
       } else {
         setUser(null);
+        localStorage.removeItem("adq_cached_user");
         setLoading(false);
       }
     });
@@ -97,6 +108,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
+  }, []);
+
+  // Khi chuyển trang, đồng bộ nhẹ nhàng trong nền
+  useEffect(() => {
+    fetchAccountData();
   }, [pathname]);
 
   const login = async (email: string, pass: string) => {
@@ -106,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password: pass,
     });
     if (error) throw error;
-    await fetchCurrentSession();
+    if (data.session) await fetchAccountData(data.session.access_token);
     return { ok: true, user: data.user };
   };
 
@@ -115,15 +131,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase.auth.signUp({
       email: payload.email,
       password: payload.password,
-      options: {
-        data: {
-          name: payload.name,
-          full_name: payload.name,
-        },
-      },
+      options: { data: { name: payload.name, full_name: payload.name } },
     });
     if (error) throw error;
-    await fetchCurrentSession();
+    if (data.session) await fetchAccountData(data.session.access_token);
     return { ok: true, user: data.user };
   };
 
@@ -134,10 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       provider: "google",
       options: {
         redirectTo: redirectUrl,
-        queryParams: {
-          access_type: "offline",
-          prompt: "select_account",
-        },
+        queryParams: { access_type: "offline", prompt: "select_account" },
       },
     });
   };
@@ -145,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
-    localStorage.removeItem("adq_user_session");
+    localStorage.removeItem("adq_cached_user");
     setUser(null);
     window.location.href = "/login";
   };
@@ -153,11 +161,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const acceptTerms = async () => {
     if (!user) return;
     const supabase = createSupabaseBrowserClient();
-    await supabase.auth.updateUser({
-      data: { termsAccepted: true },
-    }).catch(() => {});
-    localStorage.setItem(`adq_terms_accepted_${user.id}`, "true");
-    setUser({ ...user, termsAccepted: true } as any);
+    await supabase.auth.updateUser({ data: { termsAccepted: true } }).catch(() => {});
+    const updated = { ...user, termsAccepted: true } as any;
+    setUser(updated);
+    localStorage.setItem("adq_cached_user", JSON.stringify(updated));
   };
 
   const setupGoogleRecovery = async (data: { name: string; username: string; password: string }) => {
@@ -165,20 +172,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.updateUser({
       password: data.password,
-      data: {
-        name: data.name,
-        full_name: data.name,
-        username: data.username,
-        hasRecoveryPassword: true,
-      },
+      data: { name: data.name, full_name: data.name, username: data.username, hasRecoveryPassword: true },
     }).catch(() => {});
-    localStorage.setItem(`adq_recovery_setup_${user.id}`, "true");
-    setUser({ ...user, name: data.name, hasRecoveryPassword: true } as any);
+    const updated = { ...user, name: data.name, hasRecoveryPassword: true } as any;
+    setUser(updated);
+    localStorage.setItem("adq_cached_user", JSON.stringify(updated));
   };
 
   const updateUser = (data: Partial<User>) => {
     if (user) {
-      setUser({ ...user, ...data });
+      const updated = { ...user, ...data };
+      setUser(updated);
+      localStorage.setItem("adq_cached_user", JSON.stringify(updated));
     }
   };
 

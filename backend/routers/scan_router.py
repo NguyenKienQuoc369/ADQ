@@ -153,3 +153,31 @@ def run_stress_test(req: StressRequest, user: Dict[str, Any] = Depends(get_curre
         custom_cookies=req.custom_cookies,
     )
     return {"ok": True, "result": result, "remaining_stress": 1 - usage["stress_count"] if tier == "PRO" else 10 - usage["stress_count"]}
+
+from fastapi.responses import StreamingResponse
+import json
+
+@router.post("/stress/stream")
+def run_stress_test_stream(req: StressRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    tier = str(user.get("packageTier") or user.get("user_metadata", {}).get("packageTier") or "FREE").upper()
+    if tier == "FREE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="TIER_LOCKED: Gói FREE không hỗ trợ Stress Test."
+        )
+
+    orchestrator = StressOrchestrator()
+
+    def event_stream():
+        for chunk in orchestrator.stream_stress_test(
+            target_url=req.target_url,
+            target_requests=req.target_requests or 1000,
+            duration=req.duration or "5s",
+            bypass_code=req.bypass_code or "",
+            waf_type=req.waf_type or "standard",
+            custom_headers=req.custom_headers,
+            custom_cookies=req.custom_cookies,
+        ):
+            yield f"data: {json.dumps(chunk)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

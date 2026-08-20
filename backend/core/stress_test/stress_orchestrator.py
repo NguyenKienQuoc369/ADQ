@@ -249,3 +249,132 @@ class StressOrchestrator:
             "bypass_active": bool(clean_code),
             "waf_applied": (waf_type or "standard").lower().strip(),
         }
+
+    def stream_stress_test(
+        self,
+        target_url: str,
+        target_requests: int = 1000,
+        duration: str = "5s",
+        bypass_code: str = "",
+        waf_type: str = "standard",
+        custom_headers: Optional[Dict[str, str]] = None,
+        custom_cookies: Optional[Dict[str, str]] = None,
+    ):
+        duration_sec = 5
+        if duration.endswith("s"):
+            try:
+                duration_sec = max(1, int(duration[:-1]))
+            except ValueError:
+                duration_sec = 5
+        elif duration.endswith("m"):
+            try:
+                duration_sec = max(1, int(duration[:-1]) * 60)
+            except ValueError:
+                duration_sec = 60
+
+        total_reqs = max(5, target_requests)
+        target_rps = max(1, int(total_reqs / duration_sec))
+        final_url, headers_dict, cookie_dict = self._prepare_request_config(
+            target_url, bypass_code, waf_type, custom_headers, custom_cookies
+        )
+
+        metrics = {
+            "total_requests": 0,
+            "target_requests": total_reqs,
+            "target_rps": target_rps,
+            "status_200": 0,
+            "status_403_waf_blocked": 0,
+            "status_429_rate_limited": 0,
+            "status_500_crashed": 0,
+            "other_status": 0,
+            "rps": 0.0,
+            "p95_latency": "0ms",
+        }
+
+        latencies: List[int] = []
+        start_time = time.time()
+        end_time = start_time + duration_sec
+        lock = threading.Lock()
+        thread_local = threading.local()
+
+        def get_worker_session():
+            if not getattr(thread_local, "session", None):
+                s, _ = self._get_client_session(headers_dict, cookie_dict)
+                thread_local.session = s
+            return thread_local.session
+
+        def fire_request():
+            session = get_worker_session()
+            spoofed_ip = f"{random.randint(11,220)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+            req_headers = {
+                "X-Forwarded-For": spoofed_ip,
+                "X-Real-IP": spoofed_ip,
+                "True-Client-IP": spoofed_ip,
+            }
+            req_start = time.time()
+            try:
+                resp = session.get(final_url, headers=req_headers, timeout=3.0, verify=False, allow_redirects=True)
+                status_code = resp.status_code
+            except Exception:
+                status_code = 500
+
+            req_latency = max(1, int((time.time() - req_start) * 1000))
+            return status_code, req_latency
+
+        def worker_batch():
+            while time.time() < end_time:
+                with lock:
+                    if metrics["total_requests"] >= total_reqs:
+                        break
+
+                code, lat = fire_request()
+
+                with lock:
+                    if metrics["total_requests"] < total_reqs:
+                        metrics["total_requests"] += 1
+                        latencies.append(lat)
+                        if code in (200, 201, 204, 304, 301, 302, 307, 308):
+                            metrics["status_200"] += 1
+                        elif code == 403:
+                            metrics["status_403_waf_blocked"] += 1
+                        elif code == 429:
+                            metrics["status_429_rate_limited"] += 1
+                        elif code >= 500 or code == 0:
+                            metrics["status_500_crashed"] += 1
+                        else:
+                            metrics["other_status"] += 1
+
+        concurrency = min(40, max(8, int(target_rps * 0.2)))
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=concurrency)
+        for _ in range(concurrency):
+            executor.submit(worker_batch)
+
+        # Phát metrics thật về Frontend mỗi 100ms
+        while time.time() < end_time:
+            elapsed = max(0.1, time.time() - start_time)
+            with lock:
+                current_rps = round(metrics["total_requests"] / elapsed, 1)
+                p95 = "0ms"
+                if latencies:
+                    sorted_l = sorted(latencies)
+                    p95 = f"{sorted_l[int(len(sorted_l) * 0.95)]}ms"
+
+                snapshot = {
+                    "is_running": True,
+                    "metrics": {
+                        **metrics,
+                        "rps": current_rps,
+                        "p95_latency": p95,
+                    },
+                }
+            yield snapshot
+            time.sleep(0.1)
+
+        executor.shutdown(wait=True)
+        elapsed = max(0.1, time.time() - start_time)
+        metrics["rps"] = round(metrics["total_requests"] / elapsed, 1)
+        if latencies:
+            sorted_l = sorted(latencies)
+            metrics["p95_latency"] = f"{sorted_l[int(len(sorted_l) * 0.95)]}ms"
+
+        yield {"is_running": False, "metrics": metrics}

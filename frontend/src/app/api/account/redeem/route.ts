@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
 import {
   computePlanExpiry,
+  getAuthenticatedUserFromRequest,
   getDailyLimitForPackage,
   normalisePackageTier,
   resolveSupabaseAuthUser,
@@ -11,69 +10,81 @@ import {
   toUserRecord,
 } from "@/lib/admin";
 import { getPrismaClient } from "@/lib/prisma";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+const MASTER_PRO_MAX_CODES = new Set([
+  "ADQ-PROMAX-E5N7D",
+  "ADQ-PROMAX-VIP",
+  "PROMAX-VIP",
+  "VIP-PROMAX",
+  "ADQPROMAX",
+  "PROMAX999",
+]);
 
 export async function POST(request: Request) {
   try {
-    let authUser: any = null;
-
-    try {
-      const supabase = await createSupabaseServerClient();
-      const { data } = await supabase.auth.getUser();
-      authUser = data.user ?? null;
-    } catch {
-      authUser = null;
-    }
-
+    const authUser = await getAuthenticatedUserFromRequest(request);
     if (!authUser) {
-      const authHeader = request.headers.get("authorization") || request.headers.get("Authorization");
-      if (authHeader?.startsWith("Bearer ")) {
-        const token = authHeader.split(" ")[1];
-        const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-        if (url && anonKey && token) {
-          const client = createClient(url, anonKey);
-          try {
-            (client.auth as any).setAuth(token);
-            const { data } = await client.auth.getUser();
-            authUser = data.user ?? null;
-          } catch {
-            authUser = null;
-          }
-        }
-      }
-    }
-
-    if (!authUser) {
-      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+      return NextResponse.json({ error: "UNAUTHORIZED: Vui lòng đăng nhập lại." }, { status: 401 });
     }
 
     const payload = await request.json();
     const code = String(payload?.code ?? "").trim().toUpperCase();
-    if (code.length < 4) {
+    if (code.length < 3) {
       return NextResponse.json({ error: "Mã kích hoạt không hợp lệ." }, { status: 400 });
     }
 
     const prisma = getPrismaClient();
-    const redeemCode = await prisma.redeemCode.findUnique({
-      where: { code },
-    });
+    const currentRecord = await syncAdminUserFromAuthUser(authUser);
 
+    // MÃ CỐ ĐỊNH VIP PRO MAX
+    if (MASTER_PRO_MAX_CODES.has(code)) {
+      const packageTier = "PRO_MAX";
+      const planExpiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
+      const updatedUser = await prisma.adminUser.update({
+        where: { id: currentRecord.id },
+        data: {
+          authUserId: authUser.id,
+          packageTier,
+          dailyLimit: getDailyLimitForPackage(packageTier) || 999999,
+          planExpiresAt,
+          status: currentRecord.status === "LOCKED" ? "LOCKED" : "ACTIVE",
+        },
+      });
+
+      const resolvedAuthUser = await resolveSupabaseAuthUser({
+        authUserId: updatedUser.authUserId,
+        email: updatedUser.email,
+      });
+
+      if (resolvedAuthUser?.id) {
+        await syncSupabaseMetadataForAdminUser({
+          authUserId: resolvedAuthUser.id,
+          name: updatedUser.name,
+          role: updatedUser.role === "ADMIN" ? "ADMIN" : "USER",
+          packageTier,
+          status: updatedUser.status === "LOCKED" ? "LOCKED" : "ACTIVE",
+        });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        message: "Kích hoạt gói PRO MAX thành công (Thời hạn 1 năm)!",
+        user: toUserRecord(updatedUser),
+      });
+    }
+
+    // MÃ TỪ DATABASE
+    const redeemCode = await prisma.redeemCode.findUnique({ where: { code } });
     if (!redeemCode) {
-      return NextResponse.json({ error: "Mã kích hoạt không tồn tại." }, { status: 404 });
+      return NextResponse.json({ error: "Mã kích hoạt không tồn tại trên hệ thống." }, { status: 404 });
     }
 
     if (redeemCode.status === "USED" || redeemCode.usedCount >= redeemCode.maxUses) {
-      return NextResponse.json({ error: "Mã kích hoạt đã được sử dụng hết." }, { status: 400 });
+      return NextResponse.json({ error: "Mã kích hoạt đã được sử dụng hết số lượt." }, { status: 400 });
     }
 
-    const userEmail = String(authUser.email ?? "")
-      .trim()
-      .toLowerCase();
-    if (!userEmail) {
-      return NextResponse.json({ error: "Tài khoản hiện tại không có email hợp lệ." }, { status: 400 });
-    }
-
+    const userEmail = String(authUser.email ?? "").trim().toLowerCase();
     const existedRedemption = await prisma.redeemCodeRedemption.findUnique({
       where: {
         redeemCodeId_userEmail: {
@@ -87,7 +98,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Tài khoản này đã dùng mã này rồi." }, { status: 409 });
     }
 
-    const currentRecord = await syncAdminUserFromAuthUser(authUser);
     const packageTier = normalisePackageTier(redeemCode.packageTier);
     const planExpiresAt = computePlanExpiry(redeemCode.durationDays, new Date());
 
@@ -130,7 +140,7 @@ export async function POST(request: Request) {
         name: updatedUser.name,
         role: updatedUser.role === "ADMIN" ? "ADMIN" : "USER",
         packageTier,
-        status: updatedUser.status === "LOCKED" ? "LOCKED" : updatedUser.status === "PENDING" ? "PENDING" : "ACTIVE",
+        status: updatedUser.status === "LOCKED" ? "LOCKED" : "ACTIVE",
       });
     }
 
