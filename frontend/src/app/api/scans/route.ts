@@ -139,20 +139,42 @@ export async function POST(req: Request) {
     },
   });
 
-  // Gửi lệnh sang SOC Engine Python (nếu có)
-  const backendUrl = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+  // Gửi lệnh sang SOC Engine Python với JWT của chính user.
+  // Backend cần token này để xác thực và enforce entitlement.
+  const backendUrl =
+    process.env.BACKEND_API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://127.0.0.1:8000";
+
   try {
-    await fetch(`${backendUrl}/api/scan`, {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    const backendResponse = await fetch(`${backendUrl}/api/scan`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {}),
+      },
       body: JSON.stringify({
         target,
         no_telegram: true,
         logic_scan: false,
       }),
     });
-  } catch {
-    // ignore
+
+    if (!backendResponse.ok) {
+      const backendError = await backendResponse.text().catch(() => "");
+      console.error(
+        `[scan] Backend rejected request (${backendResponse.status}):`,
+        backendError.slice(0, 500)
+      );
+    }
+  } catch (backendError) {
+    console.error("[scan] Backend dispatch failed:", backendError);
   }
 
   return NextResponse.json({

@@ -640,7 +640,7 @@ export async function createManualUser(values: {
     packageTier: values.packageTier,
     password: values.password?.trim() || undefined,
     status: "ACTIVE",
-    dailyLimit: values.packageTier === "FREE" ? 5 : values.packageTier === "PRO" ? 25 : 100,
+    dailyLimit: values.packageTier === "FREE" ? 2 : 999999,
     scansToday: 0,
     telegramConnected: false,
   };

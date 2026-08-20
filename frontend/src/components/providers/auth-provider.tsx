@@ -146,13 +146,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const metadata = authUser.user_metadata ?? {};
 
-      const onboardingRequired =
-        metadata.onboardingRequired === true;
-
       const onboardingCompleted =
         metadata.onboardingCompleted === true;
 
-      if (!onboardingRequired || onboardingCompleted) {
+      // Từ thời điểm triển khai onboarding bắt buộc,
+      // mọi tài khoản mới chưa hoàn tất đều phải onboarding.
+      // Không phụ thuộc onboardingRequired vì OAuth metadata
+      // có thể chưa được ghi ở lần callback đầu tiên.
+      const onboardingEnforcedFrom =
+        new Date("2026-08-20T00:00:00+07:00").getTime();
+
+      const createdAt =
+        authUser.created_at
+          ? new Date(authUser.created_at).getTime()
+          : 0;
+
+      const isNewAccount =
+        createdAt >= onboardingEnforcedFrom;
+
+      if (!isNewAccount || onboardingCompleted) {
         return;
       }
 

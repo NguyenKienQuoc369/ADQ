@@ -35,8 +35,44 @@ export default function OnboardingPage() {
         return;
       }
 
-      const metadata = user.user_metadata ?? {};
+      let metadata = user.user_metadata ?? {};
       const identities = user.identities ?? [];
+
+      // Bootstrap onboarding metadata cho tài khoản mới nếu còn thiếu.
+      const createdAt = user.created_at
+        ? new Date(user.created_at).getTime()
+        : 0;
+
+      const onboardingEnforcedFrom =
+        new Date("2026-08-20T00:00:00+07:00").getTime();
+
+      const isNewAccount =
+        createdAt >= onboardingEnforcedFrom;
+
+      if (
+        isNewAccount &&
+        metadata.onboardingCompleted !== true &&
+        metadata.onboardingRequired !== true
+      ) {
+        const { data: updatedData, error: bootstrapError } =
+          await supabase.auth.updateUser({
+            data: {
+              onboardingRequired: true,
+              onboardingCompleted: false,
+              termsAccepted:
+                metadata.termsAccepted === true,
+            },
+          });
+
+        if (bootstrapError) {
+          console.error(
+            "Failed to bootstrap onboarding metadata:",
+            bootstrapError
+          );
+        } else if (updatedData.user) {
+          metadata = updatedData.user.user_metadata ?? metadata;
+        }
+      }
 
       const isGoogle =
         user.app_metadata?.provider === "google" ||

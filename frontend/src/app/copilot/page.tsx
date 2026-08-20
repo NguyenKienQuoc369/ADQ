@@ -2,6 +2,7 @@
 
 import { DashboardShell } from "@/components/dashboard-shell";
 import { useAuth } from "@/components/providers/auth-provider";
+import { getEntitlements } from "@/lib/entitlements";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,29 +55,75 @@ type CopilotMessage = {
 function CopilotContent() {
   const { user } = useAuth();
   const router = useRouter();
-  const userTier = (user?.packageTier || "FREE").toUpperCase();
-  const isAllowedCopilot = userTier === "PRO_MAX" || userTier === "ENTERPRISE";
+  const userTier = user?.packageTier || "FREE";
+  const entitlements = getEntitlements(userTier);
+  const isAllowedCopilot = entitlements.copilotChat;
 
   if (!isAllowedCopilot) {
     return (
       <DashboardShell area="dashboard">
-        <div className="flex flex-col items-center justify-center min-h-[75vh] p-6 text-center max-w-lg mx-auto">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 mb-4 shadow-lg shadow-purple-950/50">
-            <Bot className="h-8 w-8" />
+        <div className="flex min-h-[70vh] items-center justify-center px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-purple-500/20 bg-slate-950/80 p-8 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-purple-500/30 bg-purple-500/10">
+              <Bot className="h-7 w-7 text-purple-400" />
+            </div>
+
+            <Badge className="mb-4 border border-purple-500/30 bg-purple-950/40 text-purple-300">
+              <Sparkles className="mr-1 h-3.5 w-3.5" />
+              TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO MAX
+            </Badge>
+
+            <h1 className="text-2xl font-bold text-white">
+              Mở Khóa Trợ Lý An Ninh AI Copilot
+            </h1>
+
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400">
+              Tài khoản hiện tại (
+              <span className="font-mono font-bold text-cyan-400">{userTier}</span>
+              ) chưa được cấp quyền truy cập AI Copilot. Tính năng này dành riêng cho
+              gói <span className="font-bold text-purple-300">PRO MAX</span>.
+            </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-left">
+                <p className="text-xs font-semibold text-cyan-300">FREE / PRO</p>
+                <p className="mt-1 text-sm font-bold text-white">
+                  Chưa bao gồm AI Copilot
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Các tính năng quét và phân tích tương ứng với gói hiện tại vẫn hoạt động bình thường.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-purple-500/20 bg-purple-950/20 p-4 text-left">
+                <p className="text-xs font-semibold text-purple-300">PRO MAX</p>
+                <p className="mt-1 text-sm font-bold text-white">
+                  Mở khóa toàn bộ AI Copilot
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">
+                  Chat với AI bảo mật, phân tích kết quả scan theo ngữ cảnh
+                  và tạo One-Click Patch hỗ trợ khắc phục lỗ hổng.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+              <Button
+                onClick={() => router.push("/dashboard/billing")}
+                className="bg-purple-600 text-white hover:bg-purple-500"
+              >
+                Nâng cấp PRO MAX
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => router.push("/dashboard")}
+                className="border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+              >
+                Quay lại Dashboard
+              </Button>
+            </div>
           </div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300 text-xs font-mono mb-3">
-            <Sparkles className="h-3.5 w-3.5" /> TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO MAX
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">Mở Khóa Trợ Lý An Ninh AI Copilot</h2>
-          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-            Tài khoản hiện tại (<span className="text-cyan-400 font-bold font-mono">{userTier}</span>) chưa được cấp quyền truy cập AI Copilot. Nâng cấp lên gói <span className="text-purple-300 font-bold">PRO MAX</span> để chat hỏi đáp bảo mật chuyên sâu, phân tích lỗ hổng theo ngữ cảnh và sinh bản vá tự động.
-          </p>
-          <Button
-            onClick={() => router.push("/dashboard/billing")}
-            className="h-10 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-950/50 cursor-pointer"
-          >
-            Nâng Cấp PRO MAX Ngay
-          </Button>
         </div>
       </DashboardShell>
     );

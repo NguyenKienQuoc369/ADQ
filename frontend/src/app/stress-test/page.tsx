@@ -25,6 +25,7 @@ import {
   Search,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
+import { getEntitlements } from "@/lib/entitlements";
 import {
   getProjectById,
   saveProjectDetail,
@@ -111,8 +112,9 @@ function StressTestContent() {
   const logContainerRef = useRef<HTMLDivElement>(null);
 
   const { user } = useAuth();
-  const userTier = (user?.packageTier || "FREE").toUpperCase();
-  const isFreeTier = userTier === "FREE";
+  const userTier = user?.packageTier || "FREE";
+  const entitlements = getEntitlements(userTier);
+  const isFreeTier = entitlements.stressDailyLimit === 0;
 
   const [projectName, setProjectName] = useState("");
   const [baseTarget, setBaseTarget] = useState("");
@@ -865,6 +867,69 @@ function StressTestContent() {
       setIsSaving(false);
     }
   };
+
+  if (isFreeTier) {
+    return (
+      <DashboardShell area="dashboard">
+        <div className="flex min-h-[70vh] items-center justify-center px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-amber-500/20 bg-slate-950/80 p-8 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10">
+              <Flame className="h-7 w-7 text-amber-400" />
+            </div>
+
+            <Badge className="mb-4 border border-amber-500/30 bg-amber-950/40 text-amber-300">
+              TÍNH NĂNG DÀNH CHO GÓI PRO / PRO MAX
+            </Badge>
+
+            <h1 className="text-2xl font-bold text-white">
+              Stress Test L7 chưa khả dụng trên gói FREE
+            </h1>
+
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400">
+              Gói FREE không bao gồm Stress Test, kiểm tra WAF hoặc bypass validation.
+              Nâng cấp lên PRO để sử dụng 1 lượt mỗi ngày, hoặc PRO MAX để sử dụng
+              tối đa 10 lượt mỗi ngày.
+            </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-left">
+                <p className="text-xs font-semibold text-cyan-300">PRO</p>
+                <p className="mt-1 text-sm font-bold text-white">1 lượt Stress Test / ngày</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Bao gồm endpoint discovery, WAF detection và load testing.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-purple-500/20 bg-purple-950/20 p-4 text-left">
+                <p className="text-xs font-semibold text-purple-300">PRO MAX</p>
+                <p className="mt-1 text-sm font-bold text-white">10 lượt Stress Test / ngày</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Hạn mức cao hơn cho kiểm thử chuyên sâu.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+              <Button
+                onClick={() => router.push("/dashboard/billing")}
+                className="bg-amber-500 text-slate-950 hover:bg-amber-400"
+              >
+                Nâng cấp gói PRO
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => router.push("/dashboard")}
+                className="border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+              >
+                Quay lại Dashboard
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DashboardShell>
+    );
+  }
 
   return (
     <DashboardShell area="dashboard">

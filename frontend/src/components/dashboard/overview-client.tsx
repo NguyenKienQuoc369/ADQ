@@ -20,6 +20,7 @@ export function OverviewClient() {
 
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectStep, setNewProjectStep] = useState<"setup" | "module">("setup");
+  const [createProjectError, setCreateProjectError] = useState("");
   const [newProjectDraft, setNewProjectDraft] = useState({
     name: "",
     projectInfo: "",
@@ -66,26 +67,89 @@ export function OverviewClient() {
 
   const handleCreateNewProject = async (module: "scan" | "apk-audit" | "stress-test") => {
     const rawTarget = newProjectDraft.domain.trim();
-    const formattedDomain = /^https?:\/\//i.test(rawTarget) ? rawTarget : `https://${rawTarget}`;
+    const projectName = newProjectDraft.name.trim().replace(/\\s+/g, " ");
+
+    if (!projectName) {
+      setCreateProjectError("Vui lòng nhập tên dự án.");
+      setNewProjectStep("setup");
+      return;
+    }
+
+    if (!rawTarget) {
+      setCreateProjectError("Vui lòng nhập Target Domain / URL / IP.");
+      setNewProjectStep("setup");
+      return;
+    }
+
+    // Chặn nhanh ở frontend. API vẫn kiểm tra lại để không thể bypass.
+    const duplicateLocal = (projects || []).some((project) => {
+      const existingName = String(
+        project.name || project.projectDetail?.title || ""
+      )
+        .trim()
+        .replace(/\\s+/g, " ")
+        .toLocaleLowerCase("vi");
+
+      return existingName === projectName.toLocaleLowerCase("vi");
+    });
+
+    if (duplicateLocal) {
+      setCreateProjectError(`Tên dự án "${projectName}" đã tồn tại.`);
+      setNewProjectStep("setup");
+      return;
+    }
+
+    const formattedDomain = /^https?:\/\//i.test(rawTarget)
+      ? rawTarget
+      : `https://${rawTarget}`;
 
     const payload = {
-      name: newProjectDraft.name.trim() || newProjectDraft.domain.trim(),
+      name: projectName,
       domain: formattedDomain,
       description: newProjectDraft.projectInfo.trim(),
       module,
     };
 
+    setCreateProjectError("");
+
     try {
       const project = await createProject(payload);
+
+      setProjects((prev) => {
+        if (!prev) return prev;
+        return [
+          {
+            ...project,
+            name: project.name || projectName,
+            description: project.description || payload.description,
+            module,
+          },
+          ...prev,
+        ];
+      });
+
       setShowNewProject(false);
       setNewProjectStep("setup");
+      setCreateProjectError("");
       setNewProjectDraft({ name: "", projectInfo: "", domain: "" });
 
-      const targetRoute = module === "scan" ? "/scan" : module === "apk-audit" ? "/apk-audit" : "/stress-test";
+      const targetRoute =
+        module === "scan"
+          ? "/scan"
+          : module === "apk-audit"
+            ? "/apk-audit"
+            : "/stress-test";
+
       router.push(`${targetRoute}?projectId=${encodeURIComponent(project.id)}`);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Không thể tạo phiên quét mới.");
+
+      const message =
+        err?.message ||
+        "Không thể tạo dự án. Vui lòng kiểm tra lại thông tin.";
+
+      setCreateProjectError(message);
+      setNewProjectStep("setup");
     }
   };
 
@@ -126,11 +190,42 @@ export function OverviewClient() {
               className="w-72 md:w-96 border-slate-800 bg-slate-950 text-white placeholder:text-slate-500"
             />
             <Button
-              onClick={() => setShowNewProject(true)}
+              onClick={() => {
+                setCreateProjectError("");
+                setShowNewProject(true);
+              }}
               className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold flex items-center gap-2 shadow-lg shadow-cyan-900/30"
             >
               <Plus className="h-4 w-4" /> Tạo phiên mới
             </Button>
+          </div>
+        </div>
+
+        {/* Beta / Testing notice */}
+        <div className="rounded-2xl border border-amber-500/25 bg-amber-950/20 px-5 py-4 shadow-lg shadow-amber-950/10">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10">
+              <AlertTriangle className="h-4.5 w-4.5 text-amber-400" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-bold text-amber-200">
+                  Sản phẩm đang trong giai đoạn Pilot
+                </p>
+                <Badge className="border border-amber-500/30 bg-amber-500/10 text-[10px] font-mono text-amber-300">
+                  PILOT
+                </Badge>
+              </div>
+
+              <p className="mt-1 text-xs leading-5 text-slate-400">
+                ADQ hiện đang được triển khai ở giai đoạn pilot. Hệ thống, API và máy chủ
+                được cập nhật, tối ưu và sửa chữa liên tục; vì vậy trong quá trình sử dụng
+                có thể xảy ra gián đoạn tạm thời, phản hồi chậm, lỗi chức năng hoặc kết quả
+                chưa ổn định. Vui lòng xác minh các kết quả quan trọng trước khi áp dụng
+                vào môi trường thực tế.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -291,7 +386,10 @@ export function OverviewClient() {
                     </label>
                     <Input
                       value={newProjectDraft.domain}
-                      onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, domain: e.target.value }))}
+                      onChange={(e) => {
+                        setCreateProjectError("");
+                        setNewProjectDraft((prev) => ({ ...prev, domain: e.target.value }));
+                      }}
                       placeholder="https://findproject.vercel.app hoặc example.com"
                       className="mt-1.5 border-slate-800 bg-slate-950 text-white placeholder:text-slate-600"
                     />
@@ -301,10 +399,15 @@ export function OverviewClient() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold uppercase text-slate-400">Tên phiên quét (Tùy chọn)</label>
+                    <label className="text-xs font-semibold uppercase text-slate-400">
+                      Tên dự án <span className="text-rose-400">*</span>
+                    </label>
                     <Input
                       value={newProjectDraft.name}
-                      onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, name: e.target.value }))}
+                      onChange={(e) => {
+                        setCreateProjectError("");
+                        setNewProjectDraft((prev) => ({ ...prev, name: e.target.value }));
+                      }}
                       placeholder="VD: Kiểm thử Web Portal Quý 3"
                       className="mt-1.5 border-slate-800 bg-slate-950 text-white placeholder:text-slate-600"
                     />
@@ -314,11 +417,20 @@ export function OverviewClient() {
                     <label className="text-xs font-semibold uppercase text-slate-400">Mô tả / Ghi chú</label>
                     <Input
                       value={newProjectDraft.projectInfo}
-                      onChange={(e) => setNewProjectDraft((prev) => ({ ...prev, projectInfo: e.target.value }))}
+                      onChange={(e) => {
+                        setCreateProjectError("");
+                        setNewProjectDraft((prev) => ({ ...prev, projectInfo: e.target.value }));
+                      }}
                       placeholder="Phạm vi kiểm thử, ghi chú..."
                       className="mt-1.5 border-slate-800 bg-slate-950 text-white placeholder:text-slate-600"
                     />
                   </div>
+
+                  {createProjectError ? (
+                    <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 px-3 py-2.5 text-xs text-rose-300">
+                      {createProjectError}
+                    </div>
+                  ) : null}
 
                   <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
                     <Button variant="outline" onClick={() => setShowNewProject(false)}>
@@ -326,7 +438,7 @@ export function OverviewClient() {
                     </Button>
                     <Button
                       onClick={() => setNewProjectStep("module")}
-                      disabled={!newProjectDraft.domain.trim()}
+                      disabled={!newProjectDraft.domain.trim() || !newProjectDraft.name.trim()}
                       className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold"
                     >
                       Tiếp tục chọn module →

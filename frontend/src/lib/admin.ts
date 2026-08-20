@@ -176,9 +176,27 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
       (authUser.app_metadata as Record<string, unknown> | undefined)?.role,
   );
 
-  const existingTier = existing ? normalisePackageTier(existing.packageTier) : "FREE";
-  const fallbackTier = fallback?.packageTier ? normalisePackageTier(fallback.packageTier) : null;
-  const packageTier: AppPackageTier = fallbackTier ?? (existingTier !== "FREE" ? existingTier : normalisePackageTier(authUser.user_metadata?.packageTier));
+  const existingTier = existing
+    ? normalisePackageTier(existing.packageTier)
+    : "FREE";
+
+  const fallbackTier = fallback?.packageTier
+    ? normalisePackageTier(fallback.packageTier)
+    : null;
+
+  // admin_users là nguồn sự thật duy nhất về package.
+  // Metadata Supabase không được phép tự nâng cấp DB.
+  const packageTier: AppPackageTier =
+    fallbackTier ?? (existing ? existingTier : "FREE");
+
+  const authProvider =
+    String(
+      (authUser.app_metadata as Record<string, unknown> | undefined)?.provider ??
+      authUser.identities?.[0]?.provider ??
+      ""
+    ).toLowerCase() === "google"
+      ? "google"
+      : null;
 
   const status = normaliseStatus(fallback?.status ?? existing?.status ?? "ACTIVE");
   const name =
@@ -199,9 +217,16 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
         role,
         packageTier,
         status,
-        dailyLimit: Number(fallback?.dailyLimit ?? existing.dailyLimit ?? getDailyLimitForPackage(packageTier)),
+
+        // Daily limit luôn đi theo package rule.
+        dailyLimit: Number(
+          fallback?.dailyLimit ??
+          getDailyLimitForPackage(packageTier)
+        ),
+
         scansToday: Number(fallback?.scansToday ?? existing.scansToday ?? 0),
         telegramConnected: Boolean(fallback?.telegramConnected ?? existing.telegramConnected ?? false),
+        oauthProvider: authProvider,
         planExpiresAt: fallback?.planExpiresAt !== undefined ? (fallback.planExpiresAt as Date | null) : existing.planExpiresAt,
         lastLoginAt: authUser.last_sign_in_at ? new Date(authUser.last_sign_in_at) : existing.lastLoginAt ?? new Date(),
       },
@@ -216,9 +241,13 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
       role,
       packageTier,
       status,
-      dailyLimit: Number(fallback?.dailyLimit ?? getDailyLimitForPackage(packageTier)),
+      dailyLimit: Number(
+        fallback?.dailyLimit ??
+        getDailyLimitForPackage(packageTier)
+      ),
       scansToday: Number(fallback?.scansToday ?? 0),
       telegramConnected: Boolean(fallback?.telegramConnected ?? false),
+      oauthProvider: authProvider,
       planExpiresAt: (fallback?.planExpiresAt as Date | null | undefined) ?? null,
       lastLoginAt: authUser.last_sign_in_at ? new Date(authUser.last_sign_in_at) : new Date(),
     },

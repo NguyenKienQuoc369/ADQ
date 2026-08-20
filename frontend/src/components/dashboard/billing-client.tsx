@@ -279,9 +279,13 @@ export function BillingClient() {
 
             <div className="space-y-2.5">
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-xs text-slate-400">Lượt quét hôm nay:</span>
+                <span className="text-xs text-slate-400">
+                  {currentTier === "FREE" ? "Lượt quét miễn phí:" : "Lượt quét DAST:"}
+                </span>
                 <span className="font-mono text-xs font-bold text-cyan-300">
-                  {user?.scansToday ?? 0} / {user?.dailyLimit ?? 0} lượt
+                  {currentTier === "FREE"
+                    ? `${user?.scansToday ?? 0} / 2 lượt trọn đời`
+                    : "Không giới hạn"}
                 </span>
               </div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800">

@@ -3,6 +3,7 @@
 import React, { Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
+import { getEntitlements } from "@/lib/entitlements";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,7 +40,8 @@ function ApkAuditContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get("projectId");
   const { user } = useAuth();
-  const isAllowed = user?.packageTier === "PRO_MAX" || (user?.packageTier as string) === "ENTERPRISE";
+  const entitlements = getEntitlements(user?.packageTier || "FREE");
+  const isAllowed = entitlements.apkAudit;
 
   const [projectName, setProjectName] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -69,22 +71,65 @@ function ApkAuditContent() {
   if (!isAllowed) {
     return (
       <DashboardShell area="dashboard">
-        <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center max-w-lg mx-auto font-sans">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 mb-4 shadow-lg shadow-purple-950/50">
-            <Shield className="h-8 w-8"/>
+        <div className="flex min-h-[70vh] items-center justify-center px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-purple-500/20 bg-slate-950/80 p-8 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-purple-500/30 bg-purple-500/10">
+              <Shield className="h-7 w-7 text-purple-400" />
+            </div>
+
+            <Badge className="mb-4 border border-purple-500/30 bg-purple-950/40 text-purple-300">
+              TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO MAX
+            </Badge>
+
+            <h1 className="text-2xl font-bold text-white">
+              Kiểm Toán An Ninh Mobile APK
+            </h1>
+
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400">
+              APK Audit là bộ công cụ kiểm toán bảo mật ứng dụng Android chuyên sâu
+              và chỉ khả dụng trên gói <span className="font-bold text-purple-300">PRO MAX</span>.
+            </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-left">
+                <p className="text-xs font-semibold text-cyan-300">FREE / PRO</p>
+                <p className="mt-1 text-sm font-bold text-white">
+                  Chưa bao gồm APK Audit
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Tiếp tục sử dụng các công cụ quét và phân tích bảo mật có trong gói hiện tại.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-purple-500/20 bg-purple-950/20 p-4 text-left">
+                <p className="text-xs font-semibold text-purple-300">PRO MAX</p>
+                <p className="mt-1 text-sm font-bold text-white">
+                  Mở khóa APK Audit
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">
+                  Phân tích APK, kiểm tra quyền ứng dụng, phát hiện hardcoded secrets
+                  và đánh giá rủi ro bảo mật Android.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+              <Button
+                onClick={() => router.push("/dashboard/billing")}
+                className="bg-purple-600 text-white hover:bg-purple-500"
+              >
+                Nâng cấp PRO MAX
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => router.push("/dashboard")}
+                className="border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+              >
+                Quay lại Dashboard
+              </Button>
+            </div>
           </div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300 text-xs font-mono mb-3">
-            TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO MAX
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">Kiểm Toán An Ninh Mobile APK</h2>
-          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-            Tính năng phân tích dịch ngược APK, phát hiện mã độc và kiểm toán phân quyền chỉ khả dụng trên gói <span className="text-purple-400 font-bold">PRO MAX</span>.
-          </p>
-          <Button onClick={() => router.push("/dashboard/billing")}
-            className="h-10 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-950/50"
-          >
-            Nâng Cấp PRO MAX Ngay
-          </Button>
         </div>
       </DashboardShell>
     );

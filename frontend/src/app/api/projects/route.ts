@@ -64,7 +64,20 @@ export async function GET(request: Request) {
       return ownerEmail === userEmail || ownerId === userId;
     });
 
-    return NextResponse.json({ ok: true, projects: userTargets });
+    const projects = userTargets.map((target) => {
+      const detail = target.projectDetail;
+      const summary = (detail?.summary as any) || {};
+
+      return {
+        ...target,
+        name: detail?.title ?? target.domain,
+        description: detail?.description ?? summary.projectInfo ?? "",
+        module: detail?.module ?? summary.module ?? "scan",
+        password: summary.password ?? "",
+      };
+    });
+
+    return NextResponse.json({ ok: true, projects });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 });
   }
@@ -81,9 +94,60 @@ export async function POST(req: Request) {
     const userId = authUser.id;
 
     const body = await req.json();
-    const name = (body.name || "untitled").toString().trim();
-    const description = (body.description || body.projectInfo || "").toString();
+    const name = (body.name || "").toString().trim();
+    const description = (body.description || body.projectInfo || "").toString().trim();
     const module = (body.module || "web").toString();
+
+    if (!name) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "PROJECT_NAME_REQUIRED",
+          message: "Vui lòng nhập tên dự án.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Không cho một tài khoản tạo hai project có cùng tên.
+    // So sánh sau khi trim + lower-case để:
+    // "ADQ Test", "adq test", "  ADQ Test  " được xem là trùng nhau.
+    const normalizedName = name.replace(/\\s+/g, " ").toLocaleLowerCase("vi");
+
+    const ownedTargets = await prisma.target.findMany({
+      include: { projectDetail: true },
+    });
+
+    const duplicateName = ownedTargets.find((target) => {
+      const detail = target.projectDetail;
+      const summary = (detail?.summary as any) || {};
+
+      const ownerEmail = String(summary.userEmail || "").toLowerCase().trim();
+      const ownerId = String(summary.userId || "");
+
+      const belongsToCurrentUser =
+        ownerId === userId || (!!userEmail && ownerEmail === userEmail);
+
+      if (!belongsToCurrentUser) return false;
+
+      const currentName = String(detail?.title || "")
+        .trim()
+        .replace(/\\s+/g, " ")
+        .toLocaleLowerCase("vi");
+
+      return currentName === normalizedName;
+    });
+
+    if (duplicateName) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "PROJECT_NAME_EXISTS",
+          message: `Tên dự án "${name}" đã tồn tại. Vui lòng chọn tên khác.`,
+        },
+        { status: 409 }
+      );
+    }
     const password = body.password !== undefined && body.password !== null ? String(body.password) : "";
 
     // Domain người dùng nhập dùng cho scanner phải luôn là hostname sạch.
@@ -119,28 +183,22 @@ export async function POST(req: Request) {
       userId,
     };
 
-    let existing = await prisma.target.findUnique({ where: { domain } });
+    const existing = await prisma.target.findUnique({
+      where: { domain },
+      include: { projectDetail: true },
+    });
+
     if (existing) {
-      await prisma.projectDetail.upsert({
-        where: { projectId: existing.id },
-        update: {
-          title: name,
-          description,
-          module,
-          status: "ACTIVE",
-          summary,
-        },
-        create: {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "PROJECT_TARGET_EXISTS",
+          message:
+            "Target này đã được sử dụng trong một dự án hiện có. Hãy mở dự án cũ hoặc sử dụng target khác.",
           projectId: existing.id,
-          title: name,
-          description,
-          module,
-          status: "ACTIVE",
-          riskScore: 0,
-          summary,
         },
-      });
-      return NextResponse.json({ ok: true, project: { ...existing, name, description, module, password } });
+        { status: 409 }
+      );
     }
 
     const created = await prisma.target.create({

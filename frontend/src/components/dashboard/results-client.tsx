@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { decodeBase64Value, exportReport, getScanResults } from "@/lib/api";
+import { getEntitlements } from "@/lib/entitlements";
 import { formatDateTime, getSeverityColor } from "@/lib/utils";
 
 type ExportFormat = "json" | "html" | "markdown";
@@ -51,7 +52,7 @@ export function ResultsClient() {
   const selectedScan = useMemo(() => data.find((item) => item.id === selectedScanId) ?? data[0] ?? null, [data, selectedScanId]);
 
   const availableFormats: ExportFormat[] =
-    user?.packageTier === "FREE" ? ["markdown"] : ["json", "html", "markdown"];
+    getEntitlements(user?.packageTier || "FREE").exportFormats;
 
   const downloadBlob = (filename: string, content: string, mimeType: string) => {
     const blob = new Blob([content], { type: mimeType });

@@ -58,7 +58,9 @@ export async function GET(request: Request) {
         dataUser.email?.split("@")[0] ||
         "Người dùng",
       role: normaliseRole(existing?.role ?? (dataUser.user_metadata ?? {})["role"] ?? (dataUser.app_metadata as any)?.role),
-      packageTier: normalisePackageTier(existing?.packageTier ?? (dataUser.user_metadata ?? {})["packageTier"] ?? (dataUser.app_metadata as any)?.packageTier),
+      // admin_users.package_tier là nguồn sự thật duy nhất.
+      // Auth metadata chỉ là mirror, không được dùng để tự cấp entitlement.
+      packageTier: normalisePackageTier(existing?.packageTier ?? "FREE"),
       status: normaliseStatus(existing?.status ?? (dataUser.user_metadata ?? {})["status"] ?? (dataUser.app_metadata as any)?.status ?? "ACTIVE"),
       dailyLimit: existing?.dailyLimit,
       scansToday: existing?.scansToday,

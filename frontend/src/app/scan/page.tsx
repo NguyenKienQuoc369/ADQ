@@ -25,6 +25,7 @@ import {
   PlusCircle,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
+import { getEntitlements } from "@/lib/entitlements";
 import { AiAnalysisCard } from "@/components/scan/ai-analysis-card";
 import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
 import {
@@ -151,8 +152,12 @@ function ScanLandingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const userTier = (user?.packageTier || "FREE").toUpperCase();
-  const isFreeLimitExceeded = userTier === "FREE" && (user?.scansToday ?? 0) >= 2;
+  const userTier = user?.packageTier || "FREE";
+  const entitlements = getEntitlements(userTier);
+
+  const isFreeLimitExceeded =
+    entitlements.scanLifetimeLimit !== null &&
+    (user?.scansToday ?? 0) >= entitlements.scanLifetimeLimit;
   const projectId = searchParams.get("projectId");
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
