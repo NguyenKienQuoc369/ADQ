@@ -626,7 +626,7 @@ function ScanLandingContent() {
                       <div key={v.id} className="p-3.5 hover:bg-slate-900/40 flex items-start justify-between gap-3 text-xs">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <Badge className="text-[9px] font-mono px-1.5 py-0" variant={v.severity === "CRITICAL" || v.severity === "HIGH" ? "destructive" : "default"}>
+                            <Badge className="text-[9px] font-mono px-1.5 py-0" variant={v.severity === "CRITICAL" || v.severity === "HIGH" ? "danger" : "default"}>
                               {v.severity}
                             </Badge>
                             <span className="font-bold text-slate-200">{v.title}</span>

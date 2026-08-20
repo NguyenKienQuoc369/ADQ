@@ -968,7 +968,7 @@ function StressTestContent() {
                       >
                         <div className="space-y-0.5 min-w-0 pr-2">
                           <div className="flex items-center gap-2">
-                            <Badge className="text-[9px] font-mono px-1.5 py-0" variant={ep.method === "POST" ? "destructive" : "default"}>
+                            <Badge className="text-[9px] font-mono px-1.5 py-0" variant={ep.method === "POST" ? "danger" : "default"}>
                               {ep.method}
                             </Badge>
                             <span className="font-mono text-xs font-bold text-slate-200 truncate">{ep.path}</span>
@@ -1057,7 +1057,7 @@ function StressTestContent() {
               <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                 <Code2 className="h-4 w-4 text-emerald-400" /> 3. WAF Signature & Bypass Headers Code
               </CardTitle>
-              <Badge className="text-[10px] font-mono" variant={wafDetected ? "destructive" : "secondary"}>
+              <Badge className="text-[10px] font-mono" variant={wafDetected ? "danger" : "muted"}>
                 {wafName || "Chưa quét WAF"}
               </Badge>
             </CardHeader>

@@ -291,7 +291,7 @@ function ApkAuditContent() {
                 {analysisResult.vulnerabilities.map((v, i) => (
                   <div key={i} className="p-3.5 text-xs space-y-1">
                     <div className="flex items-center gap-2">
-                      <Badge className="text-[9px] font-mono" variant={v.severity === "CRITICAL" || v.severity === "HIGH" ? "destructive" : "default"}>
+                      <Badge className="text-[9px] font-mono" variant={v.severity === "CRITICAL" || v.severity === "HIGH" ? "danger" : "default"}>
                         {v.severity}
                       </Badge>
                       <span className="font-bold text-slate-200">{v.title}</span>
