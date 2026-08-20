@@ -54,3 +54,5 @@ frontend/node_modules/
 .DS_Store
 Thumbs.db
 
+*.bak*
+.env.backup-production

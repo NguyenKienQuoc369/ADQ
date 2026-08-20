@@ -737,10 +737,22 @@ def _parse_nuclei_findings(file_path):
 
 def _parse_ffuf_findings(file_path):
     findings = []
+
     for line in _read_txt_lines(file_path):
-        lowered = line.lower()
-        if "status:" in lowered:
-            findings.append({"raw": line})
+        stripped = line.strip()
+
+        # FFuf -v in ra nhiều dòng metadata như:
+        # ":: Matcher : Response status: 200"
+        # Đây không phải endpoint/finding thực tế.
+        if stripped.startswith("::"):
+            continue
+
+        # Result thực tế của FFuf verbose bắt đầu bằng "[Status:"
+        if not stripped.lower().startswith("[status:"):
+            continue
+
+        findings.append({"raw": stripped})
+
     return findings
 
 def build_result_json_tree(target, folder, counts, highlights, output_path, logic_results=None):
@@ -990,15 +1002,24 @@ def summarize_nuclei(file_path, limit=5):
 def summarize_ffuf(file_path, limit=5):
     if not os.path.exists(file_path):
         return []
+
     results = []
+
     with open(file_path, "r") as f:
         for line in f:
-            if "Status:" in line:
-                parts = line.strip().split()
-                if parts:
-                    results.append(parts[0])
+            stripped = line.strip()
+
+            if stripped.startswith("::"):
+                continue
+
+            if not stripped.lower().startswith("[status:"):
+                continue
+
+            results.append(stripped)
+
             if len(results) >= limit:
                 break
+
     return results
 
 def classify_risks_from_nuclei(file_path, limit=5):
@@ -1164,6 +1185,15 @@ def main():
     NUCLEI_TUNE["rl_step"] = args.nuclei_rl_step
     NUCLEI_TUNE["c_step"] = args.nuclei_c_step
 
+    # Giữ riêng URL có scheme cho các tool cần URL (FFuf, HTTP client, ...)
+    raw_target = args.target.strip()
+    target_url = (
+        raw_target.rstrip("/")
+        if raw_target.startswith(("http://", "https://"))
+        else "https://" + raw_target.rstrip("/")
+    )
+
+    # target thuần hostname/IP vẫn dùng cho Subfinder, DNSX, Naabu, folder...
     try:
         target = normalize_target(args.target)
     except ValueError as exc:
@@ -1341,7 +1371,7 @@ def main():
     if os.path.exists(args.wordlist) and tool_available("ffuf"):
         run_command(
             "FFuf",
-            ["ffuf", "-u", f"https://{target}/FUZZ", "-w", args.wordlist, "-mc", "200", "-t", str(args.ffuf_threads), "-v"],
+            ["ffuf", "-u", f"{target_url}/FUZZ", "-w", args.wordlist, "-mc", "200", "-t", str(args.ffuf_threads), "-v"],
             ffuf_out,
             timeout=args.timeout,
             retries=args.retries,

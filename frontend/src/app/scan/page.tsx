@@ -27,7 +27,16 @@ import {
 import { useAuth } from "@/components/providers/auth-provider";
 import { AiAnalysisCard } from "@/components/scan/ai-analysis-card";
 import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
-import { getProjectById, saveProjectDetail, startScanJob, getScanJobStatus, copilotChat, ActionAdvice } from "@/lib/api";
+import {
+  getProjectById,
+  saveProjectDetail,
+  startScanJob,
+  getScanJobStatus,
+  getScanEndpoints,
+  copilotChat,
+  ActionAdvice,
+  ScanEndpoint,
+} from "@/lib/api";
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
 
@@ -174,6 +183,7 @@ function ScanLandingContent() {
   const [vulnCount, setVulnCount] = useState(0);
 
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
+  const [discoveredEndpoints, setDiscoveredEndpoints] = useState<ScanEndpoint[]>([]);
   const [actionAdvice, setActionAdvice] = useState<ActionAdvice[]>([]);
   const [rawActionAdvice, setRawActionAdvice] = useState<string>("");
   const [scanError, setScanError] = useState<string | null>(null);
@@ -197,10 +207,17 @@ function ScanLandingContent() {
         if (cancelled || !p) return;
         setProjectName(p.name || "");
         const boundDomain = p.domain || p.projectDetail?.title || "";
-        if (boundDomain) setTarget(boundDomain);
-
         const detail = p.projectDetail || {};
         const summary = (detail.summary as Record<string, any>) || {};
+
+        // project.domain có thể là internal key kèm user suffix.
+        // Scanner phải dùng domain thật được lưu trong project summary.
+        const scanDomain = String(summary.domain || boundDomain || "")
+          .trim()
+          .replace(/^https?:\/\//i, "")
+          .split("/")[0];
+
+        if (scanDomain) setTarget(scanDomain);
 
         if (summary) {
           setSubdomains(summary.subdomains ?? 0);
@@ -208,6 +225,29 @@ function ScanLandingContent() {
           setCrawledUrls(summary.crawledUrls ?? 0);
           setOpenPorts(summary.openPorts ?? 0);
           setVulnCount(summary.totalVulns ?? (summary.critical ?? 0) + (summary.high ?? 0) + (summary.medium ?? 0));
+
+          // Resume scan sau khi user F5 / đóng tab / quay lại project.
+          const savedJobId = String(summary.lastJobId || "").trim();
+          if (savedJobId) {
+            setJobId(savedJobId);
+
+            // Nếu frontend trước đó chưa kịp nhận kết quả cuối,
+            // bật polling lại. Backend sẽ trả trạng thái thật của job.
+            if (
+              detail.status === "RUNNING" ||
+              summary.lastScanStatus === "RUNNING" ||
+              summary.lastScanStatus === "QUEUED"
+            ) {
+              setIsScanning(true);
+              setNodes((prev) => ({
+                ...prev,
+                node_recon: {
+                  ...prev.node_recon,
+                  status: "running",
+                },
+              }));
+            }
+          }
         }
 
         const findings = summary.findings || {};
@@ -241,6 +281,128 @@ function ScanLandingContent() {
     };
   }, [projectId]);
 
+  // Khôi phục đầy đủ kết quả của job đã hoàn tất khi user F5,
+  // đóng tab hoặc quay lại project sau này.
+  useEffect(() => {
+    if (!jobId) {
+      setDiscoveredEndpoints([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadEndpoints = async () => {
+      try {
+        const res = await getScanEndpoints(jobId);
+
+        if (cancelled || !res?.ok) return;
+
+        setDiscoveredEndpoints(
+          Array.isArray(res.endpoints) ? res.endpoints : []
+        );
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[loadEndpoints] Ignored error:", err);
+        }
+      }
+    };
+
+    loadEndpoints();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, isScanning]);
+
+  useEffect(() => {
+    if (!jobId || isScanning) return;
+
+    let cancelled = false;
+
+    const recoverCompletedJob = async () => {
+      try {
+        const res = await getScanJobStatus(jobId);
+        if (!res?.ok || cancelled) return;
+
+        const job = res.job ?? res;
+        const status = String(job.status || "").toUpperCase();
+
+        if (status !== "COMPLETED" && status !== "DONE") return;
+
+        const allSubs = job.subdomains?.all ?? [];
+        const httpLive = job.subdomains?.http_live ?? [];
+        const ports = job.ports?.open ?? job.open_ports ?? [];
+        const urls = job.urls?.combined ?? [];
+
+        const nuclei = (job.vulnerabilities?.nuclei ?? []).map(
+          (f: any, idx: number) => ({
+            id: `vuln-${idx}`,
+            severity: (f.severity || "MEDIUM").toUpperCase() as SeverityLevel,
+            title: f.template_id || f.title || "Phát hiện lỗ hổng",
+            endpoint: f.matched || f.url || job.target || target,
+            cve: f.cve_id,
+            description: f.description,
+          })
+        );
+
+        setSubdomains(allSubs.length);
+        setLiveHosts(httpLive.length);
+        setOpenPorts(ports.length);
+        setCrawledUrls(urls.length);
+        setVulnCount(nuclei.length);
+        setVulnerabilities(nuclei);
+        setScanError(null);
+
+        setNodes((prev) => {
+          const recovered = { ...prev };
+          Object.keys(recovered).forEach((k) => {
+            recovered[k] = {
+              ...recovered[k],
+              status: "completed",
+              error: undefined,
+            };
+          });
+          return recovered;
+        });
+
+        const recoveredAdvice = safeString(
+          job.recommendations ??
+          job.action_advice ??
+          job.raw_action_advice ??
+          ""
+        );
+
+        if (recoveredAdvice) {
+          setRawActionAdvice(recoveredAdvice);
+
+          const lines = recoveredAdvice
+            .split("\n")
+            .filter((line: string) => line.trim().startsWith("-"));
+
+          const parsedAdvice: ActionAdvice[] = lines
+            .slice(0, 5)
+            .map((line: string, idx: number) => ({
+              id: `advice-${idx + 1}`,
+              vulnerabilityId: `vuln-${idx + 1}`,
+              title: `Khuyến nghị #${idx + 1}`,
+              rootCause: line.replace(/^- (Nguyên nhân:\s*)?/, ""),
+              remediation: [line.replace(/^- /, "")],
+            }));
+
+          setActionAdvice(parsedAdvice);
+        }
+      } catch (err) {
+        console.warn("[recoverCompletedJob] Ignored error:", err);
+      }
+    };
+
+    recoverCompletedJob();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, isScanning, target]);
+
   useEffect(() => {
     if (!jobId || !isScanning) return;
 
@@ -249,7 +411,54 @@ function ScanLandingContent() {
         const res = await getScanJobStatus(jobId);
         if (!res.ok) return;
 
-        const { progress, live_data, status, recommendations } = res;
+        // FastAPI trả { ok: true, job: {...} }.
+        // Hỗ trợ cả response cũ để không phá compatibility.
+        const job = res.job ?? res;
+        const status = String(job.status || "").toUpperCase();
+
+        const progress = job.progress ?? {};
+
+        // Worker hiện merge result.json trực tiếp vào job result.
+        // Chuẩn hóa về shape mà UI scan đang sử dụng.
+        const live_data = job.live_data ?? {
+          subdomains: job.subdomains?.all ?? [],
+          live_hosts: job.subdomains?.http_live ?? [],
+          open_ports: job.ports?.open ?? job.open_ports ?? [],
+          crawled_urls: job.urls?.combined ?? [],
+          nuclei_findings: job.vulnerabilities?.nuclei ?? [],
+        };
+
+        const recommendations =
+          job.recommendations ??
+          job.action_advice ??
+          job.raw_action_advice ??
+          "";
+
+        // Job lỗi phải dừng polling ngay, không quay loading vô hạn.
+        if (status === "FAILED" || status === "ERROR") {
+          const failureMessage =
+            safeString(job.stderr_tail) ||
+            safeString(job.stdout_tail) ||
+            "Lượt quét đã thất bại.";
+
+          setScanError(failureMessage.trim());
+          setIsScanning(false);
+
+          setNodes((prev) => {
+            const failed = { ...prev };
+            Object.keys(failed).forEach((k) => {
+              failed[k] = {
+                ...failed[k],
+                status: "failed",
+                error: failureMessage.trim(),
+              };
+            });
+            return failed;
+          });
+
+          await persistScanSummary("FAILED");
+          return;
+        }
 
         setNodes((prev) => {
           const next = { ...prev };
@@ -317,10 +526,10 @@ function ScanLandingContent() {
           }
 
           await persistScanSummary("COMPLETED", {
-            subdomains: allSubs.length || 1,
-            liveHosts: httpLive.length || 1,
+            subdomains: allSubs.length,
+            liveHosts: httpLive.length,
             crawledUrls: urls.length,
-            openPorts: ports.length || 2,
+            openPorts: ports.length,
             critical: nuclei.filter((v: any) => v.severity === "CRITICAL").length,
             high: nuclei.filter((v: any) => v.severity === "HIGH").length,
             medium: nuclei.filter((v: any) => v.severity === "MEDIUM").length,
@@ -342,6 +551,14 @@ function ScanLandingContent() {
     if (!projectId) return;
     try {
       const summary = {
+        // Luôn giữ target thật để project.domain nội bộ có suffix cũng
+        // không ảnh hưởng scanner.
+        domain: target,
+
+        // Persist job linkage để scan có thể resume sau reload/tab close.
+        lastJobId: String(overrides?.jobId ?? jobId ?? ""),
+        lastScanStatus: status,
+
         subdomains: Number(overrides?.subdomains ?? subdomains),
         liveHosts: Number(overrides?.liveHosts ?? liveHosts),
         crawledUrls: Number(overrides?.crawledUrls ?? crawledUrls),
@@ -427,6 +644,7 @@ function ScanLandingContent() {
     if (isScanning || !target.trim()) return;
 
     setScanError(null);
+    setDiscoveredEndpoints([]);
     setIsScanning(true);
     setNodes((prev) => {
       const reset = { ...prev };
@@ -443,7 +661,12 @@ function ScanLandingContent() {
         throw new Error("Không thể khởi tạo lượt quét");
       }
       setJobId(data.job_id);
-      await persistScanSummary("RUNNING");
+
+      // setJobId là async state update, vì vậy truyền job ID trực tiếp
+      // để DB chắc chắn nhận đúng job ngay lập tức.
+      await persistScanSummary("RUNNING", {
+        jobId: data.job_id,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Khởi tạo lượt quét thất bại";
       setScanError(msg);
@@ -462,7 +685,7 @@ function ScanLandingContent() {
     setCopilotLoading(true);
 
     try {
-      const promptContext = `Target: ${target || "findproject.vercel.app"}. Context kết quả scan: ${rawActionAdvice || "Chưa có khuyến nghị."}. Câu hỏi của tôi: ${query}`;
+      const promptContext = `Target: ${target || "Chưa xác định"}. Context kết quả scan: ${rawActionAdvice || "Chưa có khuyến nghị."}. Câu hỏi của tôi: ${query}`;
       const res = await copilotChat(promptContext);
       const answerText = safeString(res.copilot_response);
       const finalMessages: ChatMessage[] = [...nextMessages, { sender: "copilot", text: answerText }];
@@ -569,6 +792,79 @@ function ScanLandingContent() {
             <p className="text-xl font-bold text-rose-400 font-mono mt-1">{vulnCount}</p>
           </Card>
         </div>
+
+        {/* Discovered Endpoints */}
+        <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
+          <CardHeader className="pb-3 border-b border-slate-800">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                  <Terminal className="h-4 w-4 text-amber-400"/>
+                  Endpoints Đã Phát Hiện
+                </CardTitle>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  URL thu thập từ Katana, GAU, Wayback và FFuf
+                </p>
+              </div>
+
+              <Badge
+                className="font-mono text-[10px] border border-amber-500/30 text-amber-300 bg-amber-950/20"
+              >
+                {discoveredEndpoints.length} URL
+              </Badge>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-0">
+            {discoveredEndpoints.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500 font-mono">
+                Chưa có endpoint discovery được lưu cho phiên này.
+              </div>
+            ) : (
+              <div className="max-h-80 overflow-y-auto divide-y divide-slate-800/70">
+                {discoveredEndpoints.map((endpoint) => (
+                  <div
+                    key={`${endpoint.id}-${endpoint.source}-${endpoint.url}`}
+                    className="px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02]"
+                  >
+                    <Badge
+                      className="mt-0.5 shrink-0 uppercase text-[9px] font-mono border border-cyan-500/30 text-cyan-300 bg-cyan-950/20"
+                    >
+                      {endpoint.source || "unknown"}
+                    </Badge>
+
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className="text-xs text-slate-200 font-mono break-all"
+                        title={endpoint.url}
+                      >
+                        {endpoint.url}
+                      </p>
+
+                      {(endpoint.method ||
+                        endpoint.status_code != null ||
+                        endpoint.content_length != null) && (
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500 font-mono">
+                          {endpoint.method && (
+                            <span>{endpoint.method}</span>
+                          )}
+
+                          {endpoint.status_code != null && (
+                            <span>HTTP {endpoint.status_code}</span>
+                          )}
+
+                          {endpoint.content_length != null && (
+                            <span>{endpoint.content_length} bytes</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* DAG 7 Steps */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">

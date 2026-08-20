@@ -92,7 +92,7 @@ export function LandingPage() {
             </p>
 
             <div className="flex flex-wrap gap-3">
-              <Link href={user ? "/dashboard" : "/login"}>
+              <Link href={user ? "/dashboard" : "/login"} suppressHydrationWarning>
                 <Button
                   size="lg"
                   className="border border-cyan-300/70 bg-gradient-to-r from-cyan-300 via-sky-300 to-emerald-300 text-slate-950 shadow-[0_18px_36px_rgba(34,211,238,0.32)] hover:shadow-[0_22px_40px_rgba(34,211,238,0.44)]"
@@ -212,7 +212,7 @@ export function LandingPage() {
             Bắt đầu với luồng `scan → analyze → patch`, sau đó mở rộng sang stress test và quản trị tài khoản.
           </p>
           <div className="mt-6 flex justify-center gap-3">
-            <Link href={user ? "/dashboard" : "/register"}>
+            <Link href={user ? "/dashboard" : "/register"} suppressHydrationWarning>
               <Button className="border border-cyan-300/70 bg-gradient-to-r from-cyan-300 via-sky-300 to-emerald-300 text-slate-950">
                 Đăng kí
                 <ArrowRight className="h-4 w-4" />

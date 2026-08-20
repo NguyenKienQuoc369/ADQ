@@ -67,6 +67,34 @@ def start_scan(req: ScanRequest, user: Dict[str, Any] = Depends(get_current_user
         message="Scan job queued successfully" if not skip_ai else "Scan job queued (Free tier: AI Analysis skipped)",
     )
 
+@router.get("/scan/{job_id}/endpoints")
+def get_scan_endpoints_route(
+    job_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        from backend.core.engine.db import get_scan_endpoints
+    except ImportError:
+        from core.engine.db import get_scan_endpoints
+
+    job = ScanService.get_job_status(job_id)
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Scan job not found",
+        )
+
+    endpoints = get_scan_endpoints(job_id)
+
+    return {
+        "ok": True,
+        "job_id": job_id,
+        "total": len(endpoints),
+        "endpoints": endpoints,
+    }
+
+
 @router.get("/scan/{job_id}")
 def get_scan_status(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     job = ScanService.get_job_status(job_id)

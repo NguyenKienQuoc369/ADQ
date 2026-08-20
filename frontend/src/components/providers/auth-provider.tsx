@@ -35,15 +35,9 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem("adq_cached_user");
-      if (cached) {
-        try { return JSON.parse(cached); } catch {}
-      }
-    }
-    return null;
-  });
+  // Initial render phải giống nhau giữa server và client.
+  // Không đọc localStorage trong useState initializer vì sẽ gây hydration mismatch.
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [lockMessage, setLockMessage] = useState<string | null>(null);
 
@@ -81,14 +75,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const initAuth = async () => {
+      // Cache chỉ được đọc sau khi component đã mount ở browser,
+      // nên server/client hydration tree luôn giống nhau.
+      try {
+        const cached = localStorage.getItem("adq_cached_user");
+        if (cached) {
+          const cachedUser = JSON.parse(cached);
+          setUser(cachedUser);
+        }
+      } catch {}
+
       const supabase = createSupabaseBrowserClient();
       const { data: { session } } = await supabase.auth.getSession();
+
       if (session?.user) {
         await fetchAccountData(session.access_token);
       } else {
         setUser(null);
         localStorage.removeItem("adq_cached_user");
       }
+
       setLoading(false);
     };
 

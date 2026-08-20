@@ -80,7 +80,14 @@ export function AiAnalysisCard({ userTier, aiSummary, target }: AiAnalysisCardPr
             {aiSummary ? (
               <MarkdownRenderer content={aiSummary} />
             ) : (
-              <p className="text-slate-400 italic">Đang phân tích cấu trúc phản hồi từ mục tiêu...</p>
+              <div className="space-y-1.5">
+                <p className="text-slate-300">
+                  Chưa có báo cáo phân tích AI cho phiên quét này.
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Kết quả rà quét kỹ thuật vẫn đã được lưu đầy đủ. Phân tích AI sẽ xuất hiện khi AI Engine được bật và tạo báo cáo thành công.
+                </p>
+              </div>
             )}
           </div>
         )}

@@ -37,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full`}>
+    <html lang="vi" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full`} data-scroll-behavior="smooth">
       <body suppressHydrationWarning className="min-h-full font-sans antialiased">
         <ThemeProvider>
           <ThemeScript />

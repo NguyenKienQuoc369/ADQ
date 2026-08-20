@@ -204,11 +204,24 @@ export interface SystemStats {
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   let url = path;
   if (!/^(https?:)?\/\//.test(path)) {
-    if (typeof window === "undefined") {
-      const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")).replace(/\/$/, "");
-      url = `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
+    // Các route do Backend FastAPI xử lý
+    const isBackendRoute =
+      path.startsWith("/api/scan") ||
+      path.startsWith("/api/copilot") ||
+      path.startsWith("/api/stress") ||
+      path.startsWith("/api/c2") ||
+      path.startsWith("/api/oast");
+
+    if (isBackendRoute) {
+      const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+      url = `${backendUrl}${path.startsWith("/") ? "" : "/"}${path}`;
     } else {
-      url = path;
+      if (typeof window === "undefined") {
+        const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")).replace(/\/$/, "");
+        url = `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
+      } else {
+        url = path;
+      }
     }
   }
 
@@ -352,8 +365,33 @@ export async function startScanJob(target: string, extraArgs: string[] = []): Pr
   });
 }
 
+export interface ScanEndpoint {
+  id: number;
+  scan_id: string;
+  url: string;
+  source: string;
+  method?: string | null;
+  status_code?: number | null;
+  content_length?: number | null;
+  raw?: string | null;
+  created_at?: string | null;
+}
+
 export async function getScanJobStatus(jobId: string): Promise<any> {
   return requestJson<any>(`/api/scan/${encodeURIComponent(jobId)}`);
+}
+
+export async function getScanEndpoints(
+  jobId: string
+): Promise<{
+  ok: boolean;
+  job_id: string;
+  total: number;
+  endpoints: ScanEndpoint[];
+}> {
+  return requestJson(
+    `/api/scan/${encodeURIComponent(jobId)}/endpoints`
+  );
 }
 
 export async function copilotChat(prompt: string): Promise<{ copilot_response: string }> {
@@ -722,10 +760,8 @@ export async function streamStressTest(
   },
   onData: (chunk: any) => void
 ) {
-  let url = "/api/stress/stream";
-  if (!/^(https?:)?\/\//.test(url)) {
-    url = `${API_BASE_URL.replace(/\/$/, "")}/api/stress/stream`;
-  }
+  const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  const url = `${backendUrl}/api/stress/stream`;
 
   let authHeader: Record<string, string> = {};
   if (typeof window !== "undefined") {
@@ -738,52 +774,42 @@ export async function streamStressTest(
     } catch {}
   }
 
-  const formattedPayload = {
-    target_url: payload.target_url,
-    target_requests: Number(payload.target_requests || 1000),
-    duration: typeof payload.duration === "number" ? `${payload.duration}s` : String(payload.duration || "5s"),
-    bypass_code: String(payload.bypass_code || ""),
-    waf_type: String(payload.waf_type || "standard"),
-    custom_headers: payload.custom_headers || null,
-  };
-
-  const res = await fetch(url, {
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...authHeader,
     },
-    credentials: "include",
-    body: JSON.stringify(formattedPayload),
+    body: JSON.stringify(payload),
   });
 
-  if (!res.ok) {
-    let errDetail = `HTTP ${res.status} ${res.statusText}`;
-    try {
-      const errJson = await res.json();
-      if (errJson.detail) errDetail = errJson.detail;
-    } catch {}
-    throw new Error(errDetail);
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream failed with status ${response.status}`);
   }
 
-  const reader = res.body?.getReader();
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  if (!reader) return;
-
   let buffer = "";
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() || "";
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
 
-    for (const part of parts) {
-      const line = part.trim();
-      if (line.startsWith("data: ")) {
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("data: ")) {
         try {
-          const parsed = JSON.parse(line.slice(6));
+          const parsed = JSON.parse(trimmed.slice(6));
+          onData(parsed);
+        } catch {}
+      } else {
+        try {
+          const parsed = JSON.parse(trimmed);
           onData(parsed);
         } catch {}
       }

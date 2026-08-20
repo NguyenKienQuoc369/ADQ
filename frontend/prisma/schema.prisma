@@ -48,6 +48,7 @@ model ScanJob {
   updatedAt       DateTime        @updatedAt @map("updated_at")
   liveHosts       LiveHost[]
   vulnerabilities Vulnerability[]
+  endpoints       ScanEndpoint[]
   target          Target?         @relation("TargetScanJobs", fields: [targetDomain], references: [domain], onUpdate: Cascade)
 
   @@index([targetDomain])
@@ -69,6 +70,24 @@ model LiveHost {
 
   @@index([scanId])
   @@map("live_hosts")
+}
+
+model ScanEndpoint {
+  id            Int      @id @default(autoincrement())
+  scanId        String   @map("scan_id")
+  url           String   @db.Text
+  source        String
+  method        String?
+  statusCode    Int?     @map("status_code")
+  contentLength Int?     @map("content_length")
+  raw           String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  scanJob ScanJob @relation(fields: [scanId], references: [scanId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([scanId])
+  @@index([source])
+  @@map("scan_endpoints")
 }
 
 model Vulnerability {

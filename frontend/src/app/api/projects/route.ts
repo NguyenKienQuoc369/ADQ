@@ -86,9 +86,29 @@ export async function POST(req: Request) {
     const module = (body.module || "web").toString();
     const password = body.password !== undefined && body.password !== null ? String(body.password) : "";
 
-    // Domain được tạo duy nhất cho từng user để tránh trùng lặp
-    const rawDomain = (body.domain || `${name.replace(/\s+/g, "-").toLowerCase()}`).toString();
-    const domain = rawDomain.includes("@") ? rawDomain : `${rawDomain}-${userId.slice(0, 6)}`;
+    // Domain người dùng nhập dùng cho scanner phải luôn là hostname sạch.
+    // `domain` bên DB vẫn có suffix user để tránh collision giữa project,
+    // còn `summary.domain` giữ target thật để scanner sử dụng.
+    const rawDomainInput = (
+      body.domain || `${name.replace(/\s+/g, "-").toLowerCase()}`
+    ).toString().trim();
+
+    const rawDomain = rawDomainInput
+      .replace(/^https?:\/\//i, "")
+      .split("/")[0]
+      .trim()
+      .replace(/\/+$/, "");
+
+    if (!rawDomain) {
+      return NextResponse.json(
+        { ok: false, error: "Domain không hợp lệ." },
+        { status: 400 }
+      );
+    }
+
+    const domain = rawDomain.includes("@")
+      ? rawDomain
+      : `${rawDomain}-${userId.slice(0, 6)}`;
 
     const summary = {
       projectInfo: description,
