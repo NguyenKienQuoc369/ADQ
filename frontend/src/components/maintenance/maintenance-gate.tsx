@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { AlertTriangle, ServerOff, X } from "lucide-react";
 
 type MaintenanceState = {
   enabled?: boolean;
@@ -9,12 +10,20 @@ type MaintenanceState = {
   status?: string;
 };
 
-const FORCE_MAINTENANCE =
+/*
+ * Biến này giờ được dùng cho tình trạng:
+ * VPS / backend provider outage.
+ *
+ * KHÔNG đồng nghĩa với full maintenance.
+ */
+const VPS_OUTAGE =
   process.env.NEXT_PUBLIC_FORCE_MAINTENANCE === "true";
 
 const API_URL = (
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
+
+const OUTAGE_BYPASS_KEY = "adq:vps-outage-acknowledged";
 
 export function MaintenanceGate({
   children,
@@ -24,40 +33,48 @@ export function MaintenanceGate({
   const pathname = usePathname();
   const router = useRouter();
 
-  const [checked, setChecked] = useState(FORCE_MAINTENANCE);
+  const [checked, setChecked] = useState(false);
+  const [outageAcknowledged, setOutageAcknowledged] = useState(false);
+  const [hideBanner, setHideBanner] = useState(false);
 
   const isMaintenancePage = pathname === "/maintenance";
   const isAdminPage = pathname?.startsWith("/admin");
   const isAuthCallback = pathname?.startsWith("/auth/callback");
 
+  /*
+   * VPS outage:
+   * Chỉ bắt người dùng xem thông báo một lần trong session.
+   */
   useEffect(() => {
-    /*
-     * Emergency frontend-only maintenance mode.
-     *
-     * Hoạt động ngay cả khi:
-     * - VPS offline
-     * - Redis offline
-     * - Backend API timeout
-     * - Nhà cung cấp VPS đang bảo trì
-     */
-    if (FORCE_MAINTENANCE) {
-      setChecked(true);
+    if (!VPS_OUTAGE) return;
 
-      if (
-        !isMaintenancePage &&
-        !isAdminPage &&
-        !isAuthCallback
-      ) {
-        router.replace("/maintenance");
-      }
+    const acknowledged =
+      sessionStorage.getItem(OUTAGE_BYPASS_KEY) === "true";
 
-      return;
+    setOutageAcknowledged(acknowledged);
+
+    if (
+      !acknowledged &&
+      !isMaintenancePage &&
+      !isAdminPage &&
+      !isAuthCallback
+    ) {
+      router.replace("/maintenance");
     }
+  }, [
+    isMaintenancePage,
+    isAdminPage,
+    isAuthCallback,
+    router,
+  ]);
 
-    /*
-     * Không redirect user đang ở maintenance khi manual force đã tắt.
-     * Gate bên dưới sẽ kiểm tra backend rồi quyết định.
-     */
+  /*
+   * Full maintenance thật vẫn do backend điều khiển.
+   * Backend maintenance active => hard redirect.
+   *
+   * Không có bypass.
+   */
+  useEffect(() => {
     let cancelled = false;
 
     const checkMaintenance = async () => {
@@ -92,30 +109,37 @@ export function MaintenanceGate({
           status === "IN_PROGRESS" ||
           status === "OVERRUN";
 
+        /*
+         * Đây mới là FULL MAINTENANCE.
+         */
         if (
           active &&
           !isMaintenancePage &&
           !isAdminPage &&
           !isAuthCallback
         ) {
-          router.replace("/maintenance");
+          router.replace("/maintenance?mode=full");
           return;
         }
 
-        if (!active && isMaintenancePage) {
+        /*
+         * Nếu backend bình thường và user đang ở maintenance,
+         * chỉ redirect về home nếu KHÔNG phải VPS outage.
+         */
+        if (
+          !active &&
+          isMaintenancePage &&
+          !VPS_OUTAGE
+        ) {
           router.replace("/");
-          return;
         }
       } catch (error) {
         /*
-         * Quan trọng:
-         * Backend/VPS chết KHÔNG được làm app crash-loop.
-         *
-         * Emergency outage phải được điều khiển bằng
-         * NEXT_PUBLIC_FORCE_MAINTENANCE phía Vercel.
+         * VPS chết không được coi là full maintenance.
+         * Frontend vẫn hoạt động.
          */
         console.warn(
-          "[MaintenanceGate] Backend maintenance state unavailable:",
+          "[MaintenanceGate] Backend unavailable:",
           error
         );
       } finally {
@@ -127,7 +151,10 @@ export function MaintenanceGate({
 
     void checkMaintenance();
 
-    const interval = window.setInterval(checkMaintenance, 15000);
+    const interval = window.setInterval(
+      checkMaintenance,
+      15000
+    );
 
     return () => {
       cancelled = true;
@@ -141,25 +168,56 @@ export function MaintenanceGate({
   ]);
 
   /*
-   * Với forced maintenance, không render dashboard trong 1 frame
-   * trước khi redirect.
+   * Trong lúc đang redirect user sang trang thông báo,
+   * tránh flash Dashboard.
    */
   if (
-    FORCE_MAINTENANCE &&
+    VPS_OUTAGE &&
+    !outageAcknowledged &&
     !isMaintenancePage &&
     !isAdminPage &&
     !isAuthCallback
   ) {
-    return (
-      <div className="min-h-screen bg-[#020617]" />
-    );
+    return <div className="min-h-screen bg-[#020617]" />;
   }
 
-  if (!checked) {
-    return (
-      <div className="min-h-screen bg-[#020617]" />
-    );
+  if (!checked && !VPS_OUTAGE) {
+    return <div className="min-h-screen bg-[#020617]" />;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {VPS_OUTAGE &&
+        outageAcknowledged &&
+        !hideBanner &&
+        !isMaintenancePage && (
+          <div className="relative z-[100] border-b border-amber-500/25 bg-amber-950/35 px-4 py-2.5 backdrop-blur-xl">
+            <div className="mx-auto flex max-w-7xl items-center gap-3">
+              <ServerOff className="h-4 w-4 shrink-0 text-amber-400" />
+
+              <p className="flex-1 text-xs leading-5 text-amber-100/80">
+                <strong className="text-amber-300">
+                  Hạ tầng VPS đang bảo trì.
+                </strong>{" "}
+                Các tính năng cần Backend như Security Scan,
+                Stress Test, AI Analysis và một số tác vụ xử lý
+                máy chủ có thể tạm thời không khả dụng.
+                Các phần còn lại của ADQ vẫn có thể sử dụng.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setHideBanner(true)}
+                className="rounded-lg p-1.5 text-amber-300/60 transition hover:bg-amber-500/10 hover:text-amber-200"
+                aria-label="Ẩn thông báo"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+      {children}
+    </>
+  );
 }
