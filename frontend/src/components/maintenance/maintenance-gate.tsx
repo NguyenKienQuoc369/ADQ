@@ -4,65 +4,160 @@ import React, { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 type MaintenanceState = {
-  enabled: boolean;
-  status: "OFF" | "SCHEDULED" | "IN_PROGRESS" | "OVERRUN";
+  enabled?: boolean;
+  active?: boolean;
+  status?: string;
 };
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+const FORCE_MAINTENANCE =
+  process.env.NEXT_PUBLIC_FORCE_MAINTENANCE === "true";
 
-export function MaintenanceGate({ children }: { children: React.ReactNode }) {
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+export function MaintenanceGate({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
-  const [checked, setChecked] = useState(false);
+
+  const [checked, setChecked] = useState(FORCE_MAINTENANCE);
+
+  const isMaintenancePage = pathname === "/maintenance";
+  const isAdminPage = pathname?.startsWith("/admin");
+  const isAuthCallback = pathname?.startsWith("/auth/callback");
 
   useEffect(() => {
-    let cancelled = false;
+    /*
+     * Emergency frontend-only maintenance mode.
+     *
+     * Hoạt động ngay cả khi:
+     * - VPS offline
+     * - Redis offline
+     * - Backend API timeout
+     * - Nhà cung cấp VPS đang bảo trì
+     */
+    if (FORCE_MAINTENANCE) {
+      setChecked(true);
 
-    async function check() {
-      // Never redirect the maintenance page itself or admin routes.
-      if (pathname === "/maintenance" || pathname.startsWith("/admin")) {
-        if (!cancelled) setChecked(true);
-        return;
+      if (
+        !isMaintenancePage &&
+        !isAdminPage &&
+        !isAuthCallback
+      ) {
+        router.replace("/maintenance");
       }
 
+      return;
+    }
+
+    /*
+     * Không redirect user đang ở maintenance khi manual force đã tắt.
+     * Gate bên dưới sẽ kiểm tra backend rồi quyết định.
+     */
+    let cancelled = false;
+
+    const checkMaintenance = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/maintenance`, {
+        const controller = new AbortController();
+
+        const timeout = window.setTimeout(() => {
+          controller.abort();
+        }, 3500);
+
+        const response = await fetch(`${API_URL}/api/maintenance`, {
           method: "GET",
           cache: "no-store",
+          signal: controller.signal,
         });
-        const data = await res.json();
-        const state = data?.maintenance as MaintenanceState | undefined;
+
+        window.clearTimeout(timeout);
+
+        if (!response.ok) {
+          throw new Error(`Maintenance API ${response.status}`);
+        }
+
+        const data = (await response.json()) as MaintenanceState;
+
+        if (cancelled) return;
+
+        const status = String(data?.status || "").toUpperCase();
+
+        const active =
+          data?.active === true ||
+          data?.enabled === true ||
+          status === "IN_PROGRESS" ||
+          status === "OVERRUN";
 
         if (
-          !cancelled &&
-          state?.enabled &&
-          (state.status === "IN_PROGRESS" || state.status === "OVERRUN")
+          active &&
+          !isMaintenancePage &&
+          !isAdminPage &&
+          !isAuthCallback
         ) {
           router.replace("/maintenance");
           return;
         }
-      } catch {
-        // Fail open: maintenance API failure must not lock users out.
+
+        if (!active && isMaintenancePage) {
+          router.replace("/");
+          return;
+        }
+      } catch (error) {
+        /*
+         * Quan trọng:
+         * Backend/VPS chết KHÔNG được làm app crash-loop.
+         *
+         * Emergency outage phải được điều khiển bằng
+         * NEXT_PUBLIC_FORCE_MAINTENANCE phía Vercel.
+         */
+        console.warn(
+          "[MaintenanceGate] Backend maintenance state unavailable:",
+          error
+        );
+      } finally {
+        if (!cancelled) {
+          setChecked(true);
+        }
       }
+    };
 
-      if (!cancelled) setChecked(true);
-    }
+    void checkMaintenance();
 
-    check();
-    const timer = window.setInterval(check, 15_000);
+    const interval = window.setInterval(checkMaintenance, 15000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.clearInterval(interval);
     };
-  }, [pathname, router]);
+  }, [
+    isMaintenancePage,
+    isAdminPage,
+    isAuthCallback,
+    router,
+  ]);
 
-  // Avoid flashing protected UI before the first maintenance check.
-  if (!checked && pathname !== "/maintenance" && !pathname.startsWith("/admin")) {
+  /*
+   * Với forced maintenance, không render dashboard trong 1 frame
+   * trước khi redirect.
+   */
+  if (
+    FORCE_MAINTENANCE &&
+    !isMaintenancePage &&
+    !isAdminPage &&
+    !isAuthCallback
+  ) {
     return (
-      <div className="min-h-screen bg-[#020617] flex items-center justify-center text-slate-500 text-sm">
-        Đang kiểm tra trạng thái hệ thống...
-      </div>
+      <div className="min-h-screen bg-[#020617]" />
+    );
+  }
+
+  if (!checked) {
+    return (
+      <div className="min-h-screen bg-[#020617]" />
     );
   }
 

@@ -176,6 +176,104 @@ class ScanService:
             return {"copilot_response": "Copilot ghi nhận yêu cầu của bạn."}
 
     @staticmethod
+    def copilot_analyze(job_id: str) -> Dict[str, Any]:
+        """
+        Phân tích một scan job bằng Agentic Copilot Engine.
+        Không tạo dữ liệu giả nếu job hoặc AI engine lỗi.
+        """
+        job = ScanService.get_job_status(job_id)
+
+        try:
+            from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
+
+            copilot = ADQSecurityCopilot()
+            result = copilot.analyze_scan_job(job)
+
+            if not isinstance(result, dict):
+                raise HTTPException(
+                    status_code=502,
+                    detail="Copilot analyze returned an invalid response."
+                )
+
+            if result.get("status") in {"API_ERROR", "CONFIG_ERROR"}:
+                raise HTTPException(
+                    status_code=502,
+                    detail=result.get("error") or "Copilot analyze failed."
+                )
+
+            analysis = result.get("text")
+            if not analysis:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Copilot analyze returned no analysis."
+                )
+
+            return {
+                "job_id": job_id,
+                "analysis": str(analysis),
+            }
+
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Copilot analyze failed: {exc}"
+            )
+
+
+    @staticmethod
+    def copilot_patch(
+        vulnerability_type: str,
+        endpoint: str,
+        framework: str = "Next.js",
+    ) -> Dict[str, Any]:
+        """
+        Sinh One-Click Fix bằng engine thật.
+        """
+        try:
+            from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
+
+            copilot = ADQSecurityCopilot()
+            result = copilot.generate_one_click_fix(
+                vulnerability_type=vulnerability_type,
+                endpoint=endpoint,
+                framework=framework or "Next.js",
+            )
+
+            if not isinstance(result, dict):
+                raise HTTPException(
+                    status_code=502,
+                    detail="Copilot patch returned an invalid response."
+                )
+
+            if result.get("status") in {"API_ERROR", "CONFIG_ERROR"}:
+                raise HTTPException(
+                    status_code=502,
+                    detail=result.get("error") or "Copilot patch generation failed."
+                )
+
+            patch_text = result.get("text")
+            if not patch_text:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Copilot patch returned no patch."
+                )
+
+            return {
+                "patch_result": str(patch_text),
+            }
+
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Copilot patch failed: {exc}"
+            )
+
+
+    @staticmethod
     def discover_endpoints(target_url: str) -> Dict[str, Any]:
         raw = (target_url or "").strip()
         if not raw:

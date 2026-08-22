@@ -63,25 +63,69 @@ def get_current_user(
             detail="JWT verification unavailable: PyJWT is not installed",
         )
 
-    if not settings.SUPABASE_JWT_SECRET:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="SUPABASE_JWT_SECRET is not configured",
-        )
-
     try:
-        payload = jwt.decode(
-            token,
-            settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={"verify_aud": False},
-        )
+        header = jwt.get_unverified_header(token)
+        algorithm = str(header.get("alg") or "").upper()
 
-        if not isinstance(payload, dict) or not (payload.get("sub") or payload.get("id")):
+        # Modern Supabase projects use asymmetric signing keys.
+        # Resolve the public key from the project's JWKS endpoint.
+        if algorithm in {"ES256", "RS256"}:
+            supabase_url = str(getattr(settings, "SUPABASE_URL", "") or "").rstrip("/")
+
+            if not supabase_url:
+                raise RuntimeError("SUPABASE_URL is not configured")
+
+            if not hasattr(jwt, "PyJWKClient"):
+                raise RuntimeError(
+                    "Installed PyJWT version does not support PyJWKClient"
+                )
+
+            jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
+            jwks_client = jwt.PyJWKClient(jwks_url)
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=[algorithm],
+                options={"verify_aud": False},
+            )
+
+        # Legacy Supabase projects may still use HS256.
+        elif algorithm == "HS256":
+            jwt_secret = str(
+                getattr(settings, "SUPABASE_JWT_SECRET", "") or ""
+            ).strip()
+
+            if not jwt_secret:
+                raise RuntimeError(
+                    "Legacy HS256 token detected but SUPABASE_JWT_SECRET is not configured"
+                )
+
+            payload = jwt.decode(
+                token,
+                jwt_secret,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+
+        else:
+            raise ValueError(f"Unsupported JWT algorithm: {algorithm or 'unknown'}")
+
+        if not isinstance(payload, dict) or not (
+            payload.get("sub") or payload.get("id")
+        ):
             raise ValueError("JWT payload does not contain a user identifier")
 
         return payload
 
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"JWT verification configuration error: {exc}",
+        )
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
