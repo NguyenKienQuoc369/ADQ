@@ -84,7 +84,7 @@ function MaintenanceContent() {
                   Nhà cung cấp VPS của ADQ hiện đang tiến
                   hành bảo trì hạ tầng. Các chức năng phụ
                   thuộc Backend có thể tạm thời không hoạt
-                  động, nhưng anh vẫn có thể tiếp tục truy
+                  động, nhưng bạn vẫn có thể tiếp tục truy
                   cập giao diện và những phần không phụ
                   thuộc máy chủ VPS.
                 </>
@@ -167,7 +167,7 @@ function MaintenanceContent() {
             ) : (
               <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
                 <div className="text-[11px] leading-5 text-slate-500">
-                  Anh vẫn có thể tiếp tục sử dụng những
+                  Bạn vẫn có thể tiếp tục sử dụng những
                   phần đang khả dụng của ADQ.
                 </div>
 
