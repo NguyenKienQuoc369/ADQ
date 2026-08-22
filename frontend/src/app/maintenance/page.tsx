@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense } from "react";
+
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -18,7 +20,7 @@ import { Button } from "@/components/ui/button";
 
 const OUTAGE_BYPASS_KEY = "adq:vps-outage-acknowledged";
 
-export default function MaintenancePage() {
+function MaintenanceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -185,3 +187,23 @@ export default function MaintenancePage() {
     </main>
   );
 }
+
+export default function MaintenancePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[#020617] text-slate-100">
+          <div className="text-center">
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-cyan-400" />
+            <p className="mt-4 text-xs text-slate-500">
+              Đang tải trạng thái hệ thống...
+            </p>
+          </div>
+        </main>
+      }
+    >
+      <MaintenanceContent />
+    </Suspense>
+  );
+}
+
