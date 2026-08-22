@@ -197,12 +197,12 @@ export function MaintenanceGate({
 
               <p className="flex-1 text-xs leading-5 text-amber-100/80">
                 <strong className="text-amber-300">
-                  Hạ tầng VPS đang bảo trì.
+                  Hệ thống đang trong quá trình khôi phục sau bảo trì máy chủ.
                 </strong>{" "}
-                Các tính năng cần Backend như Security Scan,
-                Stress Test, AI Analysis và một số tác vụ xử lý
-                máy chủ có thể tạm thời không khả dụng.
-                Các phần còn lại của ADQ vẫn có thể sử dụng.
+                Một số chức năng như Security Scan, Stress Test,
+                AI Analysis và các tác vụ xử lý nền có thể phản hồi
+                chậm hoặc tạm thời chưa ổn định. Các chức năng còn
+                lại của ADQ vẫn có thể tiếp tục sử dụng.
               </p>
 
               <button

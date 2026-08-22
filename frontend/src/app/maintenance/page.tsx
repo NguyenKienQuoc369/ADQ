@@ -56,7 +56,7 @@ function MaintenanceContent() {
               <Badge className="border border-amber-500/30 bg-amber-500/10 text-amber-300">
                 {fullMaintenance
                   ? "HỆ THỐNG ĐANG BẢO TRÌ"
-                  : "VPS ĐANG BẢO TRÌ"}
+                  : "RECOVERY MODE"}
               </Badge>
 
               <Badge className="border border-cyan-500/20 bg-cyan-500/10 text-cyan-300">
@@ -67,7 +67,7 @@ function MaintenanceContent() {
             <h1 className="mt-5 text-2xl font-bold tracking-tight text-white md:text-3xl">
               {fullMaintenance
                 ? "ADQ đang tạm thời bảo trì"
-                : "Một số tính năng đang tạm thời gián đoạn"}
+                : "Hệ thống đang được khôi phục sau bảo trì"}
             </h1>
 
             <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-400">
@@ -98,25 +98,25 @@ function MaintenanceContent() {
                 {
                   icon: CloudCog,
                   title: "Security Scan",
-                  text: "Có thể tạm thời không khởi chạy được.",
+                  text: "Có thể phản hồi chậm hoặc tạm thời chưa ổn định.",
                   tone: "text-amber-400",
                 },
                 {
                   icon: Wrench,
                   title: "Stress Test",
-                  text: "Cần kết nối trực tiếp tới Backend VPS.",
+                  text: "Có thể bị gián đoạn trong quá trình khôi phục dịch vụ nền.",
                   tone: "text-amber-400",
                 },
                 {
                   icon: ShieldCheck,
                   title: "AI & Analysis",
-                  text: "Một số tác vụ xử lý phía máy chủ có thể gián đoạn.",
+                  text: "Một số tác vụ phân tích phía máy chủ có thể mất nhiều thời gian hơn.",
                   tone: "text-cyan-400",
                 },
                 {
                   icon: Database,
-                  title: "Frontend & tài khoản",
-                  text: "Các phần không phụ thuộc VPS vẫn có thể truy cập.",
+                  title: "Nền tảng ADQ",
+                  text: "Các phần không phụ thuộc tác vụ xử lý nền vẫn có thể tiếp tục sử dụng.",
                   tone: "text-emerald-400",
                 },
               ].map((item) => {
@@ -153,7 +153,7 @@ function MaintenanceContent() {
               <p className="text-xs leading-6 text-slate-400">
                 {fullMaintenance
                   ? "Quyền truy cập sẽ tự động được khôi phục sau khi đội ngũ ADQ kết thúc chế độ bảo trì."
-                  : "Nếu một tác vụ yêu cầu Backend báo lỗi hoặc không phản hồi, vui lòng thử lại sau khi nhà cung cấp VPS hoàn tất bảo trì."}
+                  : "Đội ngũ ADQ đang tiếp tục kiểm tra và khôi phục toàn bộ dịch vụ. Nếu một tác vụ báo lỗi, phản hồi chậm hoặc không phản hồi, vui lòng thử lại sau."}
               </p>
             </div>
           </div>
