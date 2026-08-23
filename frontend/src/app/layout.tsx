@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
+
 import "./globals.css";
+
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { AppChrome } from "@/components/app-chrome";
 import LockBanner from "@/components/ui/lock-banner";
@@ -21,34 +24,99 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "ADQ SECURITY",
-  description: "Security operations platform for asset monitoring, vulnerability management and access control.",
+  description:
+    "Security operations platform for asset monitoring, vulnerability management and access control.",
   icons: {
     icon: [
-      { url: "/icon.png?v=3", sizes: "any", type: "image/png" },
-      { url: "/favicon.ico?v=3", sizes: "any" }
+      {
+        url: "/icon.png?v=3",
+        sizes: "any",
+        type: "image/png",
+      },
+      {
+        url: "/favicon.ico?v=3",
+        sizes: "any",
+      },
     ],
     shortcut: "/icon.png?v=3",
     apple: "/apple-icon.png?v=3",
   },
 };
 
-export default function RootLayout({
+function isSocHost(host: string) {
+  const cleanHost = host
+    .split(",")[0]
+    .trim()
+    .toLowerCase()
+    .split(":")[0];
+
+  return (
+    cleanHost === "adq-soc.click" ||
+    cleanHost === "www.adq-soc.click" ||
+    cleanHost.startsWith("admin.")
+  );
+}
+
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const headerStore = await headers();
+
+  const host =
+    headerStore.get("x-forwarded-host") ||
+    headerStore.get("host") ||
+    "";
+
+  const socRealm = isSocHost(host);
+
   return (
-    <html lang="vi" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full`} data-scroll-behavior="smooth">
-      <body suppressHydrationWarning className="min-h-full font-sans antialiased">
+    <html
+      lang="vi"
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      data-scroll-behavior="smooth"
+    >
+      <body
+        suppressHydrationWarning
+        className="min-h-full font-sans antialiased"
+      >
         <ThemeProvider>
           <ThemeScript />
+
           <LanguageProvider>
-            <AuthProvider>
-              <LockBanner />
+            {socRealm ? (
+              /*
+               * SOC REALM
+               *
+               * Không mount:
+               * - User AuthProvider
+               * - User LockBanner
+               * - User onboarding redirect
+               * - User maintenance redirect
+               *
+               * adq-soc.click có auth/session riêng.
+               */
               <div className="app-background flex min-h-screen flex-col">
-                <AppChrome><MaintenanceGate>{children}</MaintenanceGate></AppChrome>
+                <AppChrome>{children}</AppChrome>
               </div>
-            </AuthProvider>
+            ) : (
+              /*
+               * USER REALM
+               */
+              <AuthProvider>
+                <LockBanner />
+
+                <div className="app-background flex min-h-screen flex-col">
+                  <AppChrome>
+                    <MaintenanceGate>
+                      {children}
+                    </MaintenanceGate>
+                  </AppChrome>
+                </div>
+              </AuthProvider>
+            )}
           </LanguageProvider>
         </ThemeProvider>
       </body>

@@ -5,6 +5,8 @@ import { getPrismaClient } from "@/lib/prisma";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+import { isSocSessionValid } from "@/lib/soc-auth";
+
 export type AppRole = "USER" | "ADMIN";
 export type AppPackageTier = "FREE" | "PRO" | "PRO_MAX";
 export type AppStatus = "ACTIVE" | "PENDING" | "LOCKED";
@@ -90,15 +92,50 @@ export async function getAuthenticatedUserFromRequest(request: Request): Promise
 }
 
 export async function requireAdminRequest() {
+  /*
+   * SOC realm authentication.
+   *
+   * adq-soc.click không phụ thuộc Supabase user session.
+   */
+  if (await isSocSessionValid()) {
+    return {
+      id: "soc-root",
+      aud: "authenticated",
+      email: "soc-root@internal.adq",
+      created_at: new Date(0).toISOString(),
+      user_metadata: {
+        role: "ADMIN",
+        authRealm: "SOC",
+      },
+      app_metadata: {
+        role: "ADMIN",
+        authRealm: "SOC",
+      },
+    } as SupabaseUser;
+  }
+
+  /*
+   * Compatibility fallback:
+   * giữ hỗ trợ tài khoản Supabase ADMIN hiện có.
+   *
+   * Có thể bỏ fallback này sau khi SOC migration hoàn tất.
+   */
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
+
+  const { data, error } =
+    await supabase.auth.getUser();
+
   if (error || !data.user) {
     throw new Error("UNAUTHORIZED");
   }
 
   const role = normaliseRole(
     data.user.user_metadata?.role ??
-      (data.user.app_metadata as Record<string, unknown> | undefined)?.role,
+      (
+        data.user.app_metadata as
+          | Record<string, unknown>
+          | undefined
+      )?.role,
   );
 
   if (role !== "ADMIN") {

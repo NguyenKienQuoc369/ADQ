@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { DashboardShell } from "@/components/dashboard-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,8 +73,7 @@ export function RedeemCodesClient() {
   });
 
   return (
-    <DashboardShell area="admin">
-      <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+    <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
         <Card>
           <CardHeader>
             <CardTitle>Redeem Code Generator</CardTitle>
@@ -168,8 +166,7 @@ export function RedeemCodesClient() {
             ) : null}
           </CardContent>
         </Card>
-      </div>
-    </DashboardShell>
+    </div>
   );
 }
 

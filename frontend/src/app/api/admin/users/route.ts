@@ -22,41 +22,182 @@ export async function GET(request: Request) {
     await requireAdminRequest();
 
     const { searchParams } = new URL(request.url);
-    const search = (searchParams.get("search") ?? "").trim();
-    const roleFilter = (searchParams.get("role") ?? "ALL") as "ALL" | "USER" | "ADMIN";
-    const packageFilter = (searchParams.get("packageTier") ?? "ALL") as "ALL" | "FREE" | "PRO" | "PRO_MAX";
 
-    await syncAllAuthUsersIntoAdminUsers();
+    const search = (searchParams.get("search") ?? "").trim();
+    const roleFilter = (searchParams.get("role") ?? "ALL") as
+      | "ALL"
+      | "USER"
+      | "ADMIN";
+
+    const packageFilter = (
+      searchParams.get("packageTier") ?? "ALL"
+    ) as "ALL" | "FREE" | "PRO" | "PRO_MAX";
+
+    const page = Math.max(
+      1,
+      Number.parseInt(searchParams.get("page") ?? "1", 10) || 1
+    );
+
+    const limit = Math.min(
+      100,
+      Math.max(
+        1,
+        Number.parseInt(searchParams.get("limit") ?? "25", 10) || 25
+      )
+    );
+
+    /*
+     * Không sync toàn bộ Supabase Auth ở mỗi GET nữa.
+     *
+     * Nếu admin thật sự muốn reconcile Auth -> DB:
+     * /api/admin/users?sync=1
+     */
+    if (searchParams.get("sync") === "1") {
+      await syncAllAuthUsersIntoAdminUsers();
+    }
 
     const prisma = getPrismaClient();
-    const rows = await prisma.adminUser.findMany({
-      where: {
-        ...(search
-          ? {
-              OR: [
-                { email: { contains: search, mode: "insensitive" } },
-                { name: { contains: search, mode: "insensitive" } },
-              ],
-            }
-          : {}),
-        ...(roleFilter !== "ALL" ? { role: roleFilter } : {}),
-        ...(packageFilter !== "ALL" ? { packageTier: packageFilter } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-    });
 
-    return NextResponse.json({ users: rows.map(toUserRecord) });
+    const where = {
+      ...(search
+        ? {
+            OR: [
+              {
+                email: {
+                  contains: search,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                name: {
+                  contains: search,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          }
+        : {}),
+      ...(roleFilter !== "ALL"
+        ? { role: roleFilter }
+        : {}),
+      ...(packageFilter !== "ALL"
+        ? { packageTier: packageFilter }
+        : {}),
+    };
+
+    const skip = (page - 1) * limit;
+
+    const [
+      rows,
+      total,
+      totalUsers,
+      freeUsers,
+      proUsers,
+      proMaxUsers,
+      adminUsers,
+    ] = await Promise.all([
+      prisma.adminUser.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+
+      prisma.adminUser.count({ where }),
+
+      prisma.adminUser.count(),
+
+      prisma.adminUser.count({
+        where: { packageTier: "FREE" },
+      }),
+
+      prisma.adminUser.count({
+        where: { packageTier: "PRO" },
+      }),
+
+      prisma.adminUser.count({
+        where: { packageTier: "PRO_MAX" },
+      }),
+
+      prisma.adminUser.count({
+        where: { role: "ADMIN" },
+      }),
+    ]);
+
+    const totalPages = Math.max(
+      1,
+      Math.ceil(total / limit)
+    );
+
+    return NextResponse.json({
+      users: rows.map(toUserRecord),
+
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+
+      summary: {
+        totalUsers,
+        freeUsers,
+        proUsers,
+        proMaxUsers,
+        adminUsers,
+      },
+    });
   } catch (error: any) {
     if (error?.message === "UNAUTHORIZED") {
-      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+      return NextResponse.json(
+        { error: "UNAUTHORIZED" },
+        { status: 401 }
+      );
     }
+
     if (error?.message === "FORBIDDEN") {
-      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      return NextResponse.json(
+        { error: "FORBIDDEN" },
+        { status: 403 }
+      );
     }
-    if (error?.code === "P2021" || /does not exist|admin_users|table/i.test(String(error?.message ?? ""))) {
-      return NextResponse.json({ users: [] });
+
+    if (
+      error?.code === "P2021" ||
+      /does not exist|admin_users|table/i.test(
+        String(error?.message ?? "")
+      )
+    ) {
+      return NextResponse.json({
+        users: [],
+        pagination: {
+          page: 1,
+          limit: 25,
+          total: 0,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        summary: {
+          totalUsers: 0,
+          freeUsers: 0,
+          proUsers: 0,
+          proMaxUsers: 0,
+          adminUsers: 0,
+        },
+      });
     }
-    return NextResponse.json({ error: error?.message ?? "Failed to load admin users." }, { status: 500 });
+
+    return NextResponse.json(
+      {
+        error:
+          error?.message ??
+          "Failed to load admin users.",
+      },
+      { status: 500 }
+    );
   }
 }
 

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 const adminNav = [
   { href: "/admin", label: "Tổng quan SOC & Máy chủ", icon: Gauge },
+  { href: "/admin/operations", label: "Operations", icon: Server },
   { href: "/admin/users", label: "Quản lý Người dùng", icon: Users },
   { href: "/admin/redeem-codes", label: "Mã License Redeem", icon: KeyRound },
 ];
@@ -20,13 +21,19 @@ export function AdminShell({ children, onLogout }: { children: React.ReactNode; 
     setMounted(true);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (onLogout) {
       onLogout();
-    } else if (typeof window !== "undefined") {
-      localStorage.removeItem("adq_admin_root_token");
-      document.cookie = "adq_admin_root_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
-      window.location.href = "/";
+      return;
+    }
+
+    try {
+      await fetch("/api/admin/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+    } finally {
+      window.location.href = "/admin";
     }
   };
 

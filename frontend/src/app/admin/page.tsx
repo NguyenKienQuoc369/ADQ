@@ -28,19 +28,55 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("adq_admin_root_token");
-      setAuthorized(token === "soc_root_authorized_session");
-    }
+    let cancelled = false;
+
+    const verifySocSession = async () => {
+      try {
+        const res = await fetch("/api/admin/auth/session", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+
+        if (!cancelled) {
+          setAuthorized(res.ok);
+        }
+      } catch {
+        if (!cancelled) {
+          setAuthorized(false);
+        }
+      }
+    };
+
+    void verifySocSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const [resTelemetry, resScans] = await Promise.all([
-        fetch("/api/admin/telemetry"),
-        fetch("/api/admin/global-scans"),
+        fetch("/api/admin/telemetry", {
+          credentials: "same-origin",
+          cache: "no-store",
+        }),
+        fetch("/api/admin/global-scans", {
+          credentials: "same-origin",
+          cache: "no-store",
+        }),
       ]);
+
+      if (
+        resTelemetry.status === 401 ||
+        resTelemetry.status === 403 ||
+        resScans.status === 401 ||
+        resScans.status === 403
+      ) {
+        setAuthorized(false);
+        return;
+      }
 
       if (resTelemetry.ok) {
         const data = await resTelemetry.json();
@@ -79,10 +115,13 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("adq_admin_root_token");
-      document.cookie = "adq_admin_root_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/admin/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+    } finally {
       setAuthorized(false);
     }
   };
@@ -92,7 +131,14 @@ export default function AdminDashboardPage() {
   }
 
   if (!authorized) {
-    return <AdminLoginPage onSuccess={() => setAuthorized(true)} />;
+    return (
+      <AdminLoginPage
+        onSuccess={() => {
+          setAuthorized(true);
+          void fetchData();
+        }}
+      />
+    );
   }
 
   const server = telemetry?.server || { cpu_usage_percent: 0, ram_used_gb: 0, ram_total_gb: 0, ram_usage_percent: 0, disk_usage_percent: 0 };

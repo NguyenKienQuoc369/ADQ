@@ -53,6 +53,20 @@ services:
     networks:
       - adq_net
 
+  host-telemetry:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.host-telemetry
+    container_name: adq_host_telemetry
+    restart: always
+    command: uvicorn host_telemetry:app --host 0.0.0.0 --port 9100
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    networks:
+      - adq_net
+
   api-server:
     build:
       context: ./backend
@@ -67,6 +81,7 @@ services:
     depends_on:
       - db
       - redis
+      - host-telemetry
     networks:
       - adq_net
 

@@ -26,37 +26,427 @@ except Exception:
 class AdminService:
     @staticmethod
     def get_system_health() -> Dict[str, Any]:
+        """
+        Read-only SOC telemetry.
+
+        Không tạo dữ liệu synthetic. Nếu một nguồn không kiểm tra được,
+        trạng thái sẽ là UNKNOWN / OFFLINE thay vì giả READY.
+        """
         cpu_percent = psutil.cpu_percent(interval=None)
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
 
-        # Kiểm tra trạng thái Redis
+        # -------------------------------------------------
+        # Redis
+        # -------------------------------------------------
         redis_ok = False
+        redis_error = None
+
+        worker_details = []
+        queue_depth = 0
+        processing_total = 0
+
+        worker_status = {
+            "worker_elite": "UNKNOWN",
+            "worker_mobile": "UNKNOWN",
+            "worker_light": "UNKNOWN",
+        }
+
         if redis_client:
             try:
-                redis_ok = redis_client.ping()
-            except Exception:
+                redis_ok = bool(redis_client.ping())
+
+                # Main scan queue
+                try:
+                    queue_depth = int(
+                        redis_client.llen("scan_queue")
+                    )
+                except Exception:
+                    queue_depth = 0
+
+                # Discover worker heartbeat trực tiếp từ Redis.
+                heartbeat_keys = sorted(
+                    redis_client.scan_iter(
+                        "worker_heartbeat:*"
+                    )
+                )
+
+                heartbeat_workers = set()
+
+                for heartbeat_key in heartbeat_keys:
+                    worker_id = heartbeat_key.split(
+                        "worker_heartbeat:",
+                        1,
+                    )[-1]
+
+                    if not worker_id:
+                        continue
+
+                    heartbeat_workers.add(worker_id)
+
+                    try:
+                        ttl = int(
+                            redis_client.ttl(
+                                heartbeat_key
+                            )
+                        )
+                    except Exception:
+                        ttl = -1
+
+                    processing_key = (
+                        f"scan_processing:{worker_id}"
+                    )
+
+                    try:
+                        processing = int(
+                            redis_client.llen(
+                                processing_key
+                            )
+                        )
+                    except Exception:
+                        processing = 0
+
+                    processing_total += processing
+
+                    worker_details.append({
+                        "worker_id": worker_id,
+                        "status": (
+                            "BUSY"
+                            if processing > 0
+                            else "READY"
+                        ),
+                        "heartbeat": True,
+                        "heartbeat_ttl_seconds": ttl,
+                        "processing_jobs": processing,
+                    })
+
+                    wid = worker_id.lower()
+
+                    if "elite" in wid:
+                        worker_status[
+                            "worker_elite"
+                        ] = (
+                            "BUSY"
+                            if processing > 0
+                            else "READY"
+                        )
+
+                    if "mobile" in wid:
+                        worker_status[
+                            "worker_mobile"
+                        ] = (
+                            "BUSY"
+                            if processing > 0
+                            else "READY"
+                        )
+
+                    if "light" in wid:
+                        worker_status[
+                            "worker_light"
+                        ] = (
+                            "BUSY"
+                            if processing > 0
+                            else "READY"
+                        )
+
+                # Processing queue tồn tại nhưng heartbeat mất
+                # => worker có khả năng OFFLINE/stale.
+                for processing_key in sorted(
+                    redis_client.scan_iter(
+                        "scan_processing:*"
+                    )
+                ):
+                    worker_id = processing_key.split(
+                        "scan_processing:",
+                        1,
+                    )[-1]
+
+                    if (
+                        not worker_id
+                        or worker_id in heartbeat_workers
+                    ):
+                        continue
+
+                    try:
+                        pending = int(
+                            redis_client.llen(
+                                processing_key
+                            )
+                        )
+                    except Exception:
+                        pending = 0
+
+                    if pending <= 0:
+                        continue
+
+                    worker_details.append({
+                        "worker_id": worker_id,
+                        "status": "OFFLINE",
+                        "heartbeat": False,
+                        "heartbeat_ttl_seconds": -2,
+                        "processing_jobs": pending,
+                    })
+
+                    wid = worker_id.lower()
+
+                    if "elite" in wid:
+                        worker_status[
+                            "worker_elite"
+                        ] = "OFFLINE"
+
+                    if "mobile" in wid:
+                        worker_status[
+                            "worker_mobile"
+                        ] = "OFFLINE"
+
+                    if "light" in wid:
+                        worker_status[
+                            "worker_light"
+                        ] = "OFFLINE"
+
+            except Exception as exc:
                 redis_ok = False
+                redis_error = str(exc)
+
+        # -------------------------------------------------
+        # VPS Host Telemetry
+        # -------------------------------------------------
+        host_metrics = None
+        host_telemetry_error = None
+
+        try:
+            import json
+            import os
+            import urllib.request
+
+            host_telemetry_url = os.getenv(
+                "HOST_TELEMETRY_URL",
+                "http://host-telemetry:9100/metrics",
+            )
+
+            with urllib.request.urlopen(
+                host_telemetry_url,
+                timeout=1.5,
+            ) as response:
+                payload = json.load(response)
+
+            if (
+                payload.get("ok") is True
+                and payload.get("scope") == "VPS_HOST"
+            ):
+                host_metrics = payload
+            else:
+                host_telemetry_error = (
+                    "Invalid host telemetry response"
+                )
+
+        except Exception as exc:
+            host_telemetry_error = str(exc)
+
+        # -------------------------------------------------
+        # PostgreSQL
+        # -------------------------------------------------
+        postgres_ok = False
+        postgres_error = None
+
+        try:
+            from sqlalchemy import text
+            from backend.core.engine.db import get_engine
+
+            with get_engine().connect() as conn:
+                conn.execute(text("SELECT 1"))
+
+            postgres_ok = True
+
+        except Exception as exc:
+            postgres_error = str(exc)
 
         return {
             "ok": True,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(
+                timezone.utc
+            ).isoformat(),
+
+            # "server" luôn đại diện cho toàn VPS host.
+            # Không fallback sang container metrics nếu collector lỗi.
             "server": {
-                "cpu_usage_percent": cpu_percent,
-                "ram_usage_percent": mem.percent,
-                "ram_used_gb": round(mem.used / (1024**3), 2),
-                "ram_total_gb": round(mem.total / (1024**3), 2),
-                "disk_usage_percent": disk.percent,
-                "disk_free_gb": round(disk.free / (1024**3), 2),
+                "scope": "VPS_HOST",
+                "available": host_metrics is not None,
+
+                "cpu_usage_percent": (
+                    host_metrics.get(
+                        "cpu_usage_percent"
+                    )
+                    if host_metrics
+                    else None
+                ),
+
+                "ram_usage_percent": (
+                    host_metrics.get(
+                        "memory",
+                        {},
+                    ).get("usage_percent")
+                    if host_metrics
+                    else None
+                ),
+
+                "ram_used_gb": (
+                    host_metrics.get(
+                        "memory",
+                        {},
+                    ).get("used_gb")
+                    if host_metrics
+                    else None
+                ),
+
+                "ram_total_gb": (
+                    host_metrics.get(
+                        "memory",
+                        {},
+                    ).get("total_gb")
+                    if host_metrics
+                    else None
+                ),
+
+                "disk_usage_percent": (
+                    host_metrics.get(
+                        "disk",
+                        {},
+                    ).get("usage_percent")
+                    if host_metrics
+                    else None
+                ),
+
+                "disk_used_gb": (
+                    host_metrics.get(
+                        "disk",
+                        {},
+                    ).get("used_gb")
+                    if host_metrics
+                    else None
+                ),
+
+                "disk_total_gb": (
+                    host_metrics.get(
+                        "disk",
+                        {},
+                    ).get("total_gb")
+                    if host_metrics
+                    else None
+                ),
+
+                "disk_free_gb": (
+                    host_metrics.get(
+                        "disk",
+                        {},
+                    ).get("free_gb")
+                    if host_metrics
+                    else None
+                ),
+
+                "load_1m": (
+                    host_metrics.get(
+                        "load",
+                        {},
+                    ).get("load_1m")
+                    if host_metrics
+                    else None
+                ),
+
+                "load_5m": (
+                    host_metrics.get(
+                        "load",
+                        {},
+                    ).get("load_5m")
+                    if host_metrics
+                    else None
+                ),
+
+                "load_15m": (
+                    host_metrics.get(
+                        "load",
+                        {},
+                    ).get("load_15m")
+                    if host_metrics
+                    else None
+                ),
+
+                "uptime_seconds": (
+                    host_metrics.get(
+                        "uptime_seconds"
+                    )
+                    if host_metrics
+                    else None
+                ),
             },
+
+            # Giữ riêng số liệu process/container để debug backend.
+            # SOC không được gọi đây là VPS metrics.
+            "backend_runtime": {
+                "cpu_usage_percent": round(
+                    float(cpu_percent),
+                    1,
+                ),
+                "ram_usage_percent": round(
+                    float(mem.percent),
+                    1,
+                ),
+                "ram_used_gb": round(
+                    mem.used / (1024**3),
+                    2,
+                ),
+                "ram_total_gb": round(
+                    mem.total / (1024**3),
+                    2,
+                ),
+                "disk_usage_percent": round(
+                    float(disk.percent),
+                    1,
+                ),
+                "disk_free_gb": round(
+                    disk.free / (1024**3),
+                    2,
+                ),
+            },
+
             "services": {
+                # Endpoint này đang thực thi được thì FastAPI
+                # bản thân nó đang ONLINE.
                 "fastapi_backend": "ONLINE",
-                "redis_queue": "HEALTHY" if redis_ok else "DEGRADED",
-                "postgres_db": "ONLINE",
-                "worker_elite": "READY",
-                "worker_mobile": "READY",
-                "worker_light": "READY",
-            }
+
+                "vps_host": (
+                    "ONLINE"
+                    if host_metrics is not None
+                    else "UNAVAILABLE"
+                ),
+
+                "redis_queue": (
+                    "HEALTHY"
+                    if redis_ok
+                    else "OFFLINE"
+                ),
+
+                "postgres_db": (
+                    "ONLINE"
+                    if postgres_ok
+                    else "OFFLINE"
+                ),
+
+                **worker_status,
+            },
+
+            "queues": {
+                "scan_queue": queue_depth,
+                "processing_jobs": processing_total,
+            },
+
+            "workers": worker_details,
+
+            "diagnostics": {
+                "host_telemetry_error": host_telemetry_error,
+                "redis_error": redis_error,
+                "postgres_error": postgres_error,
+            },
         }
 
     @staticmethod

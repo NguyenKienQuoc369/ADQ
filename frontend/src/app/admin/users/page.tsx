@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import AdminLoginPage from "@/app/admin/login/page";
+import { SocSessionGuard } from "@/components/admin/soc-session-guard";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,33 +10,25 @@ import { Badge } from "@/components/ui/badge";
 import { Users, Search } from "lucide-react";
 
 export default function AdminUsersPage() {
-  const [authorized, setAuthorized] = useState<boolean | null>(null);
-  const [users, setUsers] = useState<any[]>([
-    { id: "usr_001", name: "Nguyễn Kiến Quốc", email: "quockien2006@gmail.com", role: "ADMIN", packageTier: "PRO_MAX", status: "ACTIVE", scansToday: 8, dailyLimit: 999 },
-    { id: "usr_002", name: "Test Developer", email: "dev@adq.io.vn", role: "USER", packageTier: "FREE", status: "ACTIVE", scansToday: 1, dailyLimit: 3 },
-  ]);
+  const [users, setUsers] = useState<any[]>([]);
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("adq_admin_root_token");
-      setAuthorized(token === "soc_root_authorized_session");
-    }
-  }, []);
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("/api/admin/users");
+      const res = await fetch("/api/admin/users?page=1&limit=25", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
       if (res.ok) {
         const data = await res.json();
-        if (data.users && data.users.length > 0) setUsers(data.users);
+        setUsers(Array.isArray(data.users) ? data.users : []);
       }
     } catch {}
   };
 
   useEffect(() => {
-    if (authorized) fetchUsers();
-  }, [authorized]);
+    void fetchUsers();
+  }, []);
 
   const filteredUsers = users.filter(u => 
     u.email?.toLowerCase().includes(search.toLowerCase()) || 
@@ -47,11 +39,9 @@ export default function AdminUsersPage() {
     setUsers(users.map(u => u.id === userId ? { ...u, packageTier: newTier } : u));
   };
 
-  if (authorized === null) return <div className="min-h-screen bg-[#020617]" />;
-  if (!authorized) return <AdminLoginPage onSuccess={() => setAuthorized(true)} />;
-
   return (
-    <AdminShell>
+    <SocSessionGuard>
+      <AdminShell>
       <div className="space-y-6 max-w-7xl mx-auto font-sans">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -134,6 +124,7 @@ export default function AdminUsersPage() {
           </CardContent>
         </Card>
       </div>
-    </AdminShell>
+      </AdminShell>
+    </SocSessionGuard>
   );
 }
