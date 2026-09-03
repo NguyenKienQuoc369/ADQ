@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
+import json
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 from datetime import datetime, date
@@ -9,10 +11,19 @@ from backend.schemas.scan import (
     CopilotChatRequest,
     StressRequest,
     WafDetectRequest,
+    StressVerificationRequest,
 )
-from backend.services.scan_service import ScanService
+from backend.services.scan_service import ScanService, redis_client
 from backend.core.stress_test.stress_orchestrator import StressOrchestrator
 from backend.core.auth import get_current_user
+from backend.core.security.ssrf_guard import resolve_and_validate_target
+from backend.core.security.stress_governor import (
+    validate_stress_runtime_limits,
+    parse_duration_sec,
+    StressSlotGovernor,
+    STRESS_TIER_LIMITS,
+    MAX_CONCURRENT_GLOBAL,
+)
 
 router = APIRouter(prefix="/api", tags=["Scans & Copilot"])
 
@@ -226,7 +237,8 @@ def discover_endpoints(req: EndpointDiscoveryRequest, user: Dict[str, Any] = Dep
     tier = get_user_tier(user)
     if tier == "FREE":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gói FREE không hỗ trợ Stress Test.")
-    return ScanService.discover_endpoints(req.target_url)
+    origin, _ = resolve_and_validate_target(req.target_url)
+    return ScanService.discover_endpoints(origin)
 
 @router.post("/stress/detect-waf")
 def detect_waf(req: WafDetectRequest, user: Dict[str, Any] = Depends(get_current_user)):
@@ -235,48 +247,134 @@ def detect_waf(req: WafDetectRequest, user: Dict[str, Any] = Depends(get_current
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gói FREE không hỗ trợ Stress Test.")
     return ScanService.detect_waf(req)
 
+@router.post("/stress/verification/start")
+def start_stress_verification(req: StressVerificationRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    tier = get_user_tier(user)
+    if tier == "FREE":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gói FREE không hỗ trợ Stress Test.")
+    return ScanService.start_stress_verification(user, req.target_url)
+
+@router.post("/stress/verification/check")
+def check_stress_verification(req: StressVerificationRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    tier = get_user_tier(user)
+    if tier == "FREE":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gói FREE không hỗ trợ Stress Test.")
+    return ScanService.check_stress_verification(user, req.target_url)
+
 @router.post("/stress/verify-bypass")
 def verify_bypass(req: VerifyBypassRequest, user: Dict[str, Any] = Depends(get_current_user)):
     tier = get_user_tier(user)
     if tier == "FREE":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gói FREE không hỗ trợ Stress Test.")
+    origin, _ = resolve_and_validate_target(req.target_url)
     orchestrator = StressOrchestrator()
-    return orchestrator.verify_bypass(target_url=req.target_url, bypass_code=req.bypass_code, waf_type=req.waf_type or "standard")
+    return orchestrator.verify_bypass(target_url=origin, bypass_code=req.bypass_code, waf_type=req.waf_type or "standard")
 
-@router.post("/stress")
-def run_stress_test(req: StressRequest, user: Dict[str, Any] = Depends(get_current_user)):
-    tier, usage = enforce_stress_quota(user)
-    orchestrator = StressOrchestrator()
-    result = orchestrator.execute_stress_test(
-        target_url=req.target_url,
-        target_requests=req.target_requests or 1000,
-        duration=req.duration or "5s",
-        bypass_code=req.bypass_code or "",
-        waf_type=req.waf_type or "standard",
-        custom_headers=req.custom_headers,
-        custom_cookies=req.custom_cookies,
+
+
+
+try:
+    from backend.services.stress_dispatch_service import StressDispatchService
+except ImportError:
+    from services.stress_dispatch_service import StressDispatchService
+
+@router.post("/stress/jobs", status_code=status.HTTP_202_ACCEPTED)
+def dispatch_stress_job(req: StressRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Phase 2B: Async stress job dispatch to dedicated worker queue.
+    """
+    res = StressDispatchService.enqueue_stress_job(req, user)
+    return res
+
+
+@router.get("/stress/{job_id}")
+def get_stress_job_snapshot(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Retrieves the current public state snapshot of a stress job (0 secrets).
+    """
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    state = StressDispatchService.get_stress_job_state(job_id)
+    if not state:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tiến trình kiểm thử tải.")
+
+    # Multi-user authorization check
+    if str(state.get("user_id")) != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền truy cập tiến trình này.")
+
+    return state
+
+
+import asyncio
+
+@router.get("/stress/{job_id}/stream")
+async def stream_stress_job_events(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    SSE relay with race-safe subscribe + snapshot-first + reconnect support.
+    Does NOT touch governor slots (managed independently by worker).
+    """
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    initial_check = StressDispatchService.get_stress_job_state(job_id)
+    if not initial_check:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tiến trình kiểm thử tải.")
+
+    if str(initial_check.get("user_id")) != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền truy cập tiến trình này.")
+
+    async def sse_relay():
+        pubsub = None
+        channel = f"stress_events:{job_id}"
+        if redis_client:
+            try:
+                pubsub = redis_client.pubsub()
+                pubsub.subscribe(channel)
+            except Exception:
+                pubsub = None
+
+        try:
+            # 1. Snapshot-first: Read current snapshot after subscription
+            snapshot = StressDispatchService.get_stress_job_state(job_id)
+            if snapshot:
+                yield f"data: {json.dumps(snapshot)}\n\n"
+                if snapshot.get("status") in ("COMPLETED", "FAILED"):
+                    return
+
+            # 2. Consume live events from Redis Pub/Sub with periodic snapshot check
+            while True:
+                has_msg = False
+                if pubsub:
+                    try:
+                        msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.05)
+                        if msg and msg.get("type") == "message":
+                            data_str = msg.get("data")
+                            event_data = json.loads(data_str)
+                            yield f"data: {json.dumps(event_data)}\n\n"
+                            has_msg = True
+                            if event_data.get("status") in ("COMPLETED", "FAILED") or event_data.get("done"):
+                                break
+                    except Exception:
+                        pass
+
+                if not has_msg:
+                    cur_st = StressDispatchService.get_stress_job_state(job_id)
+                    if cur_st and cur_st.get("status") in ("COMPLETED", "FAILED"):
+                        yield f"data: {json.dumps(cur_st)}\n\n"
+                        break
+                    await asyncio.sleep(0.2)
+
+        finally:
+            if pubsub:
+                try:
+                    pubsub.unsubscribe(channel)
+                    pubsub.close()
+                except Exception:
+                    pass
+
+    return StreamingResponse(
+        sse_relay(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
     )
-    return {"ok": True, "result": result, "remaining_stress": 1 - usage["stress_count"] if tier == "PRO" else 10 - usage["stress_count"]}
-
-from fastapi.responses import StreamingResponse
-import json
-
-@router.post("/stress/stream")
-def run_stress_test_stream(req: StressRequest, user: Dict[str, Any] = Depends(get_current_user)):
-    tier, usage = enforce_stress_quota(user)
-
-    orchestrator = StressOrchestrator()
-
-    def event_stream():
-        for chunk in orchestrator.stream_stress_test(
-            target_url=req.target_url,
-            target_requests=req.target_requests or 1000,
-            duration=req.duration or "5s",
-            bypass_code=req.bypass_code or "",
-            waf_type=req.waf_type or "standard",
-            custom_headers=req.custom_headers,
-            custom_cookies=req.custom_cookies,
-        ):
-            yield f"data: {json.dumps(chunk)}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")

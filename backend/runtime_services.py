@@ -787,6 +787,170 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
     print(f"[{worker_id}] Finished Job {job_id} with status '{final_status}'", flush=True)
 
 
+def execute_stress_job(
+    job_id: str,
+    job_data: Dict[str, Any],
+    redis_client: redis.Redis,
+    worker_id: str,
+) -> None:
+    user_id = str(job_data.get("user_id") or "anonymous")
+    tier = str(job_data.get("tier") or "FREE").upper()
+    target_url = str(job_data.get("target_url") or "")
+    total_reqs = int(job_data.get("target_requests") or 1000)
+    dur_sec = int(job_data.get("duration_sec") or 5)
+    target_rps = int(job_data.get("target_rps") or 50)
+    waf_type = str(job_data.get("waf_type") or "standard")
+    bypass_code = str(job_data.get("bypass_code") or "")
+    custom_headers = job_data.get("custom_headers") or {}
+    custom_cookies = job_data.get("custom_cookies") or {}
+
+    state_key = f"stress_job:{job_id}"
+    event_channel = f"stress_events:{job_id}"
+    started_at = time.time()
+
+    # Step 1: Update status to RUNNING and publish event
+    raw_state = redis_client.get(state_key) if redis_client else None
+    public_state = json.loads(raw_state) if raw_state else {
+        "job_id": job_id,
+        "user_id": user_id,
+        "tier": tier,
+        "target_url": target_url,
+        "target_requests": total_reqs,
+        "duration_sec": dur_sec,
+        "target_rps": target_rps,
+        "waf_type": waf_type,
+    }
+    public_state["status"] = "RUNNING"
+    public_state["started_at"] = started_at
+    if redis_client:
+        redis_client.set(state_key, json.dumps(public_state), ex=max(180, dur_sec + 180))
+        redis_client.publish(event_channel, json.dumps({
+            "job_id": job_id,
+            "status": "RUNNING",
+            "progress": 0,
+            "metrics": public_state.get("metrics", {}),
+            "timestamp": started_at,
+        }))
+
+    # Background lease renewal thread
+    renew_stop = threading.Event()
+    def renew_loop():
+        while not renew_stop.is_set():
+            try:
+                from backend.core.security.stress_governor import LUA_RENEW_LEASE
+            except ImportError:
+                from core.security.stress_governor import LUA_RENEW_LEASE
+            if redis_client:
+                try:
+                    user_key = f"stress_active_user:{user_id}"
+                    redis_client.eval(LUA_RENEW_LEASE, 2, user_key, "stress_active_jobs", job_id, max(120, dur_sec + 60))
+                except Exception:
+                    pass
+            renew_stop.wait(10)
+
+    renew_thread = threading.Thread(target=renew_loop, name=f"lease-renew-{job_id}", daemon=True)
+    renew_thread.start()
+
+    try:
+        # Step 2: Defense-in-depth Security Revalidation in Worker Namespace
+        try:
+            from backend.core.security.ssrf_guard import resolve_and_validate_target
+            from backend.services.scan_service import ScanService
+        except ImportError:
+            from core.security.ssrf_guard import resolve_and_validate_target
+            from services.scan_service import ScanService
+
+        # SSRF revalidation & connection pinning in worker network namespace
+        origin, _ = resolve_and_validate_target(target_url)
+
+        # Ownership revalidation check
+        user_mock = {"id": user_id, "sub": user_id}
+        if not ScanService.is_stress_target_verified(user_mock, origin):
+            raise Exception("Xác minh quyền sở hữu mục tiêu đã hết hạn hoặc không hợp lệ.")
+
+        # Step 3: Run StressOrchestrator streaming core
+        try:
+            from backend.core.stress_test.stress_orchestrator import StressOrchestrator
+        except ImportError:
+            from core.stress_test.stress_orchestrator import StressOrchestrator
+
+        orchestrator = StressOrchestrator()
+        last_metrics = None
+
+        for chunk in orchestrator.stream_stress_test(
+            target_url=origin,
+            target_rps=target_rps,
+            duration_sec=dur_sec,
+            total_reqs=total_reqs,
+            bypass_code=bypass_code,
+            waf_type=waf_type,
+            custom_headers=custom_headers,
+            custom_cookies=custom_cookies,
+        ):
+            if chunk.get("ok"):
+                cur_metrics = chunk.get("metrics") or {}
+                last_metrics = cur_metrics
+                public_state["metrics"] = cur_metrics
+                tot = cur_metrics.get("total_requests", 0)
+                prog = min(100, int(tot / max(1, total_reqs) * 100))
+                public_state["progress"] = prog
+                if redis_client:
+                    redis_client.set(state_key, json.dumps(public_state), ex=max(180, dur_sec + 180))
+                    redis_client.publish(event_channel, json.dumps({
+                        "job_id": job_id,
+                        "status": "RUNNING",
+                        "progress": prog,
+                        "metrics": cur_metrics,
+                        "timestamp": time.time(),
+                    }))
+
+        # Step 4: Mark COMPLETED and publish terminal event
+        finished_at = time.time()
+        public_state["status"] = "COMPLETED"
+        public_state["progress"] = 100
+        public_state["finished_at"] = finished_at
+        if last_metrics:
+            public_state["metrics"] = last_metrics
+        if redis_client:
+            redis_client.set(state_key, json.dumps(public_state), ex=86400)
+            redis_client.publish(event_channel, json.dumps({
+                "job_id": job_id,
+                "status": "COMPLETED",
+                "progress": 100,
+                "metrics": public_state.get("metrics", {}),
+                "done": True,
+                "is_done": True,
+                "timestamp": finished_at,
+            }))
+        print(f"[{worker_id}] Stress job {job_id} COMPLETED successfully.", flush=True)
+
+    except Exception as exc:
+        print(f"[{worker_id}] Stress job {job_id} FAILED: {exc}", flush=True)
+        finished_at = time.time()
+        public_state["status"] = "FAILED"
+        public_state["finished_at"] = finished_at
+        public_state["error_safe"] = f"Kiểm thử tải thất bại: {str(exc)}"
+        if redis_client:
+            redis_client.set(state_key, json.dumps(public_state), ex=86400)
+            redis_client.publish(event_channel, json.dumps({
+                "job_id": job_id,
+                "status": "FAILED",
+                "error_safe": public_state["error_safe"],
+                "done": True,
+                "is_done": True,
+                "timestamp": finished_at,
+            }))
+
+    finally:
+        renew_stop.set()
+        # Step 5: Always release governor slot on worker completion
+        try:
+            from backend.core.security.stress_governor import StressSlotGovernor
+        except ImportError:
+            from core.security.stress_governor import StressSlotGovernor
+        StressSlotGovernor.release_by_job(redis_client, user_id, job_id)
+
+
 def run_worker(worker_id: str, capability: str) -> None:
     print(f"[runtime:worker] started worker_id={worker_id} capability={capability}", flush=True)
 
@@ -917,12 +1081,35 @@ def run_worker(worker_id: str, capability: str) -> None:
                 if stale_message is None:
                     break
 
-                recovery_queue = queue_for_message(stale_message)
+                try:
+                    stale_job = json.loads(stale_message)
+                except Exception:
+                    stale_job = {}
 
-                redis_client.lpush(
-                    recovery_queue,
-                    stale_message,
-                )
+                stale_job_type = str(stale_job.get("job_type") or "").strip()
+                stale_req_cap = str(stale_job.get("required_capability") or "").strip()
+
+                if stale_job_type == "stress_test" or stale_req_cap == "stress_test":
+                    # Mark FAILED and release governor (NO auto-requeue for stress jobs)
+                    jid = stale_job.get("job_id")
+                    if jid:
+                        s_key = f"stress_job:{jid}"
+                        raw_s = redis_client.get(s_key)
+                        s = json.loads(raw_s) if raw_s else {}
+                        s["status"] = "FAILED"
+                        s["finished_at"] = time.time()
+                        s["error_safe"] = "Tiến trình worker bị gián đoạn bất thường từ phiên trước."
+                        redis_client.set(s_key, json.dumps(s), ex=86400)
+                        try:
+                            from backend.core.security.stress_governor import StressSlotGovernor
+                        except ImportError:
+                            from core.security.stress_governor import StressSlotGovernor
+                        StressSlotGovernor.release_by_job(redis_client, uid, jid)
+                    recovered += 1
+                    continue
+
+                recovery_queue = queue_for_message(stale_message)
+                redis_client.lpush(recovery_queue, stale_message)
                 recovered += 1
 
             if recovered:
@@ -1028,12 +1215,21 @@ def run_worker(worker_id: str, capability: str) -> None:
             write_heartbeat()
 
             try:
-                execute_job(
-                    job_id,
-                    job_data,
-                    redis_client,
-                    worker_id,
-                )
+                job_type = str(job_data.get("job_type") or "").strip()
+                if job_type == "stress_test" or required_capability == "stress_test":
+                    execute_stress_job(
+                        job_id,
+                        job_data,
+                        redis_client,
+                        worker_id,
+                    )
+                else:
+                    execute_job(
+                        job_id,
+                        job_data,
+                        redis_client,
+                        worker_id,
+                    )
 
                 # ACK chỉ sau khi worker xử lý xong job.
                 redis_client.lrem(

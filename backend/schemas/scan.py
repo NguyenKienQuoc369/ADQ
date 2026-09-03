@@ -36,5 +36,8 @@ class StressRequest(BaseModel):
     custom_cookies: Optional[Dict[str, str]] = None
     project_id: Optional[str] = None
 
+class StressVerificationRequest(BaseModel):
+    target_url: str
+
 class ApkRequest(BaseModel):
     apk_path: str

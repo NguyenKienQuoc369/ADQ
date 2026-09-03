@@ -710,33 +710,24 @@ export async function detectWaf(targetUrl: string) {
   });
 }
 
-export async function runStressTest(payload: {
-  target_url: string;
-  target_requests?: number;
-  duration?: string | number;
-  bypass_code?: string;
-  waf_type?: string;
-  custom_headers?: Record<string, string>;
-  project_id?: string;
-}) {
-  const formattedPayload = {
-    target_url: payload.target_url,
-    target_requests: Number(payload.target_requests ?? 1000),
-    duration: typeof payload.duration === "number" ? `${payload.duration}s` : String(payload.duration || "5s"),
-    bypass_code: String(payload.bypass_code || ""),
-    waf_type: String(payload.waf_type || "standard"),
-    custom_headers: payload.custom_headers || null,
-    project_id: payload.project_id || null,
-  };
 
-  return requestJson<any>("/api/stress", {
-    method: "POST",
-    body: JSON.stringify(formattedPayload),
-  });
-}
 
 export async function discoverEndpoints(targetUrl: string) {
   return requestJson<{ ok: boolean; target: string; total_found: number; endpoints: string[] }>("/api/stress/discover-endpoints", {
+    method: "POST",
+    body: JSON.stringify({ target_url: targetUrl }),
+  });
+}
+
+export async function startStressVerification(targetUrl: string) {
+  return requestJson<{ ok: boolean; target: string; verification_token: string; meta_tag: string; expires_in: number; verified: boolean }>("/api/stress/verification/start", {
+    method: "POST",
+    body: JSON.stringify({ target_url: targetUrl }),
+  });
+}
+
+export async function checkStressVerification(targetUrl: string) {
+  return requestJson<{ ok: boolean; verified: boolean; target: string; message: string; verified_at?: number }>("/api/stress/verification/check", {
     method: "POST",
     body: JSON.stringify({ target_url: targetUrl }),
   });
@@ -749,19 +740,74 @@ export async function verifyBypass(payload: { target_url: string; bypass_code: s
   });
 }
 
-export async function streamStressTest(
-  payload: {
-    target_url: string;
+
+
+export interface StressJobState {
+  job_id: string;
+  user_id?: string;
+  tier?: string;
+  target_url?: string;
+  target_requests?: number;
+  duration_sec?: number;
+  target_rps?: number;
+  waf_type?: string;
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
+  progress?: number;
+  metrics?: {
+    total_requests?: number;
     target_requests?: number;
-    duration?: string | number;
-    bypass_code?: string;
-    waf_type?: string;
-    custom_headers?: Record<string, string>;
-  },
-  onData: (chunk: any) => void
-) {
+    target_rps?: number;
+    status_200?: number;
+    status_403_waf_blocked?: number;
+    status_429_rate_limited?: number;
+    status_500_crashed?: number;
+    other_status?: number;
+    rps?: number;
+    p95_latency?: string;
+  };
+  created_at?: number;
+  started_at?: number | null;
+  finished_at?: number | null;
+  error_safe?: string | null;
+  done?: boolean;
+}
+
+export async function createStressJob(payload: {
+  target_url: string;
+  target_requests?: number;
+  duration?: string | number;
+  bypass_code?: string;
+  waf_type?: string;
+  custom_headers?: Record<string, string>;
+}): Promise<{ ok: boolean; job_id: string; status: string; message?: string }> {
+  const formattedPayload = {
+    target_url: payload.target_url,
+    target_requests: Number(payload.target_requests ?? 1000),
+    duration: typeof payload.duration === "number" ? `${payload.duration}s` : String(payload.duration || "5s"),
+    bypass_code: String(payload.bypass_code || ""),
+    waf_type: String(payload.waf_type || "standard"),
+    custom_headers: payload.custom_headers || null,
+  };
+
+  return requestJson<{ ok: boolean; job_id: string; status: string; message?: string }>("/api/stress/jobs", {
+    method: "POST",
+    body: JSON.stringify(formattedPayload),
+  });
+}
+
+export async function getStressJob(jobId: string): Promise<StressJobState> {
+  return requestJson<StressJobState>(`/api/stress/${encodeURIComponent(jobId)}`, {
+    method: "GET",
+  });
+}
+
+export async function streamStressJob(
+  jobId: string,
+  onData: (chunk: StressJobState) => void,
+  signal?: AbortSignal
+): Promise<void> {
   const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
-  const url = `${backendUrl}/api/stress/stream`;
+  const url = `${backendUrl}/api/stress/${encodeURIComponent(jobId)}/stream`;
 
   let authHeader: Record<string, string> = {};
   if (typeof window !== "undefined") {
@@ -775,16 +821,21 @@ export async function streamStressTest(
   }
 
   const response = await fetch(url, {
-    method: "POST",
+    method: "GET",
     headers: {
-      "Content-Type": "application/json",
+      Accept: "text/event-stream",
       ...authHeader,
     },
-    body: JSON.stringify(payload),
+    signal,
   });
 
   if (!response.ok || !response.body) {
-    throw new Error(`Stream failed with status ${response.status}`);
+    let errorMsg = `Stream failed with status ${response.status}`;
+    try {
+      const errJson = await response.json();
+      if (errJson?.detail) errorMsg = errJson.detail;
+    } catch {}
+    throw new Error(errorMsg);
   }
 
   const reader = response.body.getReader();

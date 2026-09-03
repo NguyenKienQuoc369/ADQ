@@ -69,7 +69,7 @@ class WAFFingerprintDetector:
     def __init__(self, timeout: int = 5):
         self.timeout = timeout
 
-    def detect_waf(self, target_url: str) -> Dict[str, Any]:
+    def detect_waf(self, target_url: str, pinned_ip: Optional[str] = None) -> Dict[str, Any]:
         """
         Runs 2-phase WAF Fingerprint detection:
         Phase 1: Passive Header & Cookie Analysis
@@ -100,11 +100,30 @@ class WAFFingerprintDetector:
             "Upgrade-Insecure-Requests": "1"
         }
 
+        # Initialize safe pinned session if pinned_ip or resolve
+        session = None
+        actual_verify = True
+        try:
+            from backend.core.security.ssrf_guard import resolve_and_validate_target, create_pinned_session, is_dev_private_allowed
+        except ImportError:
+            from core.security.ssrf_guard import resolve_and_validate_target, create_pinned_session, is_dev_private_allowed
+
+        try:
+            if not pinned_ip:
+                clean_url, resolved_ips = resolve_and_validate_target(clean_url)
+                pinned_ip = resolved_ips[0]
+            session = create_pinned_session(pinned_ip)
+            actual_verify = not is_dev_private_allowed()
+        except Exception as e:
+            evidence["resolve_error"] = str(e)
+
+        client = session if session else requests
+
         # ---------------------------------------------------------------------
         # Phase 1: Passive Analysis
         # ---------------------------------------------------------------------
         try:
-            r_passive = requests.get(clean_url, headers=headers_default, timeout=self.timeout, verify=False)
+            r_passive = client.get(clean_url, headers=headers_default, timeout=self.timeout, verify=actual_verify, allow_redirects=False)
             self._analyze_response(r_passive, detected_wafs, evidence, phase="Passive")
         except Exception as e:
             evidence["passive_error"] = str(e)
@@ -114,7 +133,7 @@ class WAFFingerprintDetector:
         # ---------------------------------------------------------------------
         provoke_url = f"{clean_url.rstrip('/')}/?adq_probe=<script>alert('ADQ_WAF_PROBE')</script>&sqli=' OR 1=1--"
         try:
-            r_active = requests.get(provoke_url, headers=headers_default, timeout=self.timeout, verify=False)
+            r_active = client.get(provoke_url, headers=headers_default, timeout=self.timeout, verify=actual_verify, allow_redirects=False)
             if r_active.status_code in (403, 406, 429, 503):
                 self._analyze_response(r_active, detected_wafs, evidence, phase="Active (HTTP 403 Block Page)")
         except Exception as e:

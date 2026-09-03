@@ -145,6 +145,23 @@ services:
     networks:
       - adq_net
 
+  worker-stress:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.backend
+    container_name: adq_worker_stress
+    restart: always
+    command: python3 runtime_services.py --role worker --worker-id worker-stress-1 --capability stress_test
+    environment:
+      - WORKER_CAPABILITIES=stress_test
+    env_file:
+      - .env
+    depends_on:
+      - master-node
+      - redis
+    networks:
+      - adq_net
+
   web-dashboard:
     build:
       context: ./frontend

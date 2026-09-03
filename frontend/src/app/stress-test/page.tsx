@@ -23,6 +23,9 @@ import {
   Crosshair,
   RefreshCw,
   Search,
+  Copy,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getEntitlements } from "@/lib/entitlements";
@@ -31,7 +34,12 @@ import {
   saveProjectDetail,
   detectWaf,
   discoverEndpoints,
-  streamStressTest,
+  createStressJob,
+  getStressJob,
+  streamStressJob,
+  StressJobState,
+  startStressVerification,
+  checkStressVerification,
 } from "@/lib/api";
 
 interface DiscoveredEndpoint {
@@ -140,6 +148,14 @@ function StressTestContent() {
   const [discoveredEndpoints, setDiscoveredEndpoints] = useState<DiscoveredEndpoint[]>([]);
 
   const [isRunning, setIsRunning] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<"IDLE" | "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED">("IDLE");
+  const [jobError, setJobError] = useState<string | null>(null);
+  const [isDispatching, setIsDispatching] = useState<boolean>(false);
+  const reconnectAttemptsRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isTerminalRef = useRef<boolean>(false);
+
   const [isSaving, setIsSaving] = useState(false);
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
 
@@ -155,12 +171,278 @@ function StressTestContent() {
     targetTemp: 38,
   });
 
+  // Ownership Verification (Meta Tag)
+  const [verificationStatus, setVerificationStatus] = useState<"UNVERIFIED" | "VERIFYING" | "VERIFIED" | "FAILED">("UNVERIFIED");
+  const [verificationToken, setVerificationToken] = useState<string>("");
+  const [metaTagString, setMetaTagString] = useState<string>("");
+  const [isStartingVerification, setIsStartingVerification] = useState<boolean>(false);
+  const [isCheckingVerification, setIsCheckingVerification] = useState<boolean>(false);
+  const [verificationMessage, setVerificationMessage] = useState<string>("");
+  const [isCopiedMeta, setIsCopiedMeta] = useState<boolean>(false);
+
+  useEffect(() => {
+    setVerificationStatus("UNVERIFIED");
+    setVerificationToken("");
+    setMetaTagString("");
+    setVerificationMessage("");
+  }, [baseTarget]);
+
+  const handleStartVerification = async () => {
+    const clean = cleanBaseUrl(baseTarget);
+    if (!clean) {
+      alert("Vui lòng nhập tên miền mục tiêu.");
+      return;
+    }
+    setIsStartingVerification(true);
+    appendLog(`[OWNERSHIP] Đang khởi tạo mã xác minh Meta Tag cho ${clean}...`);
+    try {
+      const res = await startStressVerification(clean);
+      if (res?.ok && res.meta_tag) {
+        setMetaTagString(res.meta_tag);
+        setVerificationToken(res.verification_token);
+        setVerificationStatus(res.verified ? "VERIFIED" : "UNVERIFIED");
+        appendLog(`[OWNERSHIP] Đã cấp thẻ Meta Tag xác minh. Vui lòng thêm vào thẻ <head> của website.`);
+      }
+    } catch (e: any) {
+      appendLog(`[OWNERSHIP LỖI] ${e?.message || "Không thể khởi tạo mã xác minh"}`);
+    } finally {
+      setIsStartingVerification(false);
+    }
+  };
+
+  const handleCheckVerification = async () => {
+    const clean = cleanBaseUrl(baseTarget);
+    if (!clean) {
+      alert("Vui lòng nhập tên miền mục tiêu.");
+      return;
+    }
+    setIsCheckingVerification(true);
+    setVerificationStatus("VERIFYING");
+    appendLog(`[OWNERSHIP] Đang kết nối tới ${clean} để quét thẻ Meta Tag xác minh...`);
+    try {
+      const res = await checkStressVerification(clean);
+      if (res?.verified) {
+        setVerificationStatus("VERIFIED");
+        setVerificationMessage(res.message || "Đã xác minh quyền sở hữu thành công.");
+        appendLog(`[OWNERSHIP THÀNH CÔNG] Đã xác minh quyền sở hữu mục tiêu ${clean}! Đã mở khóa bắn tải.`);
+      } else {
+        setVerificationStatus("FAILED");
+        setVerificationMessage(res.message || "Không tìm thấy thẻ Meta Tag hợp lệ.");
+        appendLog(`[OWNERSHIP THẤT BẠI] ${res.message || "Không tìm thấy thẻ Meta Tag"}`);
+      }
+    } catch (e: any) {
+      setVerificationStatus("FAILED");
+      setVerificationMessage(e?.message || "Lỗi kiểm tra xác minh");
+      appendLog(`[OWNERSHIP LỖI] ${e?.message || "Lỗi kiểm tra xác minh"}`);
+    } finally {
+      setIsCheckingVerification(false);
+    }
+  };
+
+  const copyMetaTag = () => {
+    if (!metaTagString) return;
+    navigator.clipboard.writeText(metaTagString);
+    setIsCopiedMeta(true);
+    setTimeout(() => setIsCopiedMeta(false), 2000);
+  };
+
   const [logs, setLogs] = useState<string[]>([
     `[ADQ-SOC] Hệ thống Stress Test Engine đã kết nối SOC Cluster.`,
   ]);
 
+  // Secret-Safe localStorage helpers: ONLY stores jobId and target, ZERO secrets
+  const saveActiveJob = (jobId: string, target: string) => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem("adq_active_stress_job", JSON.stringify({ jobId, target, startedAt: Date.now() }));
+    } catch {}
+  };
+
+  const clearActiveJob = () => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.removeItem("adq_active_stress_job");
+    } catch {}
+  };
+
+  const applyJobState = (state: StressJobState) => {
+    if (!state) return;
+    setJobStatus(state.status);
+    if (state.error_safe) {
+      setJobError(state.error_safe);
+    }
+
+    const raw = state.metrics || {};
+    const curTotal = Number(raw.total_requests || 0);
+    const curRps = Number(raw.rps || 0);
+    const s200 = Number(raw.status_200 || 0);
+    const s403 = Number(raw.status_403_waf_blocked || 0);
+    const s429 = Number(raw.status_429_rate_limited || 0);
+    const s500 = Number(raw.status_500_crashed || 0);
+    const p95 = String(raw.p95_latency || "0ms");
+
+    const totalResp = s200 + s403 + s429 + s500;
+    if (totalResp > 0) {
+      passRatioRef.current = s200 / totalResp;
+    }
+
+    const targetTotal = Number(state.target_requests || totalRequestsInput || 1000);
+    const health = Math.max(10, Math.floor(100 - (s200 / Math.max(1, curTotal || targetTotal)) * 85));
+    const temp = Math.min(99, Math.floor(38 + (s200 / Math.max(1, curTotal || targetTotal)) * 60));
+
+    setMetrics({
+      totalRequests: curTotal,
+      actualRps: curRps,
+      status200: s200,
+      status403WafBlocked: s403,
+      status429RateLimited: s429,
+      status500Crashed: s500,
+      p95LatencyMs: p95,
+      targetHealth: health,
+      targetTemp: temp,
+    });
+  };
+
+  const connectJobStream = async (jobId: string) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const ac = new AbortController();
+    abortControllerRef.current = ac;
+
+    try {
+      await streamStressJob(
+        jobId,
+        (chunk: StressJobState) => {
+          applyJobState(chunk);
+          reconnectAttemptsRef.current = 0;
+
+          if (chunk.status === "QUEUED") {
+            setJobStatus("QUEUED");
+          } else if (chunk.status === "RUNNING") {
+            setJobStatus("RUNNING");
+            setIsRunning(true);
+            isRunningRef.current = true;
+          } else if (chunk.status === "COMPLETED") {
+            setJobStatus("COMPLETED");
+            setIsRunning(false);
+            isRunningRef.current = false;
+            isTerminalRef.current = true;
+            clearActiveJob();
+            appendLog(`[HOÀN TẤT] Tiến trình ${jobId} hoàn thành thành công.`);
+            const m = chunk.metrics || {};
+            appendLog(`[KẾT QUẢ THẬT] 200 OK: ${(m.status_200 || 0).toLocaleString()} | 403 Blocked: ${(m.status_403_waf_blocked || 0).toLocaleString()} | 429 Limit: ${(m.status_429_rate_limited || 0).toLocaleString()} | 500 Crash: ${(m.status_500_crashed || 0).toLocaleString()} | P95: ${m.p95_latency || "0ms"}`);
+          } else if (chunk.status === "FAILED") {
+            setJobStatus("FAILED");
+            setIsRunning(false);
+            isRunningRef.current = false;
+            isTerminalRef.current = true;
+            setJobError(chunk.error_safe || "Tiến trình kiểm thử tải thất bại.");
+            clearActiveJob();
+            appendLog(`[THẤT BẠI] Tiến trình ${jobId}: ${chunk.error_safe || "Lỗi không xác định"}`);
+          }
+        },
+        ac.signal
+      );
+    } catch (err: any) {
+      if (ac.signal.aborted) return;
+
+      // SSE disconnected or network error: do NOT mark FAILED immediately
+      if (!isTerminalRef.current) {
+        try {
+          const latest = await getStressJob(jobId);
+          if (latest) {
+            applyJobState(latest);
+            if (latest.status === "COMPLETED" || latest.status === "FAILED") {
+              setIsRunning(false);
+              isRunningRef.current = false;
+              isTerminalRef.current = true;
+              clearActiveJob();
+              return;
+            }
+          }
+        } catch {}
+
+        // Bounded reconnect policy: max 5 attempts with backoff
+        if (reconnectAttemptsRef.current < 5) {
+          reconnectAttemptsRef.current += 1;
+          const delay = Math.min(1000 * 2 ** (reconnectAttemptsRef.current - 1), 5000);
+          appendLog(`[SSE MẤT KẾT NỐI] Tự động kết nối lại lần ${reconnectAttemptsRef.current}/5 sau ${delay}ms...`);
+          setTimeout(() => {
+            if (!isTerminalRef.current) {
+              connectJobStream(jobId);
+            }
+          }, delay);
+        } else {
+          appendLog(`[SSE CẢNH BÁO] Không thể duy trì kết nối SSE sau 5 lần thử. Kiểm tra trạng thái cuối cùng...`);
+          try {
+            const finalSnap = await getStressJob(jobId);
+            if (finalSnap) {
+              applyJobState(finalSnap);
+              if (finalSnap.status === "COMPLETED" || finalSnap.status === "FAILED") {
+                setIsRunning(false);
+                isRunningRef.current = false;
+                isTerminalRef.current = true;
+                clearActiveJob();
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     setMounted(true);
+
+    // F5 / Refresh Recovery
+    const checkSavedJob = async () => {
+      if (typeof window === "undefined") return;
+      try {
+        const raw = localStorage.getItem("adq_active_stress_job");
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (!saved?.jobId) {
+          clearActiveJob();
+          return;
+        }
+
+        appendLog(`[HỆ THỐNG] Phát hiện phiên bắn tải đang hoạt động: ${saved.jobId}. Đang khôi phục trạng thái...`);
+        const state = await getStressJob(saved.jobId);
+        if (state) {
+          setActiveJobId(state.job_id);
+          applyJobState(state);
+          if (state.status === "QUEUED" || state.status === "RUNNING") {
+            setIsRunning(true);
+            isRunningRef.current = true;
+            isTerminalRef.current = false;
+            appendLog(`[HỆ THỐNG] Đang tiếp tục kết nối SSE với tiến trình ${state.job_id}...`);
+            connectJobStream(state.job_id);
+          } else if (state.status === "COMPLETED") {
+            setIsRunning(false);
+            isRunningRef.current = false;
+            clearActiveJob();
+            appendLog(`[HỆ THỐNG] Phiên ${state.job_id} đã hoàn tất.`);
+          } else if (state.status === "FAILED") {
+            setIsRunning(false);
+            isRunningRef.current = false;
+            setJobError(state.error_safe || "Tiến trình thất bại");
+            clearActiveJob();
+            appendLog(`[HỆ THỐNG] Phiên ${state.job_id} thất bại: ${state.error_safe || "Lỗi không xác định"}`);
+          }
+        }
+      } catch (err: any) {
+        clearActiveJob();
+      }
+    };
+
+    checkSavedJob();
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, []);
 
   const calculatedRps = useMemo(() => {
@@ -711,11 +993,11 @@ function StressTestContent() {
     };
   }, [wafDetected]);
 
-  // 4. THỰC THI BẮN TẢI ĐỒNG BỘ 100% VỚI STREAM BACKEND
+  // 4. THỰC THI BẮN TẢI ASYNC DEDICATED WORKER (PHASE 2C)
   const executeStressTest = async () => {
-    if (!targetFullUrl) return;
-    setIsRunning(true);
-    isRunningRef.current = true;
+    if (!targetFullUrl || isRunning || isDispatching) return;
+    setIsDispatching(true);
+    setJobError(null);
     const startTs = Date.now();
     const targetTotal = Number(totalRequestsInput || 30000);
     const durSeconds = Number(durationInput || 15);
@@ -755,84 +1037,32 @@ function StressTestContent() {
         custom_headers: parsedHeaders,
       };
 
-      appendLog(`[ADQ CLUSTER] Đang stream trực tiếp tiến độ thực tế từ Worker Threads...`);
+      appendLog(`[DISPATCH] Đang gửi yêu cầu khởi tạo tới Dedicated Stress Worker...`);
+      const res = await createStressJob(payload);
 
-      let latestMetrics: StressMetrics = {
-        totalRequests: 0,
-        actualRps: 0,
-        status200: 0,
-        status403WafBlocked: 0,
-        status429RateLimited: 0,
-        status500Crashed: 0,
-        p95LatencyMs: "0ms",
-        targetHealth: 100,
-        targetTemp: 38,
-      };
-
-      // ĐỌC VÀ CẬP NHẬT TRỰC TIẾP TỪNG GÓI TIN STREAM TỪ BACKEND
-      await streamStressTest(payload, (chunk: any) => {
-        const raw = chunk?.metrics || chunk || {};
-
-        const curTotal = Number(raw.total_requests || 0);
-        const curRps = Number(raw.rps || 0);
-        const s200 = Number(raw.status_200 || 0);
-        const s403 = Number(raw.status_403_waf_blocked || 0);
-        const s429 = Number(raw.status_429_rate_limited || 0);
-        const s500 = Number(raw.status_500_crashed || 0);
-        const p95 = String(raw.p95_latency || "0ms");
-
-        // Cập nhật tỷ lệ tia laser tức thời từ dữ liệu stream thật
-        const totalResp = s200 + s403 + s429 + s500;
-        if (totalResp > 0) {
-          passRatioRef.current = s200 / totalResp;
-        }
-
-        const health = Math.max(10, Math.floor(100 - (s200 / Math.max(1, curTotal || targetTotal)) * 85));
-        const temp = Math.min(99, Math.floor(38 + (s200 / Math.max(1, curTotal || targetTotal)) * 60));
-
-        latestMetrics = {
-          totalRequests: curTotal,
-          actualRps: curRps,
-          status200: s200,
-          status403WafBlocked: s403,
-          status429RateLimited: s429,
-          status500Crashed: s500,
-          p95LatencyMs: p95,
-          targetHealth: health,
-          targetTemp: temp,
-        };
-
-        // ĐỒNG BỘ 100% CÁC THẺ METRICS THEO THỜI GIAN THỰC
-        setMetrics(latestMetrics);
-      });
-
-      // GHI NHẬN LOG KẾT QUẢ CUỐI CÙNG BẰNG CHÍNH XÁC SỐ LIỆU ĐÃ STREAM
-      appendLog(`[HOÀN TẤT] Tổng ${latestMetrics.totalRequests.toLocaleString()} requests kết thúc trong ${((Date.now() - startTs) / 1000).toFixed(1)}s.`);
-      appendLog(`[KẾT QUẢ THẬT] 200 OK: ${latestMetrics.status200.toLocaleString()} | 403 Blocked: ${latestMetrics.status403WafBlocked.toLocaleString()} | 429 Limit: ${latestMetrics.status429RateLimited.toLocaleString()} | 500 Crash: ${latestMetrics.status500Crashed.toLocaleString()} | P95: ${latestMetrics.p95LatencyMs}`);
-
-      if (projectId) {
-        saveProjectDetail(projectId, {
-          stressTest: {
-            baseTarget,
-            selectedEndpoint,
-            totalRequestsInput: targetTotal,
-            durationInput: durSeconds,
-            concurrencyVUs,
-            bypassCode,
-            wafName,
-            wafDetected,
-            metrics: latestMetrics,
-            discoveredEndpoints,
-            logs: [...logs, `[HOÀN TẤT] Đã bắn ${latestMetrics.totalRequests.toLocaleString()} requests.`].slice(-50),
-            updatedAt: new Date().toISOString(),
-          },
-        }).catch(() => {});
+      if (res?.ok && res.job_id) {
+        const jId = res.job_id;
+        setActiveJobId(jId);
+        setJobStatus("QUEUED");
+        setIsRunning(true);
+        isRunningRef.current = true;
+        isTerminalRef.current = false;
+        saveActiveJob(jId, cleanBaseUrl(baseTarget));
+        appendLog(`[QUEUE ACCEPTED] Tiến trình ${jId} đã được đưa vào hàng đợi Dedicated Worker (202 Accepted).`);
+        appendLog(`[SSE STREAM] Đang kết nối kênh sự kiện realtime /api/stress/${jId}/stream...`);
+        connectJobStream(jId);
+      } else {
+        throw new Error(res?.message || "Không nhận được xác nhận từ hệ thống hàng đợi");
       }
     } catch (e: any) {
-      appendLog(`[LỖI THỰC THI] ${e?.message || "Kiểm thử thất bại"}`);
-    } finally {
+      const errMsg = e?.message || "Kiểm thử thất bại";
+      setJobError(errMsg);
+      setJobStatus("FAILED");
       setIsRunning(false);
       isRunningRef.current = false;
+      appendLog(`[LỖI THỰC THI] ${errMsg}`);
+    } finally {
+      setIsDispatching(false);
     }
   };
 
@@ -872,47 +1102,46 @@ function StressTestContent() {
     return (
       <DashboardShell area="dashboard">
         <div className="flex min-h-[70vh] items-center justify-center px-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-amber-500/20 bg-slate-950/80 p-8 text-center shadow-2xl">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10">
-              <Flame className="h-7 w-7 text-amber-400" />
+          <div className="w-full max-w-xl rounded-lg border border-[#222222] bg-[#000000] p-8 text-center shadow-xl">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900">
+              <Flame className="h-6 w-6 text-white" />
             </div>
 
-            <Badge className="mb-4 border border-amber-500/30 bg-amber-950/40 text-amber-300">
-              TÍNH NĂNG DÀNH CHO GÓI PRO / PRO MAX
-            </Badge>
+            <span className="inline-block mb-3 border border-neutral-700 bg-neutral-800 text-white text-[10px] font-mono px-2.5 py-0.5 rounded-full">
+              DÀNH CHO GÓI PRO / PRO MAX
+            </span>
 
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-xl font-semibold text-white">
               Stress Test L7 chưa khả dụng trên gói FREE
             </h1>
 
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400">
+            <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-neutral-400">
               Gói FREE không bao gồm Stress Test, kiểm tra WAF hoặc bypass validation.
-              Nâng cấp lên PRO để sử dụng 1 lượt mỗi ngày, hoặc PRO MAX để sử dụng
-              tối đa 10 lượt mỗi ngày.
+              Nâng cấp lên PRO hoặc PRO MAX để kích hoạt kiểm thử chuyên sâu.
             </p>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-left">
-                <p className="text-xs font-semibold text-cyan-300">PRO</p>
-                <p className="mt-1 text-sm font-bold text-white">1 lượt Stress Test / ngày</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Bao gồm endpoint discovery, WAF detection và load testing.
+              <div className="rounded-md border border-[#222222] bg-[#0a0a0a] p-4 text-left">
+                <p className="text-[11px] font-mono uppercase text-neutral-400">Gói PRO</p>
+                <p className="mt-1 text-sm font-semibold text-white">1 lượt Stress Test / ngày</p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Endpoint discovery, WAF detection và load testing.
                 </p>
               </div>
 
-              <div className="rounded-xl border border-purple-500/20 bg-purple-950/20 p-4 text-left">
-                <p className="text-xs font-semibold text-purple-300">PRO MAX</p>
-                <p className="mt-1 text-sm font-bold text-white">10 lượt Stress Test / ngày</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Hạn mức cao hơn cho kiểm thử chuyên sâu.
+              <div className="rounded-md border border-[#222222] bg-[#0a0a0a] p-4 text-left">
+                <p className="text-[11px] font-mono uppercase text-neutral-400">Gói PRO MAX</p>
+                <p className="mt-1 text-sm font-semibold text-white">10 lượt Stress Test / ngày</p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Hạn mức cao nhất cho kiểm thử hệ thống SOC.
                 </p>
               </div>
             </div>
 
-            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+            <div className="mt-6 flex flex-col justify-center gap-2.5 sm:flex-row">
               <Button
                 onClick={() => router.push("/dashboard/billing")}
-                className="bg-amber-500 text-slate-950 hover:bg-amber-400"
+                className="h-8 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md px-4 shadow-sm cursor-pointer"
               >
                 Nâng cấp gói PRO
               </Button>
@@ -920,7 +1149,7 @@ function StressTestContent() {
               <Button
                 variant="outline"
                 onClick={() => router.push("/dashboard")}
-                className="border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                className="h-8 border-[#333333] bg-[#111111] hover:bg-neutral-800 text-neutral-300 text-xs rounded-md px-4"
               >
                 Quay lại Dashboard
               </Button>
@@ -933,82 +1162,117 @@ function StressTestContent() {
 
   return (
     <DashboardShell area="dashboard">
-      <div className="space-y-6 text-slate-100 font-sans">
+      <div className="space-y-6 text-[#ededed] font-sans">
         {/* Header bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#222222] pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <Flame className="h-5 w-5 text-amber-500" /> Hệ Thống Stress Test L7 & Bypass WAF
+              <h1 className="text-xl font-semibold text-white tracking-tight flex items-center gap-2">
+                <Flame className="h-5 w-5 text-white" /> Stress Test L7 & Bypass WAF
               </h1>
               {projectId && (
-                <Badge className="text-[10px] font-mono border border-amber-500/30 text-amber-400 bg-amber-950/40" suppressHydrationWarning>
-                  DỰ ÁN: {projectName || projectId}
-                </Badge>
+                <span className="text-[10px] font-mono border border-neutral-700 bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full" suppressHydrationWarning>
+                  TARGET: {projectName || projectId}
+                </span>
               )}
-              <Badge className="text-[10px] font-mono border border-cyan-500/30 text-cyan-400 bg-cyan-950/40" suppressHydrationWarning>
-                GÓI: {userTier}
-              </Badge>
+              <span className="text-[10px] font-mono border border-neutral-700 bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full" suppressHydrationWarning>
+                TIER: {userTier}
+              </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Stream trực tiếp tiến độ bắn tải từ cụm Backend Cluster, tự động đồng bộ kết quả thực tế
+            <p className="text-xs text-neutral-400 mt-1">
+              Stream trực tiếp tiến độ kiểm thử tải từ cụm Backend Cluster, tự động đồng bộ kết quả thực tế.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <Button
-              className="h-8 text-xs border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60"
+              className="h-8 text-xs border border-[#333333] bg-[#111111] text-white hover:bg-neutral-800 rounded-md transition"
               disabled={isSaving || isRunning}
               onClick={handleSaveSession}
               size="sm"
               variant="outline"
             >
-              {isSaving ? <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : isSavedSuccess ? <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+              {isSaving ? (
+                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : isSavedSuccess ? (
+                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
+              ) : (
+                <Save className="h-3.5 w-3.5 mr-1.5" />
+              )}
               {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Kết Quả"}
             </Button>
-            <Button onClick={() => router.push("/dashboard/projects")} size="sm" variant="outline" className="h-8 text-xs border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800">
-              <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400" /> Phiên Mới
+            <Button
+              onClick={() => router.push("/dashboard/projects")}
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs border border-[#333333] bg-[#111111] text-white hover:bg-neutral-800 rounded-md"
+            >
+              <PlusCircle className="h-3.5 w-3.5 mr-1.5" /> Phiên Mới
             </Button>
           </div>
         </div>
 
         {/* 1. MỤC TIÊU & SCAN ENDPOINTS */}
-        <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
-          <CardHeader className="pb-3 border-b border-slate-800 flex flex-row items-center justify-between">
-            <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <Globe className="h-4 w-4 text-cyan-400" /> 1. Mục Tiêu & Rà Quét Điểm Nghẽn (Endpoints)
-            </CardTitle>
+        <div className="rounded-lg border border-[#222222] bg-[#000000]">
+          <div className="p-4 border-b border-[#222222] flex flex-row items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 font-mono flex items-center gap-2">
+              <Globe className="h-3.5 w-3.5 text-white" /> 1. Mục Tiêu & Rà Quét Endpoints
+            </h2>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={handleDetectWaf} disabled={isDetectingWaf || !baseTarget.trim()} className="h-7 text-[11px] border-amber-500/40 bg-amber-950/30 text-amber-300 hover:bg-amber-900/50">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDetectWaf}
+                disabled={isDetectingWaf || !baseTarget.trim()}
+                className="h-7 text-xs border-[#333333] bg-[#111111] hover:bg-neutral-800 text-white rounded-md"
+              >
                 {isDetectingWaf ? <LoaderCircle className="h-3 w-3 animate-spin mr-1" /> : <ShieldCheck className="h-3 w-3 mr-1" />}
                 Quét WAF
               </Button>
-              <Button size="sm" onClick={handleScanEndpoints} disabled={isScanningEndpoints || !baseTarget.trim()} className="h-7 text-[11px] bg-cyan-600 hover:bg-cyan-500 text-white">
+              <Button
+                size="sm"
+                onClick={handleScanEndpoints}
+                disabled={isScanningEndpoints || !baseTarget.trim()}
+                className="h-7 text-xs bg-white hover:bg-neutral-200 text-black font-medium rounded-md"
+              >
                 {isScanningEndpoints ? <LoaderCircle className="h-3 w-3 animate-spin mr-1" /> : <Search className="h-3 w-3 mr-1" />}
                 Quét Endpoints
               </Button>
             </div>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-6 space-y-4">
+          </div>
+          <div className="p-4 sm:p-5 space-y-4">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
-                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
                 <Input
-                  onChange={(e) => setBaseTarget(e.target.value)}
+                  onChange={(e) => {
+                    if (jobStatus !== "QUEUED" && jobStatus !== "RUNNING" && !isRunning) {
+                      setBaseTarget(e.target.value);
+                      if (jobStatus !== "IDLE") {
+                        setJobStatus("IDLE");
+                        setActiveJobId(null);
+                        clearActiveJob();
+                      }
+                    }
+                  }}
                   value={baseTarget}
-                  placeholder="Tên miền mục tiêu (vd: https://quoc-bank-v8-0.vercel.app)"
-                  disabled={isRunning}
-                  className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 placeholder:text-slate-600 text-xs sm:text-sm h-10 rounded-xl"
+                  placeholder="Tên miền mục tiêu (vd: https://example.com)"
+                  disabled={isRunning || isDispatching || jobStatus === "QUEUED" || jobStatus === "RUNNING"}
+                  className="pl-9 bg-[#0a0a0a] border-[#333333] text-white placeholder:text-neutral-500 text-xs h-9 rounded-md"
                 />
               </div>
               <div className="sm:w-1/2 relative">
-                <Crosshair className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-amber-400" />
+                <Crosshair className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
                 <Input
-                  onChange={(e) => setSelectedEndpoint(e.target.value)}
+                  onChange={(e) => {
+                    if (jobStatus !== "QUEUED" && jobStatus !== "RUNNING" && !isRunning) {
+                      setSelectedEndpoint(e.target.value);
+                    }
+                  }}
                   value={selectedEndpoint}
                   placeholder="Endpoint (vd: /api/v1/auth/login)"
-                  disabled={isRunning}
-                  className="pl-9 bg-slate-900/90 border-slate-800 text-amber-300 font-mono text-xs sm:text-sm h-10 rounded-xl"
+                  disabled={isRunning || isDispatching || jobStatus === "QUEUED" || jobStatus === "RUNNING"}
+                  className="pl-9 bg-[#0a0a0a] border-[#333333] text-white font-mono text-xs h-9 rounded-md"
                 />
               </div>
             </div>
@@ -1025,23 +1289,23 @@ function StressTestContent() {
                       <div
                         key={ep.id}
                         onClick={() => setSelectedEndpoint(ep.path)}
-                        className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                        className={`p-2.5 rounded-md border cursor-pointer transition flex items-center justify-between ${
                           isSelected
-                            ? "bg-amber-950/40 border-amber-500 ring-1 ring-amber-500/50"
-                            : "bg-slate-900/50 border-slate-800 hover:border-slate-700"
+                            ? "bg-neutral-900 border-white text-white"
+                            : "bg-[#0a0a0a] border-[#222222] hover:border-neutral-700 text-neutral-300"
                         }`}
                       >
                         <div className="space-y-0.5 min-w-0 pr-2">
                           <div className="flex items-center gap-2">
-                            <Badge className="text-[9px] font-mono px-1.5 py-0" variant={ep.method === "POST" ? "danger" : "default"}>
+                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded border border-neutral-700 bg-neutral-800 text-white">
                               {ep.method}
-                            </Badge>
-                            <span className="font-mono text-xs font-bold text-slate-200 truncate">{ep.path}</span>
+                            </span>
+                            <span className="font-mono text-xs font-medium text-white truncate">{ep.path}</span>
                           </div>
-                          <p className="text-[10px] text-slate-400 truncate">{ep.description}</p>
+                          <p className="text-[10px] text-neutral-500 truncate">{ep.description}</p>
                         </div>
                         <div className="text-right shrink-0">
-                          <span className={`text-xs font-mono font-bold ${ep.impactScore > 85 ? "text-rose-400" : ep.impactScore > 60 ? "text-amber-400" : "text-slate-400"}`}>
+                          <span className={`text-xs font-mono font-medium ${ep.impactScore > 85 ? "text-rose-400" : ep.impactScore > 60 ? "text-amber-400" : "text-neutral-400"}`}>
                             {ep.impactScore}% Điểm Nghẽn
                           </span>
                         </div>
@@ -1051,56 +1315,141 @@ function StressTestContent() {
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* 2. CẤU HÌNH TOÁN HỌC & WAF BYPASS CODE */}
+        {/* 2. XÁC MINH QUYỀN SỞ HỮU (META TAG) */}
+        <div className="rounded-lg border border-[#222222] bg-[#000000]">
+          <div className="p-4 border-b border-[#222222] flex flex-row items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 font-mono flex items-center gap-2">
+              <ShieldCheck className="h-3.5 w-3.5 text-white" /> 2. Xác Minh Quyền Sở Hữu Mục Tiêu (Meta Tag)
+            </h2>
+            <div className="flex items-center gap-2">
+              {verificationStatus === "VERIFIED" ? (
+                <span className="text-[10px] font-mono border border-emerald-700 bg-emerald-950 text-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" /> ĐÃ XÁC MINH
+                </span>
+              ) : verificationStatus === "FAILED" ? (
+                <span className="text-[10px] font-mono border border-rose-700 bg-rose-950 text-rose-300 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" /> CHƯA HỢP LỆ
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono border border-amber-700 bg-amber-950 text-amber-300 px-2.5 py-0.5 rounded-full">
+                  CẦN XÁC MINH
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="p-4 sm:p-5 space-y-3">
+            <p className="text-xs text-neutral-400 leading-relaxed">
+              Để ngăn chặn tấn công trái phép, bạn phải chứng minh quyền quản trị mục tiêu bằng cách chèn thẻ meta bảo mật do ADQ cấp vào thẻ <code className="text-white bg-neutral-900 px-1 py-0.5 rounded">&lt;head&gt;</code> của trang chủ website.
+            </p>
+
+            {metaTagString ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 bg-[#0a0a0a] border border-[#333333] rounded-md p-2.5 font-mono text-xs text-emerald-300 overflow-x-auto select-all">
+                    {metaTagString}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={copyMetaTag}
+                    className="h-9 text-xs border-[#333333] bg-[#111111] hover:bg-neutral-800 text-white rounded-md shrink-0"
+                  >
+                    <Copy className="h-3.5 w-3.5 mr-1" />
+                    {isCopiedMeta ? "Đã chép" : "Sao chép"}
+                  </Button>
+                </div>
+                {verificationMessage && (
+                  <p className={`text-xs font-mono ${verificationStatus === "VERIFIED" ? "text-emerald-400" : "text-rose-400"}`}>
+                    {verificationMessage}
+                  </p>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    onClick={handleCheckVerification}
+                    disabled={isCheckingVerification || !baseTarget.trim()}
+                    className="h-8 bg-emerald-500 hover:bg-emerald-600 text-black font-semibold text-xs rounded-md shadow-sm cursor-pointer"
+                  >
+                    {isCheckingVerification ? <LoaderCircle className="h-3 w-3 animate-spin mr-1.5" /> : <ShieldCheck className="h-3 w-3 mr-1.5" />}
+                    Kiểm Tra & Kích Hoạt Quyền Sở Hữu
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleStartVerification}
+                    disabled={isStartingVerification || !baseTarget.trim()}
+                    className="h-8 text-xs text-neutral-400 hover:text-white"
+                  >
+                    Cấp mã mới
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <Button
+                  size="sm"
+                  onClick={handleStartVerification}
+                  disabled={isStartingVerification || !baseTarget.trim()}
+                  className="h-8 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md shadow-sm cursor-pointer"
+                >
+                  {isStartingVerification ? <LoaderCircle className="h-3 w-3 animate-spin mr-1.5" /> : <ShieldCheck className="h-3 w-3 mr-1.5" />}
+                  Lấy Mã Xác Minh Meta Tag
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 3. CẤU HÌNH TOÁN HỌC & WAF BYPASS CODE */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
-            <CardHeader className="pb-3 border-b border-slate-800">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                <Sliders className="h-4 w-4 text-amber-400" /> 2. Cấu Hình Tải Toán Học (Total Reqs / Duration = RPS)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6 space-y-4">
+          <div className="rounded-lg border border-[#222222] bg-[#000000]">
+            <div className="p-4 border-b border-[#222222]">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 font-mono flex items-center gap-2">
+                <Sliders className="h-3.5 w-3.5 text-white" /> 3. Cấu Hình Tải Toán Học (Total Reqs / Duration = RPS)
+              </h3>
+            </div>
+            <div className="p-4 sm:p-5 space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Tổng Số Request Cần Bắn:</label>
+                  <label className="text-[11px] font-mono text-neutral-400">Tổng Số Request Cần Bắn:</label>
                   <Input
                     type="number"
                     value={totalRequestsInput}
                     onChange={(e) => setTotalRequestsInput(Number(e.target.value))}
                     disabled={isRunning}
-                    className="bg-slate-900 border-slate-800 text-white font-mono text-sm"
+                    className="bg-[#0a0a0a] border-[#333333] text-white font-mono text-xs h-9 rounded-md"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Thời Gian Duy Trì (Giây):</label>
+                  <label className="text-[11px] font-mono text-neutral-400">Thời Gian Duy Trì (Giây):</label>
                   <Input
                     type="number"
                     value={durationInput}
                     onChange={(e) => setDurationInput(Number(e.target.value))}
                     disabled={isRunning}
-                    className="bg-slate-900 border-slate-800 text-white font-mono text-sm"
+                    className="bg-[#0a0a0a] border-[#333333] text-white font-mono text-xs h-9 rounded-md"
                   />
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 grid grid-cols-2 gap-3 text-center">
+              <div className="p-3 rounded-md bg-[#0a0a0a] border border-[#222222] grid grid-cols-2 gap-3 text-center">
                 <div>
-                  <p className="text-[10px] text-slate-400 uppercase font-mono">Tốc Độ Bắn Tải (RPS)</p>
-                  <p className="text-xl font-bold text-amber-400 font-mono mt-0.5">{calculatedRps.toLocaleString()} <span className="text-xs text-slate-500 font-normal">req/s</span></p>
+                  <p className="text-[10px] text-neutral-500 uppercase font-mono">Tốc Độ Bắn Tải (RPS)</p>
+                  <p className="text-xl font-bold text-white font-mono mt-0.5">{calculatedRps.toLocaleString()} <span className="text-xs text-neutral-500 font-normal">req/s</span></p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-slate-400 uppercase font-mono">Luồng Mô Phỏng (VUs)</p>
-                  <p className="text-xl font-bold text-cyan-400 font-mono mt-0.5">{concurrencyVUs} <span className="text-xs text-slate-500 font-normal">VUs</span></p>
+                  <p className="text-[10px] text-neutral-500 uppercase font-mono">Luồng Mô Phỏng (VUs)</p>
+                  <p className="text-xl font-bold text-white font-mono mt-0.5">{concurrencyVUs} <span className="text-xs text-neutral-500 font-normal">VUs</span></p>
                 </div>
               </div>
 
               <div className="space-y-1">
-                <div className="flex justify-between text-xs text-slate-400">
+                <div className="flex justify-between text-xs text-neutral-400">
                   <span>Điều chỉnh số Máy Ảo Đồng Thời (VUs):</span>
-                  <span className="font-mono text-cyan-400">{concurrencyVUs} VUs</span>
+                  <span className="font-mono text-white">{concurrencyVUs} VUs</span>
                 </div>
                 <input
                   type="range"
@@ -1111,128 +1460,188 @@ function StressTestContent() {
                   onChange={(e) => setConcurrencyVUs(Number(e.target.value))}
                   disabled={isRunning}
                   suppressHydrationWarning
-                  className="w-full accent-cyan-500 cursor-pointer"
+                  className="w-full accent-white cursor-pointer"
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
-            <CardHeader className="pb-3 border-b border-slate-800 flex flex-row items-center justify-between">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                <Code2 className="h-4 w-4 text-emerald-400" /> 3. WAF Signature & Bypass Headers Code
-              </CardTitle>
-              <Badge className="text-[10px] font-mono" variant={wafDetected ? "danger" : "muted"}>
+          <div className="rounded-lg border border-[#222222] bg-[#000000]">
+            <div className="p-4 border-b border-[#222222] flex flex-row items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 font-mono flex items-center gap-2">
+                <Code2 className="h-3.5 w-3.5 text-white" /> 3. WAF Signature & Bypass Headers Code
+              </h3>
+              <span className="text-[10px] font-mono border border-neutral-700 bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full">
                 {wafName || "Chưa quét WAF"}
-              </Badge>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6 space-y-3">
+              </span>
+            </div>
+            <div className="p-4 sm:p-5 space-y-3">
               <div className="space-y-1">
-                <label className="text-[11px] text-slate-400 flex justify-between">
+                <label className="text-[11px] text-neutral-400 flex justify-between font-mono">
                   <span>Custom Evasion Headers / Code:</span>
-                  <span className="text-emerald-400 font-mono text-[10px]">JSON Format</span>
+                  <span className="text-neutral-500 text-[10px]">JSON Format</span>
                 </label>
                 <textarea
                   value={bypassCode}
                   onChange={(e) => setBypassCode(e.target.value)}
                   disabled={isRunning}
                   rows={6}
-                  className="w-full rounded-xl bg-slate-900/90 border border-slate-800 p-3 font-mono text-xs text-emerald-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-md bg-[#0a0a0a] border border-[#333333] p-3 font-mono text-xs text-white focus:outline-none focus:border-white"
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
         {/* 3. BẢN ĐỒ CHIẾN TRƯỜNG ADQ MASTER CLUSTER vs TARGET CIRCULAR SHIELD */}
-        <Card className="border border-cyan-500/20 bg-slate-950 shadow-2xl overflow-hidden">
-          <CardHeader className="py-3 px-4 border-b border-slate-800 flex flex-row items-center justify-between bg-slate-950/90">
-            <CardTitle className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
-              <Activity className="h-4 w-4 text-cyan-400 animate-pulse" /> ADQ Master Cluster vs Target Circular Shield
-            </CardTitle>
-            <div className="flex items-center gap-4 text-xs font-mono">
-              <span className="flex items-center gap-1.5 text-emerald-400">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" /> Tia Xanh: Vượt WAF / Đâm trúng Core
-              </span>
-              <span className="flex items-center gap-1.5 text-rose-400">
-                <span className="h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_8px_#ef4444]" /> Tia Đỏ: Bị Khiên WAF Chặn (403 Block)
-              </span>
+        <div className="rounded-lg border border-[#222222] bg-[#000000] overflow-hidden">
+          <div className="py-3 px-4 border-b border-[#222222] flex flex-row items-center justify-between bg-[#0a0a0a]">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-white flex items-center gap-2 font-mono">
+              <Activity className="h-3.5 w-3.5 text-white animate-pulse" /> ADQ Cluster vs Target Circular Shield
+            </h3>
+            <div className="flex items-center gap-3">
+              {activeJobId && (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-[#333333] bg-neutral-900 text-[10px] font-mono text-neutral-300">
+                  <span className="text-neutral-500">JOB:</span>
+                  <span className="text-cyan-400 font-semibold">{activeJobId}</span>
+                  {jobStatus === "QUEUED" && (
+                    <span className="text-amber-400 ml-1 font-bold animate-pulse">[QUEUED]</span>
+                  )}
+                  {jobStatus === "RUNNING" && (
+                    <span className="text-emerald-400 ml-1 font-bold animate-pulse">[RUNNING]</span>
+                  )}
+                  {jobStatus === "COMPLETED" && (
+                    <span className="text-blue-400 ml-1 font-bold">[COMPLETED]</span>
+                  )}
+                  {jobStatus === "FAILED" && (
+                    <span className="text-rose-400 ml-1 font-bold">[FAILED]</span>
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-4 text-xs font-mono">
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> Tia Xanh: Vượt WAF / Core 200 OK
+                </span>
+                <span className="flex items-center gap-1.5 text-rose-400">
+                  <span className="h-2 w-2 rounded-full bg-rose-500" /> Tia Đỏ: Bị WAF Chặn (403 Block)
+                </span>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent className="p-0 relative bg-[#020617]">
+          </div>
+          {jobError && (
+            <div className="mx-4 mt-3 p-2.5 rounded-md border border-rose-800/60 bg-rose-950/40 text-xs font-mono text-rose-300 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+                <span>{jobError}</span>
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setJobError(null)}
+                className="h-6 px-2 text-[10px] text-rose-400 hover:text-white"
+              >
+                Đóng
+              </Button>
+            </div>
+          )}
+          <div className="p-0 relative bg-[#000000]">
             <canvas ref={canvasRef} className="w-full h-96 block" />
 
             <div className="absolute bottom-4 right-4 z-20 flex items-center gap-3">
-              <div className="px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-md hidden sm:flex items-center gap-3 text-xs font-mono">
-                <span className="text-slate-400">Target HP: <strong className="text-rose-400">{metrics.targetHealth}%</strong></span>
-                <span className="text-slate-400">Temp: <strong className="text-amber-400">{metrics.targetTemp}°C</strong></span>
+              <div className="px-3 py-1.5 rounded-md bg-black/80 border border-[#222222] backdrop-blur-md hidden sm:flex items-center gap-3 text-xs font-mono">
+                <span className="text-neutral-400">Target HP: <strong className="text-white">{metrics.targetHealth}%</strong></span>
+                <span className="text-neutral-400">Temp: <strong className="text-amber-400">{metrics.targetTemp}°C</strong></span>
               </div>
               <Button
                 onClick={executeStressTest}
-                disabled={isRunning || !targetFullUrl}
-                className="h-11 px-7 bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-bold text-xs rounded-xl shadow-xl shadow-amber-950/80 cursor-pointer"
+                disabled={
+                  isRunning ||
+                  isDispatching ||
+                  jobStatus === "QUEUED" ||
+                  jobStatus === "RUNNING" ||
+                  !targetFullUrl ||
+                  verificationStatus !== "VERIFIED" ||
+                  isFreeTier
+                }
+                className={`h-9 px-6 font-semibold text-xs rounded-md shadow-sm transition ${
+                  verificationStatus === "VERIFIED" && !isRunning && !isDispatching && jobStatus !== "QUEUED" && jobStatus !== "RUNNING"
+                    ? "bg-white hover:bg-neutral-200 text-black cursor-pointer"
+                    : "bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700"
+                }`}
               >
-                {isRunning ? (
+                {isDispatching ? (
                   <>
-                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin" /> Đang Phóng Chùm Tải...
+                    <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Đang Khởi Tạo...
+                  </>
+                ) : jobStatus === "QUEUED" ? (
+                  <>
+                    <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin text-amber-400" /> Đang Xếp Hàng (QUEUED)...
+                  </>
+                ) : isRunning || jobStatus === "RUNNING" ? (
+                  <>
+                    <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin text-emerald-400" /> Đang Phóng Tải (RUNNING)...
+                  </>
+                ) : verificationStatus !== "VERIFIED" ? (
+                  <>
+                    <ShieldCheck className="h-3.5 w-3.5 mr-1.5" /> Cần Xác Minh Quyền Sở Hữu
                   </>
                 ) : (
                   <>
-                    <Zap className="h-4 w-4 mr-2" /> Khởi Động Đòn Bắn Tải
+                    <Zap className="h-3.5 w-3.5 mr-1.5 fill-black" /> Khởi Động Đòn Bắn Tải
                   </>
                 )}
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* 4 THẺ METRICS ĐO LƯỜNG NHANH CẬP NHẬT TRỰC TIẾP */}
+        {/* 4 THẺ METRICS ĐO LƯỜNG NHANH */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3.5">
-            <p className="text-[11px] text-slate-400">Tổng Request Đã Bắn</p>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3.5">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">Tổng Requests</p>
             <p className="text-xl font-bold text-white font-mono mt-1">
               {metrics.totalRequests.toLocaleString()}
             </p>
-          </Card>
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3.5">
-            <p className="text-[11px] text-slate-400">Vượt WAF Thành Công (200 OK)</p>
+          </div>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3.5">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">Vượt WAF (200 OK)</p>
             <p className="text-xl font-bold text-emerald-400 font-mono mt-1">
               {metrics.status200.toLocaleString()}
             </p>
-          </Card>
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3.5">
-            <p className="text-[11px] text-slate-400">Tường Lửa Chặn (HTTP 403)</p>
+          </div>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3.5">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">WAF Block (403)</p>
             <p className="text-xl font-bold text-rose-400 font-mono mt-1">
               {metrics.status403WafBlocked.toLocaleString()}
             </p>
-          </Card>
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3.5">
-            <p className="text-[11px] text-slate-400">Độ Trễ P95 (Latency)</p>
-            <p className="text-xl font-bold text-amber-400 font-mono mt-1">
+          </div>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3.5">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">Độ Trễ P95</p>
+            <p className="text-xl font-bold text-white font-mono mt-1">
               {metrics.p95LatencyMs}
             </p>
-          </Card>
+          </div>
         </div>
 
         {/* Live Terminal Logs */}
-        <Card className="border border-white/[0.08] bg-slate-950 shadow-2xl">
-          <CardHeader className="py-2.5 px-4 border-b border-slate-800/80 flex flex-row items-center justify-between">
-            <CardTitle className="text-xs font-mono font-bold text-slate-300 flex items-center gap-2">
-              <Terminal className="h-3.5 w-3.5 text-amber-400" /> Live Stress Engine Output
-            </CardTitle>
+        <div className="rounded-lg border border-[#222222] bg-[#000000]">
+          <div className="py-2.5 px-4 border-b border-[#222222] flex flex-row items-center justify-between">
+            <h3 className="text-xs font-mono font-medium text-neutral-400 flex items-center gap-2">
+              <Terminal className="h-3.5 w-3.5 text-white" /> Live Stress Engine Output
+            </h3>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setLogs([`[ADQ-SOC] Đã làm mới nhật ký kiểm thử.`])}
-              className="h-6 text-[10px] text-slate-400 hover:text-white px-2"
+              className="h-6 text-[10px] text-neutral-400 hover:text-white px-2"
             >
               <RefreshCw className="h-3 w-3 mr-1" /> Xóa Log
             </Button>
-          </CardHeader>
-          <CardContent className="p-3">
+          </div>
+          <div className="p-3">
             <div
               ref={logContainerRef}
-              className="h-36 overflow-y-auto font-mono text-xs text-slate-300 space-y-1 rounded-lg bg-black/70 p-3 border border-slate-900"
+              className="h-36 overflow-y-auto font-mono text-xs text-neutral-300 space-y-1 rounded-md bg-[#0a0a0a] p-3 border border-[#222222]"
             >
               {logs.map((log, index) => (
                 <div
@@ -1251,8 +1660,8 @@ function StressTestContent() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </DashboardShell>
   );
@@ -1260,7 +1669,7 @@ function StressTestContent() {
 
 export default function StressTestPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[#000000]" />}>
       <StressTestContent />
     </Suspense>
   );

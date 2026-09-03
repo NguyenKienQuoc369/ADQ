@@ -23,6 +23,13 @@ try:
     )
     from backend.core.recon_scan.waf_detector import WAFFingerprintDetector
     from backend.core.recon_scan.scanner import perform_real_dynamic_scan
+    from backend.core.security.ssrf_guard import (
+        validate_and_canonicalize_url,
+        resolve_and_validate_target,
+        create_pinned_session,
+        is_dev_private_allowed,
+        safe_http_fetch,
+    )
 except ImportError:
     from core.config import settings
     from schemas.scan import (
@@ -33,6 +40,13 @@ except ImportError:
     )
     from core.recon_scan.waf_detector import WAFFingerprintDetector
     from core.recon_scan.scanner import perform_real_dynamic_scan
+    from core.security.ssrf_guard import (
+        validate_and_canonicalize_url,
+        resolve_and_validate_target,
+        create_pinned_session,
+        is_dev_private_allowed,
+        safe_http_fetch,
+    )
 
 JOBS_STORAGE: Dict[str, Dict[str, Any]] = {}
 REDIS_URL = getattr(settings, "REDIS_URL", None) or os.getenv("REDIS_URL", "redis://adq_redis:6379/0")
@@ -279,11 +293,11 @@ class ScanService:
         if not raw:
             raise HTTPException(status_code=400, detail="Target URL is required")
 
-        clean = raw if raw.startswith(("http://", "https://")) else f"https://{raw}"
-        parsed = urllib.parse.urlparse(clean)
-        domain = parsed.netloc
-        scheme = parsed.scheme or "https"
-        base_origin = f"{scheme}://{domain}"
+        origin, resolved_ips = resolve_and_validate_target(raw)
+        base_origin = origin
+        pinned_ip = resolved_ips[0]
+        session = create_pinned_session(pinned_ip)
+        actual_verify = not is_dev_private_allowed()
 
         discovered: List[str] = [base_origin]
         exposed_paths = []
@@ -307,14 +321,10 @@ class ScanService:
             "/openapi.json"
         ]
 
-        import requests
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
         for path in common_paths:
             test_url = f"{base_origin}{path}"
             try:
-                r = requests.get(test_url, headers=headers, timeout=3, verify=False, allow_redirects=False)
+                r = session.get(test_url, headers=headers, timeout=3, verify=actual_verify, allow_redirects=False)
                 if r.status_code in (200, 301, 302, 401, 403):
                     if test_url not in discovered:
                         discovered.append(test_url)
@@ -324,7 +334,7 @@ class ScanService:
                 pass
 
         try:
-            resp = requests.get(base_origin, headers=headers, timeout=4, verify=False)
+            resp = session.get(base_origin, headers=headers, timeout=4, verify=actual_verify, allow_redirects=False)
             if resp.status_code == 200:
                 js_links = re.findall(r'''src=["']([^"']+\.js)["']''', resp.text)
                 for link in js_links:
@@ -351,8 +361,12 @@ class ScanService:
 
     @staticmethod
     def detect_waf(req: WafDetectRequest) -> Dict[str, Any]:
+        # Validate SSRF target trước khi fetch
+        origin, resolved_ips = resolve_and_validate_target(req.target_url)
+        pinned_ip = resolved_ips[0]
+
         detector = WAFFingerprintDetector()
-        waf_res = detector.detect_waf(req.target_url)
+        waf_res = detector.detect_waf(origin, pinned_ip=pinned_ip)
 
         detected_wafs = waf_res.get("detected_wafs", [])
         primary_waf = detected_wafs[0] if detected_wafs else "No WAF / Generic Server"
@@ -375,11 +389,159 @@ class ScanService:
             input_label = "AWS API Key (x-api-key)"
             input_placeholder = "Dán chuỗi API Key x-api-key"
 
+        waf_detected = bool(detected_wafs and not any(k in primary_lower for k in ["no waf", "generic"]))
+
         return {
             "ok": True,
-            "target_url": req.target_url,
+            "target_url": origin,
+            "waf_detected": waf_detected,
             "detected_waf": detected_slug,
             "waf_name": primary_waf,
             "input_label": input_label,
             "input_placeholder": input_placeholder,
         }
+
+    @staticmethod
+    def normalize_target_origin(raw_url: str) -> str:
+        origin, _, _ = validate_and_canonicalize_url(raw_url)
+        return origin
+
+    @staticmethod
+    def _get_verification_redis_key(user_id: str, normalized_origin: str) -> str:
+        import hashlib
+        target_hash = hashlib.sha256(normalized_origin.encode("utf-8")).hexdigest()[:16]
+        return f"stress_verification:{user_id}:{target_hash}"
+
+    @staticmethod
+    def start_stress_verification(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
+        import secrets
+        user_id = str(user.get("id") or user.get("sub") or "anonymous")
+        origin, _ = resolve_and_validate_target(target_url)
+        key = ScanService._get_verification_redis_key(user_id, origin)
+
+        # Kiểm tra token đã có sẵn chưa nếu còn hạn
+        token = None
+        if redis_client:
+            raw = redis_client.get(key)
+            if raw:
+                try:
+                    data = json.loads(raw)
+                    if data.get("token") and not data.get("verified"):
+                        token = data.get("token")
+                except Exception:
+                    pass
+
+        if not token:
+            token = f"adq-verify-{secrets.token_urlsafe(24)}"
+
+        ttl = 3600
+        state = {
+            "token": token,
+            "origin": origin,
+            "user_id": user_id,
+            "verified": False,
+            "created_at": time.time(),
+            "verified_at": None,
+        }
+
+        if redis_client:
+            redis_client.setex(key, ttl, json.dumps(state))
+
+        meta_tag = f'<meta name="adq-verification" content="{token}">'
+        return {
+            "ok": True,
+            "target": origin,
+            "verification_token": token,
+            "meta_tag": meta_tag,
+            "expires_in": ttl,
+            "verified": False,
+        }
+
+    @staticmethod
+    def check_stress_verification(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
+        import secrets
+        user_id = str(user.get("id") or user.get("sub") or "anonymous")
+        origin, _ = resolve_and_validate_target(target_url)
+        key = ScanService._get_verification_redis_key(user_id, origin)
+
+        state = None
+        if redis_client:
+            raw = redis_client.get(key)
+            if raw:
+                try:
+                    state = json.loads(raw)
+                except Exception:
+                    pass
+
+        if not state or not state.get("token"):
+            return {
+                "ok": False,
+                "verified": False,
+                "target": origin,
+                "message": "Chưa khởi tạo mã xác minh hoặc mã đã hết hạn. Vui lòng bấm Lấy mã mới.",
+            }
+
+        expected_token = state.get("token")
+
+        # Fetch homepage với SSRF safety guards & redirect revalidation
+        try:
+            status_code, html_content, _ = safe_http_fetch(origin, max_redirects=3, timeout=5.0, max_size=512*1024)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "verified": False,
+                "target": origin,
+                "message": f"Không thể kết nối an toàn đến trang chủ mục tiêu: {exc}",
+            }
+
+        # Parse meta tag
+        found_token = None
+        p1 = re.search(r'''<meta\s+[^>]*name=["']adq-verification["'][^>]*content=["']([^"']+)["']''', html_content, re.IGNORECASE)
+        if p1:
+            found_token = p1.group(1).strip()
+        else:
+            p2 = re.search(r'''<meta\s+[^>]*content=["']([^"']+)["'][^>]*name=["']adq-verification["']''', html_content, re.IGNORECASE)
+            if p2:
+                found_token = p2.group(1).strip()
+
+        if found_token and secrets.compare_digest(found_token, expected_token):
+            now = time.time()
+            state["verified"] = True
+            state["verified_at"] = now
+            if redis_client:
+                # Gia hạn TTL 3600s sau khi xác minh thành công
+                redis_client.setex(key, 3600, json.dumps(state))
+
+            return {
+                "ok": True,
+                "verified": True,
+                "target": origin,
+                "message": "Xác minh quyền sở hữu mục tiêu thành công! Bạn có thể bắt đầu kiểm thử tải.",
+                "verified_at": now,
+            }
+
+        return {
+            "ok": False,
+            "verified": False,
+            "target": origin,
+            "message": "Không tìm thấy thẻ meta xác minh hợp lệ trong trang chủ. Vui lòng kiểm tra lại thẻ <meta> trong thẻ <head>.",
+        }
+
+    @staticmethod
+    def is_stress_target_verified(user: Dict[str, Any], target_url: str) -> bool:
+        user_id = str(user.get("id") or user.get("sub") or "anonymous")
+        try:
+            origin = ScanService.normalize_target_origin(target_url)
+        except Exception:
+            return False
+        key = ScanService._get_verification_redis_key(user_id, origin)
+        if redis_client:
+            raw = redis_client.get(key)
+            if raw:
+                try:
+                    data = json.loads(raw)
+                    return bool(data.get("verified"))
+                except Exception:
+                    pass
+        return False
+
