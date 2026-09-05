@@ -10,6 +10,8 @@ import subprocess
 import sys
 import time
 import requests
+import urllib.parse
+import hashlib
 from threading import Thread, Lock
 from queue import Queue
 from io import StringIO
@@ -60,6 +62,30 @@ SECRET_PATTERNS = {
     "Supabase Secret / Key": r"sb_[a-zA-Z0-9_-]{20,}",
     "Stripe Secret Key": r"sk_live_[0-9a-zA-Z]{24}",
 }
+
+SECRET_SEVERITY_MAP = {
+    "Prisma / Postgres Connection String": "high",
+    "JWT Bearer Token": "medium",
+    "AWS Access Key ID": "high",
+    "Generic Private Key / Secret": "high",
+    "Supabase Secret / Key": "high",
+    "Stripe Secret Key": "high",
+}
+
+def redact_secret_value(value: str, secret_type: str = None) -> str:
+    """
+    Redact a sensitive value so that full credentials/tokens are never exposed.
+    Rules:
+    - If length <= 6: return '******'
+    - If length > 6: return first 4 chars + '****'
+    """
+    if not value or not isinstance(value, str):
+        return "******"
+    cleaned = value.strip()
+    if len(cleaned) <= 6:
+        return "******"
+    prefix = cleaned[:4]
+    return f"{prefix}****"
 TECH_TAG_MAP = {
     "wordpress": "wordpress",
     "drupal": "drupal",
@@ -244,26 +270,54 @@ def log(msg, color=Colors.W):
     print(f"{color}{msg}{Colors.W}")
 
 def analyze_js_secrets_deep(js_links_file, folder):
-    """Phân tích tĩnh các file JavaScript để tìm secret/credentials hardcoded"""
+    """Phân tích tĩnh các file JavaScript để tìm secret/credentials hardcoded (được mã hóa/mask an toàn)"""
     if not os.path.exists(js_links_file):
         return []
 
     log("\n⚙️ [*] Đang phân tích JS Secrets & Hardcoded Credentials...", Colors.C)
     js_urls = _read_txt_lines(js_links_file)[:30]
     found_secrets = []
+    seen_hashes = set()
 
     def fetch_and_scan(url):
         try:
             res = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
             if res.status_code == 200 and res.text:
+                parsed_url = urllib.parse.urlsplit(url)
+                host = parsed_url.netloc or parsed_url.path or "unknown"
                 for name, pattern in SECRET_PATTERNS.items():
                     matches = re.findall(pattern, res.text)
                     for match in matches:
                         secret_val = match if isinstance(match, str) else match[0]
-                        found_secrets.append({
+                        if not secret_val:
+                            continue
+
+                        # Deduplication trong memory (hash digest bi discard sau khi dedupe, khong persist DB/log/JSON)
+                        dedupe_key = hashlib.sha256(f"js:{name}:{url}:{secret_val}".encode("utf-8")).hexdigest()
+                        if dedupe_key in seen_hashes:
+                            continue
+                        seen_hashes.add(dedupe_key)
+
+                        redacted_val = redact_secret_value(secret_val, name)
+                        severity = SECRET_SEVERITY_MAP.get(name, "medium")
+                        is_encoded = ("jwt" in name.lower() or "base64" in name.lower())
+
+                        raw_dict = {
                             "type": name,
                             "url": url,
-                            "secret_snippet": secret_val[:120]
+                            "redacted_value": redacted_val,
+                        }
+
+                        found_secrets.append({
+                            "source": "js_secrets",
+                            "template_id": name,
+                            "severity": severity,
+                            "host": host,
+                            "endpoint": url,
+                            "matched": redacted_val,
+                            "confidence": 0.9,
+                            "encoded": is_encoded,
+                            "raw": json.dumps(raw_dict, ensure_ascii=False)
                         })
         except Exception:
             pass
@@ -296,7 +350,7 @@ def run_arjun_idor_scan(combined_urls_file, folder, timeout=300):
     with open(targets_file, "w") as f:
         f.write("\n".join(api_urls) + "\n")
 
-    run_command("Arjun", ["arjun", "-oJ", out_file, "-i", targets_file, "-t", "5", "--stable"], timeout=timeout)
+    run_command("Arjun", ["arjun", "-oJ", out_file, "-i", targets_file, "-t", "5"], timeout=timeout)
 
     results = {}
     if os.path.exists(out_file):
@@ -483,35 +537,131 @@ def ensure_file(file_path):
         with open(file_path, "w"):
             pass
 
-def dedupe_file(file_path):
+from urllib.parse import urlsplit
+
+def is_valid_http_url(url_str):
+    if not isinstance(url_str, str):
+        return False
+    cleaned = url_str.strip()
+    if not cleaned:
+        return False
+    try:
+        parts = urlsplit(cleaned)
+        if parts.scheme.lower() not in ("http", "https"):
+            return False
+        if not parts.netloc or not parts.hostname:
+            return False
+        return True
+    except Exception:
+        return False
+
+def select_ffuf_target_url(live_file, default_target_url="", raw_target=""):
+    """
+    Xác định canonical base URL cho FFUF từ live_sites.txt (Stage 3)
+    hoặc fallback từ raw_target / default_target_url.
+    """
+    valid_urls = []
+    if live_file and os.path.exists(live_file):
+        with open(live_file, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                url = line.strip()
+                if is_valid_http_url(url):
+                    valid_urls.append(url.rstrip("/"))
+
+    if valid_urls:
+        clean_raw = (raw_target or "").strip().rstrip("/")
+        if clean_raw:
+            for u in valid_urls:
+                if u == clean_raw:
+                    return u
+            for u in valid_urls:
+                parsed = urlsplit(u)
+                if parsed.netloc == clean_raw or parsed.hostname == clean_raw:
+                    return u
+        return valid_urls[0]
+
+    fallback = (default_target_url or "").strip().rstrip("/")
+    if fallback.startswith(("http://", "https://")):
+        return fallback
+
+    clean_raw = (raw_target or "").strip().rstrip("/")
+    if clean_raw.startswith(("http://", "https://")):
+        return clean_raw
+
+    if clean_raw:
+        host_part = clean_raw.split(":")[0].replace(".", "")
+        is_ip_or_local = host_part.isdigit() or "localhost" in clean_raw.lower() or "127.0.0.1" in clean_raw
+        scheme = "http://" if is_ip_or_local else "https://"
+        return scheme + clean_raw
+
+    return "http://localhost"
+
+def dedupe_file(file_path, is_url_file=False):
     if not os.path.exists(file_path):
         return
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         lines = [line.strip() for line in f if line.strip()]
-    unique = sorted(set(lines))
-    with open(file_path, "w") as f:
+    if is_url_file:
+        valid_lines = [sanitize_sensitive_url(l) for l in lines if is_valid_http_url(l)]
+    else:
+        valid_lines = lines
+    unique = sorted(set(valid_lines))
+    with open(file_path, "w", encoding="utf-8") as f:
         f.write("\n".join(unique) + ("\n" if unique else ""))
 
-def merge_files(output_path, input_paths):
+def merge_files(output_path, input_paths, is_url_file=False):
     merged = []
     for path in input_paths:
         if os.path.exists(path):
-            with open(path, "r") as f:
-                merged.extend([line.strip() for line in f if line.strip()])
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = [line.strip() for line in f if line.strip()]
+                if is_url_file:
+                    lines = [sanitize_sensitive_url(l) for l in lines if is_valid_http_url(l)]
+                merged.extend(lines)
     if merged:
-        with open(output_path, "w") as f:
-            f.write("\n".join(sorted(set(merged))) + "\n")
+        unique = sorted(set(merged))
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(unique) + "\n")
+    else:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("")
+
+def trim_file_lines(file_path, max_lines):
+    if not os.path.exists(file_path) or not max_lines or max_lines <= 0:
+        return
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        lines = f.readlines()
+    if len(lines) > max_lines:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.writelines(lines[:max_lines])
 
 def merge_results(output_path, input_paths):
     merge_files(output_path, input_paths)
 
-def filter_live_domains(input_path, output_path):
+def filter_live_domains(input_path, output_path, target=None):
     if not os.path.exists(input_path):
         return
     if not tool_available("dnsx"):
         return
     run_command("DNSX", ["dnsx", "-l", input_path, "-silent"], output_path)
     ensure_file(output_path)
+    if os.path.exists(output_path):
+        lines = _read_txt_lines(output_path)
+        valid_hosts = []
+        seen = set()
+        clean_target = target.strip().lower() if target else None
+        for line in lines:
+            host = line.strip().lower()
+            if not host or host.startswith("["):
+                continue
+            if clean_target:
+                if host != clean_target and not host.endswith("." + clean_target):
+                    continue
+            if host not in seen:
+                seen.add(host)
+                valid_hosts.append(host)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(valid_hosts) + ("\n" if valid_hosts else ""))
 
 def tool_available(tool_name):
     return shutil.which(tool_name) is not None
@@ -583,53 +733,133 @@ def try_decode_base64(text):
     except: pass
     return None
 
-def analyze_urls_for_secrets(file_path):
-    if not os.path.exists(file_path): return ""
+SENSITIVE_PARAM_NAMES = {
+    "token", "token_a", "token_b", "token-a", "token-b",
+    "key", "secret", "secret_key", "secret-key",
+    "password", "passwd", "pwd", "pass",
+    "auth", "authorization", "auth_token", "auth-token",
+    "api_key", "api-key", "apikey",
+    "access_token", "access-token", "refresh_token", "refresh-token"
+}
+
+def sanitize_sensitive_url(url_str):
+    """Sanitize sensitive query parameter values in URL while preserving scheme, host, port, path, and non-sensitive params"""
+    if not isinstance(url_str, str) or not url_str.strip():
+        return url_str
+    cleaned = url_str.strip()
+    if not is_valid_http_url(cleaned):
+        return cleaned
+    try:
+        parts = urllib.parse.urlsplit(cleaned)
+        if not parts.query:
+            return cleaned
+        query_pairs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        new_pairs = []
+        modified = False
+        for k, v in query_pairs:
+            if k.lower() in SENSITIVE_PARAM_NAMES and v:
+                redacted_v = redact_secret_value(v, k)
+                new_pairs.append((k, redacted_v))
+                modified = True
+            else:
+                new_pairs.append((k, v))
+        if not modified:
+            return cleaned
+        new_query = urllib.parse.urlencode(new_pairs, safe="*")
+        return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+    except Exception:
+        return cleaned
+
+def sanitize_url_file(file_path):
+    """Sanitize all URLs in a file and overwrite it with sanitized, deduplicated content"""
+    if not os.path.exists(file_path):
+        return
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        lines = [line.strip() for line in f if line.strip()]
+    sanitized = [sanitize_sensitive_url(line) for line in lines if is_valid_http_url(line)]
+    unique = sorted(set(sanitized))
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(unique) + ("\n" if unique else ""))
+
+def analyze_urls_for_secrets(urls_or_file):
+    """Phân tích các URL parameter để tìm lộ token/password/key (trả về danh sách structured findings đã mask an toàn)
+    Chấp nhận file path hoặc list/iterable chứa raw URL string.
+    """
+    if isinstance(urls_or_file, str):
+        if not os.path.exists(urls_or_file):
+            return []
+        with open(urls_or_file, "r", encoding="utf-8", errors="ignore") as f:
+            raw_lines = [l.strip() for l in f.readlines() if l.strip()]
+    elif isinstance(urls_or_file, (list, tuple, set)):
+        raw_lines = [str(l).strip() for l in urls_or_file if str(l).strip()]
+    else:
+        return []
+
     findings = []
-    regex_sensitive = r"(?i)(token|key|secret|password|passwd|auth)=([^& \n]+)"
-    with open(file_path, "r") as f:
-        for url in f.readlines():
-            for key, value in re.findall(regex_sensitive, url.strip()):
-                if len(value) > 5:
-                    decoded = try_decode_base64(value)
-                    if decoded: findings.append(f"🔓 {key}: <code>{value}</code> (Dịch mã: {decoded})")
-                    else: findings.append(f"🔑 {key}: <code>{value}</code>")
-    return "\n".join(list(set(findings))[:10])
+    seen_hashes = set()
+    regex_sensitive = r"(?i)(" + "|".join(re.escape(k) for k in SENSITIVE_PARAM_NAMES) + r")=([^& \n]+)"
+
+    for url in raw_lines:
+        if not is_valid_http_url(url):
+            continue
+        parsed_url = urllib.parse.urlsplit(url)
+        host = parsed_url.netloc or "unknown"
+        for key, value in re.findall(regex_sensitive, url):
+            if len(value) > 3:
+                dedupe_key = hashlib.sha256(f"url:{key}:{url}:{value}".encode("utf-8")).hexdigest()
+                if dedupe_key in seen_hashes:
+                    continue
+                seen_hashes.add(dedupe_key)
+
+                decoded = try_decode_base64(value)
+                is_encoded = bool(decoded)
+                redacted_val = redact_secret_value(value, key)
+                sanitized_url = sanitize_sensitive_url(url)
+                template_id = f"Exposed URL Parameter ({key.upper()})"
+                severity = "high" if key.lower() in ("password", "passwd", "secret") else "medium"
+
+                raw_dict = {
+                    "parameter": key,
+                    "url": sanitized_url,
+                    "redacted_value": redacted_val,
+                    "encoded": is_encoded
+                }
+
+                findings.append({
+                    "source": "url_secrets",
+                    "template_id": template_id,
+                    "severity": severity,
+                    "host": host,
+                    "endpoint": sanitized_url,
+                    "matched": redacted_val,
+                    "confidence": 0.8,
+                    "encoded": is_encoded,
+                    "raw": json.dumps(raw_dict, ensure_ascii=False)
+                })
+
+    return findings
+
+def generate_secrets_summary(all_secrets):
+    """Tạo chuỗi tóm tắt secrets (da duoc redact an toan) cho backward compatibility voi UI frontend"""
+    if not all_secrets:
+        return ""
+    lines = []
+    for s in all_secrets[:10]:
+        t_id = s.get("template_id", "Secret")
+        m_val = s.get("matched", "******")
+        url = s.get("endpoint", "")
+        lines.append(f"🔑 {t_id}: <code>{m_val}</code> ({url})")
+    return "\n".join(lines)
 
 def analyze_ffuf(file_path):
     if not os.path.exists(file_path): return ""
     juicy_files = []
     keywords = [".env", ".git", "admin", "backup", "config", "api", "db", "sql"]
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             if "Status: 200" in line and any(kw in line.lower() for kw in keywords):
                 juicy_files.append(f"📁 <code>{line.split(' ')[0]}</code>")
     return "\n".join(list(set(juicy_files))[:10])
-
-def trim_file_lines(file_path, max_lines):
-    if not os.path.exists(file_path):
-        return
-    with open(file_path, "r") as f:
-        lines = f.readlines()
-    if len(lines) <= max_lines:
-        return
-    with open(file_path, "w") as f:
-        f.writelines(lines[:max_lines])
-
-def extract_interesting_urls(file_path, limit=20):
-    if not os.path.exists(file_path):
-        return []
-    results = []
-    with open(file_path, "r") as f:
-        for line in f:
-            url = line.strip()
-            if not url:
-                continue
-            if any(k in url.lower() for k in INTERESTING_KEYWORDS) or "?" in url:
-                results.append(url)
-            if len(results) >= limit:
-                break
-    return results
 
 def score_url(url):
     score = 0
@@ -656,7 +886,10 @@ def rank_urls(file_path, limit=10):
                 continue
             scored.append((score_url(url), url))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [u for s, u in scored if s > 0][:limit]
+    return [u for _, u in scored[:limit]]
+
+def extract_interesting_urls(file_path, limit=10):
+    return rank_urls(file_path, limit=limit)
 
 def build_ctf_tips(highlights):
     tips = []
@@ -725,14 +958,43 @@ def _read_txt_lines(file_path):
 
 def _parse_nuclei_findings(file_path):
     findings = []
-    for line in _read_txt_lines(file_path):
-        lowered = line.lower()
-        severity = "unknown"
-        for sev in ["critical", "high", "medium", "low", "info"]:
-            if f"[{sev}]" in lowered:
-                severity = sev
-                break
-        findings.append({"severity": severity, "raw": line})
+    lines = _read_txt_lines(file_path)
+    for line in lines:
+        cleaned = line.strip()
+        if not cleaned:
+            continue
+        try:
+            data = json.loads(cleaned)
+            if not isinstance(data, dict):
+                continue
+
+            info = data.get("info") if isinstance(data.get("info"), dict) else {}
+            severity = str(info.get("severity") or data.get("severity") or "").strip().lower()
+            template_id = str(data.get("template-id") or data.get("template_id") or data.get("template") or "").strip()
+            host = str(data.get("host") or data.get("url") or "").strip()
+            matched = str(data.get("matched-at") or data.get("matched_at") or data.get("matched") or "").strip()
+            endpoint = str(data.get("matched-at") or data.get("url") or "").strip()
+
+            # Bắt buộc thông tin tối thiểu: phải có template_id, severity và (matched hoặc endpoint/host)
+            if not template_id or not severity or not (matched or endpoint or host):
+                continue
+
+            finding = {
+                "source": "nuclei",
+                "template_id": template_id,
+                "host": host,
+                "severity": severity,
+                "matched": matched,
+                "endpoint": endpoint,
+                "status_code": data.get("status_code") or data.get("status-code"),
+                "length": data.get("content_length") or data.get("content-length"),
+                "raw": cleaned
+            }
+            findings.append(finding)
+        except Exception:
+            # Bỏ qua các dòng lỗi/malformed an toàn, không tạo fake finding và không crash scan
+            pass
+
     return findings
 
 def _parse_ffuf_findings(file_path):
@@ -792,8 +1054,106 @@ def _parse_ffuf_findings(file_path):
     return findings
 
 
-def build_result_json_tree(target, folder, counts, highlights, output_path, logic_results=None):
+def sanitize_evidence_sample(sample_str):
+    if not isinstance(sample_str, str) or not sample_str.strip():
+        return ""
+    cleaned = re.sub(
+        r'(?i)(["\']?(?:token[a-z0-9_-]*|password|secret|auth|bearer|key|passwd|authorization)["\']?\s*[:=]\s*)(["\']?)[^"\'&\s,}]+\2',
+        r'\1\2****\2',
+        sample_str
+    )
+    return cleaned[:200]
+
+def normalize_logic_findings(logic_results, target_host=""):
+    if not isinstance(logic_results, dict):
+        return []
+    
+    normalized = []
+    seen = set()
+
+    for key, data in logic_results.items():
+        if not isinstance(data, dict):
+            continue
+        if data.get("flagged") is not True:
+            continue
+        
+        scanner_type = str(data.get("scanner") or key).strip().lower()
+        if scanner_type not in ("idor_bola", "race_condition", "workflow_bypass"):
+            continue
+
+        endpoint = ""
+        severity = str(data.get("severity") or "critical").lower()
+        status_code = 200
+        content_length = 0
+        raw_evidence = {}
+
+        if scanner_type == "idor_bola":
+            req_data = data.get("request") or {}
+            endpoint = req_data.get("endpoint") or ""
+            swapped = data.get("swapped") or {}
+            baseline = data.get("baseline") or {}
+            status_code = swapped.get("status") or 200
+            content_length = swapped.get("content_length") or 0
+            
+            raw_evidence = {
+                "scanner": "idor_bola",
+                "reason": data.get("reason", "Potential cross-tenant data exposure"),
+                "baseline_status": baseline.get("status"),
+                "swapped_status": swapped.get("status"),
+                "size_similarity_ratio": swapped.get("size_similarity_ratio"),
+                "sample": sanitize_evidence_sample(swapped.get("sample") or ""),
+            }
+
+        elif scanner_type == "race_condition":
+            endpoint = data.get("endpoint") or data.get("race_endpoint") or ""
+            status_code = 200
+            raw_evidence = {
+                "scanner": "race_condition",
+                "reason": data.get("reason", "Race condition flaw detected"),
+                "action_limit": data.get("action_limit"),
+                "success_count": data.get("success_count"),
+                "total_requests": data.get("total_requests"),
+            }
+
+        elif scanner_type == "workflow_bypass":
+            final_call = data.get("final_call") or {}
+            endpoint = final_call.get("endpoint") or ""
+            status_code = final_call.get("status") or 200
+            content_length = final_call.get("content_length") or 0
+            raw_evidence = {
+                "scanner": "workflow_bypass",
+                "reason": data.get("reason", "Workflow bypass detected"),
+                "prerequisite_endpoints": data.get("prerequisite_endpoints", []),
+                "sample": sanitize_evidence_sample(final_call.get("sample") or ""),
+            }
+
+        if not endpoint:
+            endpoint = "/"
+
+        dedupe_key = (scanner_type, endpoint)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
+        finding = {
+            "source": "logic",
+            "template_id": scanner_type,
+            "severity": severity,
+            "host": target_host,
+            "matched": f"{str(target_host).rstrip('/')}{endpoint}" if target_host else endpoint,
+            "endpoint": endpoint,
+            "status_code": status_code,
+            "length": content_length,
+            "raw": json.dumps(raw_evidence, ensure_ascii=False),
+        }
+        normalized.append(finding)
+
+    return normalized
+
+def build_result_json_tree(target, folder, counts, highlights, output_path, logic_results=None, secrets_results=None):
     logic_results = logic_results or {}
+    secrets_results = secrets_results or []
+    logic_normalized = normalize_logic_findings(logic_results, target)
 
     sub_file = f"{folder}/subdomains.txt"
     dnsx_file = f"{folder}/dnsx_live.txt"
@@ -827,6 +1187,8 @@ def build_result_json_tree(target, folder, counts, highlights, output_path, logi
         "vulnerabilities": {
             "nuclei": _parse_nuclei_findings(vuln_file),
             "ffuf": _parse_ffuf_findings(ffuf_file),
+            "secrets": secrets_results,
+            "logic": logic_normalized,
         },
         "logic_vulnerabilities": logic_results,
     }
@@ -1296,11 +1658,14 @@ def main():
 
     # BƯỚC 1.2: DNSX (lọc domain có DNS sống)
     dnsx_file = f"{folder}/dnsx_live.txt"
-    filter_live_domains(sub_file, dnsx_file)
+    filter_live_domains(sub_file, dnsx_file, target=target)
     if os.path.exists(dnsx_file) and count_lines(dnsx_file) > 0:
         sub_file_for_httpx = dnsx_file
     else:
-        sub_file_for_httpx = sub_file
+        # Nếu không có domain nào resolve thành công, fallback tối thiểu chỉ dùng root target
+        with open(dnsx_file, "w", encoding="utf-8") as f:
+            f.write(f"{target}\n")
+        sub_file_for_httpx = dnsx_file
 
     emit_adq_progress(1, "recon", "done", f"Recon hoàn tất: {sub_count} subdomain")
 
@@ -1308,7 +1673,7 @@ def main():
     emit_adq_progress(2, "port_scan", "running", "Naabu Fast Port")
     ports_file = f"{folder}/open_ports.txt"
     if tool_available("naabu"):
-        run_command("Naabu", ["naabu", "-l", sub_file, "-silent"], ports_file, timeout=args.timeout)
+        run_command("Naabu", ["naabu", "-l", sub_file_for_httpx, "-silent"], ports_file, timeout=args.timeout)
     else:
         log("[!] Cảnh báo: naabu không khả dụng, bỏ qua.", Colors.Y)
     ensure_file(ports_file)
@@ -1435,16 +1800,26 @@ def main():
         run_command("WaybackURLs", ["waybackurls"], wayback_file, input_file=sub_file, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
     ensure_file(wayback_file)
 
+    # In-memory detection trên RAW CRAWL URLs TRƯỚC KHI sanitize đĩa
+    raw_urls_precomputed = _read_txt_lines(katana_file) + _read_txt_lines(gau_file) + _read_txt_lines(wayback_file)
+    url_secret_findings_precomputed = analyze_urls_for_secrets(raw_urls_precomputed)
+
+    # Sanitize các source file đĩa ngay sau khi detect xong
+    sanitize_url_file(katana_file)
+    sanitize_url_file(gau_file)
+    sanitize_url_file(wayback_file)
+
     combined_urls = f"{folder}/combined_urls.txt"
-    merge_files(combined_urls, [gau_file, wayback_file, katana_file])
+    merge_files(combined_urls, [gau_file, wayback_file, katana_file], is_url_file=True)
     ensure_file(combined_urls)
-    dedupe_file(combined_urls)
+    dedupe_file(combined_urls, is_url_file=True)
     trim_file_lines(combined_urls, args.max_urls)
 
     js_file = f"{folder}/js_links.txt"
     if tool_available("subjs"):
         run_command("SubJS", ["subjs"], js_file, input_file=combined_urls, timeout=args.timeout, retries=args.retries, backoff=args.retry_backoff)
     ensure_file(js_file)
+    sanitize_url_file(js_file)
 
     emit_adq_progress(
         3,
@@ -1467,7 +1842,7 @@ def main():
         severity = "low,medium,high,critical"
         if args.nuclei_include_info:
             severity = "info," + severity
-        base_args = ["nuclei", "-l", live_file, "-severity", severity, "-silent"]
+        base_args = ["nuclei", "-l", live_file, "-severity", severity, "-jsonl", "-silent"]
         if args.nuclei_group_by_tech and os.path.exists(tech_file):
             group_outputs = []
             groups = group_targets_by_tech(tech_file)
@@ -1516,13 +1891,16 @@ def main():
 
     # BƯỚC 5: Secrets Hunter
     emit_adq_progress(5, "secrets", "running", "JS Secrets / Hardcoded Credentials")
-    analyze_js_secrets_deep(js_file, folder)
-    secrets_found = analyze_urls_for_secrets(combined_urls)
+    js_secrets = analyze_js_secrets_deep(js_file, folder)
+    url_secrets = url_secret_findings_precomputed
+    all_secrets = js_secrets + url_secrets
+    secrets_summary_str = generate_secrets_summary(all_secrets)
+    secrets_found = secrets_summary_str
     emit_adq_progress(
         5,
         "secrets",
         "done",
-        "Hoàn tất phân tích secrets/hardcoded credentials",
+        f"Hoàn tất phân tích: phát hiện {len(all_secrets)} secrets",
     )
 
     # BƯỚC 6: Logic / Attack Surface
@@ -1533,12 +1911,13 @@ def main():
         timeout=args.timeout,
     )
 
-    log("⏳ [*] Dò tìm thư mục bằng FFuf...", Colors.C)
+    ffuf_target_url = select_ffuf_target_url(live_file, default_target_url=target_url, raw_target=raw_target)
+    log(f"⏳ [*] Dò tìm thư mục bằng FFuf trên: {ffuf_target_url}/FUZZ...", Colors.C)
     ffuf_out = f"{folder}/ffuf_main.txt"
     if os.path.exists(args.wordlist) and tool_available("ffuf"):
         run_command(
             "FFuf",
-            ["ffuf", "-u", f"{target_url}/FUZZ", "-w", args.wordlist, "-mc", "200", "-t", str(args.ffuf_threads), "-v"],
+            ["ffuf", "-u", f"{ffuf_target_url}/FUZZ", "-w", args.wordlist, "-mc", "200", "-t", str(args.ffuf_threads), "-v"],
             ffuf_out,
             timeout=args.timeout,
             retries=args.retries,
@@ -1560,7 +1939,6 @@ def main():
             else: critical_alerts = "\n\n✅ <b>[LỖ HỔNG]</b> An toàn. Không có lỗi High/Critical."
 
     secrets_msg = f"\n\n💎 <b>[DỮ LIỆU NHẠY CẢM] BỊ LỘ:</b>\n{secrets_found}" if secrets_found else "\n\n✅ <b>[DỮ LIỆU NHẠY CẢM]</b> An toàn. Không rò rỉ Key/Token."
-
     juicy_ffuf = analyze_ffuf(ffuf_out)
     ffuf_msg = f"\n\n📂 <b>[THƯ MỤC/FILE] ĐANG MỞ:</b>\n{juicy_ffuf}" if juicy_ffuf else "\n\n✅ <b>[THƯ MỤC/FILE]</b> An toàn. Không lộ thư mục ẩn."
 
@@ -1663,6 +2041,7 @@ def main():
         highlights,
         result_json_path,
         logic_results=logic_results,
+        secrets_results=all_secrets,
     )
 
     # Bổ sung lớp dữ liệu tổng hợp để worker AI và Copilot có context thật.

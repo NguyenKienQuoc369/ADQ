@@ -452,9 +452,10 @@ function ScanLandingContent() {
           vulnerabilities: job.vulnerabilities ?? {},
           secretsSummary: job.secrets_summary ?? "",
           logicVulnerabilities: job.logic_vulnerabilities ?? {},
+          aiAnalysis: job.ai_analysis ?? "",
+          aiSource: job.ai_source ?? (job.ai_analysis ? "gemini" : "rule_fallback"),
           humanSummary: job.human_summary ?? "",
           riskNotes: job.risk_notes ?? [],
-          aiAnalysis: job.ai_analysis ?? "",
           recommendations,
         });
 
@@ -777,10 +778,10 @@ function ScanLandingContent() {
     ? scanContext.vulnerabilities.ffuf
     : [];
   const logicResults = scanContext?.logicVulnerabilities ?? {};
-  const logicFindingCount = Object.values(logicResults).reduce((total: number, value: any) => {
-    if (Array.isArray(value)) return total + value.length;
-    if (value && typeof value === "object") return total + Object.keys(value).length;
-    return total;
+  const logicModuleKeys = ["idor_bola", "race_condition", "workflow_bypass"];
+  const logicFindingCount = logicModuleKeys.reduce((total: number, key: string) => {
+    const item = logicResults[key];
+    return total + (item && item.flagged === true ? 1 : 0);
   }, 0);
   const secretsSummary = safeString(scanContext?.secretsSummary);
   const aiAssessment = safeString(scanContext?.aiAnalysis);
@@ -803,168 +804,183 @@ function ScanLandingContent() {
 
   return (
     <DashboardShell area="dashboard">
-      <div className="space-y-6 text-slate-100 font-sans">
+      <div className="space-y-6 text-[#ededed] font-sans">
         {/* Header bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#222222] pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-white tracking-tight">ADQ Autonomous Security Assessment</h1>
+              <h1 className="text-xl font-semibold text-white tracking-tight">ADQ Autonomous Security Assessment</h1>
               {projectId && (
-                <Badge className="text-[10px] font-mono border border-cyan-500/30 text-cyan-400 bg-cyan-950/40">
-                  DỰ ÁN: {projectName || projectId}
-                </Badge>
+                <span className="text-[10px] font-mono border border-neutral-700 bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full">
+                  TARGET: {projectName || projectId}
+                </span>
               )}
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Phân tích bảo mật đa tầng trên tài sản, dịch vụ mạng, bề mặt web, lỗ hổng, dữ liệu nhạy cảm và rủi ro ứng dụng.
+            <p className="text-xs text-neutral-400 mt-1">
+              Phân tích bảo mật đa tầng trên tài sản, dịch vụ mạng, bề mặt web, lỗ hổng DAST và bằng chứng PoC.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button className="h-8 text-xs border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition-all" disabled={isSavingSession || isScanning} onClick={handleSaveSessionManually} size="sm" variant="outline">
+            <Button
+              className="h-8 text-xs border border-[#333333] bg-[#111111] text-white hover:bg-neutral-800 rounded-md transition"
+              disabled={isSavingSession || isScanning}
+              onClick={handleSaveSessionManually}
+              size="sm"
+              variant="outline"
+            >
               {isSavingSession ? (
-                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
+                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" />
               ) : isSavedSuccess ? (
-                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400"/>
+                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
               ) : (
-                <Save className="h-3.5 w-3.5 mr-1.5"/>
+                <Save className="h-3.5 w-3.5 mr-1.5" />
               )}
-              {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Phiên Quét"}
+              {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Phiên"}
             </Button>
 
-            <Button className="h-8 text-xs border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800" onClick={handleCreateNewSession} size="sm" variant="outline">
-              <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400"/> Phiên Mới
+            <Button
+              className="h-8 text-xs border border-[#333333] bg-[#111111] text-white hover:bg-neutral-800 rounded-md"
+              onClick={handleCreateNewSession}
+              size="sm"
+              variant="outline"
+            >
+              <PlusCircle className="h-3.5 w-3.5 mr-1.5" /> Phiên Mới
             </Button>
           </div>
         </div>
 
         {/* Input Target */}
-        <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
-                <Input onChange={(e) => setTarget(e.target.value)} value={target}
-                  disabled={isScanning}
-                  placeholder="Nhập tên miền mục tiêu (vd: target.com hoặc api.domain.vn)"
-                  className="pl-9 bg-slate-900/90 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-cyan-500 text-sm h-10"
-                />
-              </div>
-              <Button className="h-10 px-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-cyan-950/50" disabled={isScanning || isFreeLimitExceeded || !target.trim()} onClick={handleStartScanClick}>
-                {isScanning ? (
-                  <>
-                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin"/> Đang Rà Quét...
-                  </>
-                ) : (
-                  <>
-                    <Zap className="h-4 w-4 mr-2"/> Bắt Đầu Quét
-                  </>
-                )}
-              </Button>
+        <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 sm:p-5">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
+              <Input
+                onChange={(e) => setTarget(e.target.value)}
+                value={target}
+                disabled={isScanning}
+                placeholder="Nhập tên miền mục tiêu (vd: example.com hoặc api.domain.vn)"
+                className="pl-9 bg-[#0a0a0a] border-[#333333] text-white placeholder:text-neutral-500 focus:border-white focus:ring-0 text-xs h-9 rounded-md"
+              />
             </div>
-            {scanError && (
-              <p className="text-xs text-rose-400 mt-2 flex items-center gap-1.5">
-                <AlertCircle className="h-3.5 w-3.5"/> {scanError}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+            <Button
+              className="h-9 px-5 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md shadow-sm transition active:scale-98 cursor-pointer"
+              disabled={isScanning || isFreeLimitExceeded || !target.trim()}
+              onClick={handleStartScanClick}
+            >
+              {isScanning ? (
+                <>
+                  <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Đang Rà Quét...
+                </>
+              ) : (
+                <>
+                  <Zap className="h-3.5 w-3.5 mr-1.5 fill-black" /> Bắt Đầu Quét
+                </>
+              )}
+            </Button>
+          </div>
+          {scanError && (
+            <p className="text-xs text-rose-400 mt-2 flex items-center gap-1.5">
+              <AlertCircle className="h-3.5 w-3.5" /> {scanError}
+            </p>
+          )}
+        </div>
 
         {/* Security Overview */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
-            <p className="text-[11px] text-slate-400">Assets</p>
-            <p className="text-xl font-bold text-cyan-400 font-mono mt-1">{subdomains}</p>
-          </Card>
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
-            <p className="text-[11px] text-slate-400">Live Hosts</p>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">Assets</p>
+            <p className="text-xl font-bold text-white font-mono mt-1">{subdomains}</p>
+          </div>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">Live Hosts</p>
             <p className="text-xl font-bold text-emerald-400 font-mono mt-1">{liveHosts}</p>
-          </Card>
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
-            <p className="text-[11px] text-slate-400">Open Services</p>
-            <p className="text-xl font-bold text-sky-400 font-mono mt-1">{openPorts}</p>
-          </Card>
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
-            <p className="text-[11px] text-slate-400">Mapped URLs</p>
-            <p className="text-xl font-bold text-amber-400 font-mono mt-1">{crawledUrls}</p>
-          </Card>
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
-            <p className="text-[11px] text-slate-400">Security Findings</p>
+          </div>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">Open Services</p>
+            <p className="text-xl font-bold text-white font-mono mt-1">{openPorts}</p>
+          </div>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">Mapped URLs</p>
+            <p className="text-xl font-bold text-white font-mono mt-1">{crawledUrls}</p>
+          </div>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">Findings</p>
             <p className="text-xl font-bold text-rose-400 font-mono mt-1">{vulnCount}</p>
-          </Card>
-          <Card className="border border-white/[0.08] bg-slate-950/60 p-3">
-            <p className="text-[11px] text-slate-400">Surface Signals</p>
-            <p className="text-xl font-bold text-violet-300 font-mono mt-1">{totalSurfaceItems}</p>
-          </Card>
+          </div>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
+            <p className="text-[11px] font-mono uppercase text-neutral-500">Signals</p>
+            <p className="text-xl font-bold text-neutral-300 font-mono mt-1">{totalSurfaceItems}</p>
+          </div>
         </div>
 
         {/* Attack Surface Inventory */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
-            <CardHeader className="pb-3 border-b border-slate-800">
-              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                <Globe className="h-4 w-4 text-cyan-400"/> Asset & Host Inventory
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 space-y-4">
+          <div className="rounded-lg border border-[#222222] bg-[#000000]">
+            <div className="p-4 border-b border-[#222222]">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Globe className="h-4 w-4 text-white"/> Asset & Host Inventory
+              </h3>
+            </div>
+            <div className="p-4 space-y-4">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Discovered assets</p>
+                <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 font-mono">Discovered assets</p>
                 <div className="max-h-32 overflow-y-auto space-y-1">
                   {resultSubdomains.length ? resultSubdomains.map((item: any, idx: number) => (
-                    <p key={`asset-${idx}`} className="text-[11px] font-mono text-slate-300 break-all">{safeString(item)}</p>
-                  )) : <p className="text-[11px] text-slate-600">Không có dữ liệu.</p>}
+                    <p key={`asset-${idx}`} className="text-[11px] font-mono text-neutral-300 break-all">{safeString(item)}</p>
+                  )) : <p className="text-[11px] text-neutral-600">Không có dữ liệu.</p>}
                 </div>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Reachable hosts</p>
+                <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 font-mono">Reachable hosts</p>
                 <div className="max-h-32 overflow-y-auto space-y-1">
                   {resultLiveHosts.length ? resultLiveHosts.map((item: any, idx: number) => (
-                    <p key={`live-${idx}`} className="text-[11px] font-mono text-emerald-300 break-all">{safeString(item)}</p>
-                  )) : <p className="text-[11px] text-slate-600">Không có dữ liệu.</p>}
+                    <p key={`live-${idx}`} className="text-[11px] font-mono text-emerald-400 break-all">{safeString(item)}</p>
+                  )) : <p className="text-[11px] text-neutral-600">Không có dữ liệu.</p>}
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
-            <CardHeader className="pb-3 border-b border-slate-800">
-              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                <Radio className="h-4 w-4 text-sky-400"/> Network Exposure
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
+          <div className="rounded-lg border border-[#222222] bg-[#000000]">
+            <div className="p-4 border-b border-[#222222]">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Radio className="h-4 w-4 text-white"/> Network Exposure
+              </h3>
+            </div>
+            <div className="p-4">
               <div className="max-h-72 overflow-y-auto space-y-2">
                 {resultPorts.length ? resultPorts.map((item: any, idx: number) => (
-                  <div key={`port-${idx}`} className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
-                    <p className="text-[11px] font-mono text-sky-300 break-all">{safeString(item)}</p>
+                  <div key={`port-${idx}`} className="rounded-md border border-[#222222] bg-[#0a0a0a] px-3 py-2">
+                    <p className="text-[11px] font-mono text-neutral-300 break-all">{safeString(item)}</p>
                   </div>
-                )) : <p className="text-[11px] text-slate-600">Không có dịch vụ mạng mở được ghi nhận.</p>}
+                )) : <p className="text-[11px] text-neutral-600">Không có dịch vụ mạng mở.</p>}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
-            <CardHeader className="pb-3 border-b border-slate-800">
-              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+          <div className="rounded-lg border border-[#222222] bg-[#000000]">
+            <div className="p-4 border-b border-[#222222]">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                 <ShieldAlert className="h-4 w-4 text-rose-400"/> Severity Distribution
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 grid grid-cols-2 gap-2">
+              </h3>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-2">
               {[
-                ["Critical", severityCounts.critical, "text-rose-300"],
-                ["High", severityCounts.high, "text-orange-300"],
-                ["Medium", severityCounts.medium, "text-amber-300"],
-                ["Low", severityCounts.low, "text-sky-300"],
-                ["Info", severityCounts.info, "text-slate-300"],
-                ["Logic", logicFindingCount, "text-violet-300"],
+                ["Critical", severityCounts.critical, "text-rose-400"],
+                ["High", severityCounts.high, "text-orange-400"],
+                ["Medium", severityCounts.medium, "text-amber-400"],
+                ["Low", severityCounts.low, "text-neutral-300"],
+                ["Info", severityCounts.info, "text-neutral-400"],
+                ["Logic", logicFindingCount, "text-neutral-300"],
               ].map(([label, value, color]) => (
-                <div key={String(label)} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-                  <p className="text-[10px] text-slate-500">{label}</p>
+                <div key={String(label)} className="rounded-md border border-[#222222] bg-[#0a0a0a] p-3">
+                  <p className="text-[10px] text-neutral-500 font-mono uppercase">{label}</p>
                   <p className={`text-lg font-bold font-mono ${String(color)}`}>{String(value)}</p>
                 </div>
               ))}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
         {/* Discovered Endpoints */}
@@ -1194,12 +1210,73 @@ function ScanLandingContent() {
               </Card>
             )}
 
+            {logicFindingCount > 0 && (
+              <Card className="border border-rose-500/20 bg-rose-950/10 shadow-xl">
+                <CardHeader className="pb-3 border-b border-rose-500/20">
+                  <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-rose-400"/> Lỗ Hổng Business Logic (Stage 6B)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 space-y-4 text-xs">
+                  {logicResults.idor_bola?.flagged && (
+                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-rose-300">Insecure Direct Object Reference (IDOR / BOLA)</span>
+                        <Badge variant="danger" className="text-[9px]">CRITICAL</Badge>
+                      </div>
+                      <p className="font-mono text-[11px] text-slate-300">{logicResults.idor_bola.request?.endpoint}</p>
+                      <p className="text-slate-400">
+                        Evidence: Baseline HTTP {logicResults.idor_bola.baseline?.status} vs Swapped HTTP {logicResults.idor_bola.swapped?.status} (Similarity: {Math.round((logicResults.idor_bola.swapped?.size_similarity_ratio || 0) * 100)}%)
+                      </p>
+                    </div>
+                  )}
+                  {logicResults.race_condition?.flagged && (
+                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-rose-300">Race Condition / Concurrent Execution Flaw</span>
+                        <Badge variant="danger" className="text-[9px]">CRITICAL</Badge>
+                      </div>
+                      <p className="font-mono text-[11px] text-slate-300">{logicResults.race_condition.endpoint || logicResults.race_condition.race_endpoint}</p>
+                      <p className="text-slate-400">
+                        Evidence: {logicResults.race_condition.success_count} / {logicResults.race_condition.total_requests} concurrent requests succeeded (Expected limit: {logicResults.race_condition.action_limit})
+                      </p>
+                    </div>
+                  )}
+                  {logicResults.workflow_bypass?.flagged && (
+                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-rose-300">Workflow Step Bypass</span>
+                        <Badge variant="danger" className="text-[9px]">CRITICAL</Badge>
+                      </div>
+                      <p className="font-mono text-[11px] text-slate-300">{logicResults.workflow_bypass.final_call?.endpoint}</p>
+                      <p className="text-slate-400">
+                        Evidence: Final step executed directly (HTTP {logicResults.workflow_bypass.final_call?.status}) without prerequisite steps: {JSON.stringify(logicResults.workflow_bypass.prerequisite_endpoints || [])}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {aiAssessment && (
               <Card className="border border-cyan-500/20 bg-cyan-950/10 shadow-xl">
-                <CardHeader className="pb-3 border-b border-cyan-500/10">
+                <CardHeader className="pb-3 border-b border-cyan-500/10 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-cyan-400"/> AI Risk Assessment
                   </CardTitle>
+                  {scanContext?.aiSource === "gemini" ? (
+                    <Badge variant="default" className="bg-cyan-500/20 text-cyan-300 border-cyan-500/40 text-[9px]">
+                      Gemini AI Analysis
+                    </Badge>
+                  ) : scanContext?.aiSource === "rule_fallback" ? (
+                    <Badge variant="warning" className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[9px]">
+                      Rule-Based Fallback
+                    </Badge>
+                  ) : (
+                    <Badge variant="muted" className="bg-slate-800 text-slate-400 text-[9px]">
+                      AI Feature Locked
+                    </Badge>
+                  )}
                 </CardHeader>
                 <CardContent className="p-4 text-xs leading-relaxed">
                   {parseMarkdown(aiAssessment)}

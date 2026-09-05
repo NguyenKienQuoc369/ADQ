@@ -21,6 +21,93 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 REDIS_URL = os.getenv("REDIS_URL", "redis://adq_redis:6379/0")
 
+try:
+    from backend.schemas.scan import sanitize_request_data, sanitize_extra_args
+except ImportError:
+    from schemas.scan import sanitize_request_data, sanitize_extra_args
+
+
+def build_ai_scan_context(scan_tree_data: Dict[str, Any], max_chars: int = 24000) -> str:
+    if not isinstance(scan_tree_data, dict):
+        return "{}"
+
+    target = scan_tree_data.get("target", "")
+    vulns = scan_tree_data.get("vulnerabilities", {}) or {}
+    logic_vulns = scan_tree_data.get("logic_vulnerabilities", {}) or {}
+    
+    # Priority 1: Critical/High Logic Vulnerabilities
+    logic_prioritized = {}
+    if isinstance(logic_vulns, dict):
+        for k in ("idor_bola", "race_condition", "workflow_bypass"):
+            if logic_vulns.get(k, {}).get("flagged") is True:
+                logic_prioritized[k] = logic_vulns[k]
+    
+    # Priority 2 & 3 & 4: Nuclei & Secrets & FFuf
+    nuclei_vulns = vulns.get("nuclei", []) or []
+    secrets_vulns = vulns.get("secrets", []) or []
+    ffuf_vulns = vulns.get("ffuf", []) or []
+    normalized_logic = vulns.get("logic", []) or []
+
+    high_crit_nuclei = [v for v in nuclei_vulns if str(v.get("severity", "")).lower() in ("critical", "high")]
+    med_low_nuclei = [v for v in nuclei_vulns if str(v.get("severity", "")).lower() in ("medium", "low")]
+
+    ports = scan_tree_data.get("ports", []) or scan_tree_data.get("open_ports", []) or []
+    urls_combined = scan_tree_data.get("urls", {}).get("combined", []) or []
+    http_live = scan_tree_data.get("subdomains", {}).get("http_live", []) or []
+
+    sub_limit = 50
+    url_limit = 50
+    med_limit = 50
+
+    while True:
+        context_dict = {
+            "target": target,
+            "counts": scan_tree_data.get("counts", {}),
+            "highlights": scan_tree_data.get("highlights", {}),
+            "logic_vulnerabilities": logic_prioritized,
+            "vulnerabilities": {
+                "logic": normalized_logic,
+                "nuclei_critical_high": high_crit_nuclei,
+                "secrets": secrets_vulns,
+                "ffuf_exposed": ffuf_vulns[:50],
+                "nuclei_medium_low": med_low_nuclei[:med_limit],
+            },
+            "ports": ports[:30],
+            "urls_sample": urls_combined[:url_limit],
+            "http_live_sample": http_live[:sub_limit],
+        }
+
+        try:
+            from backend.core.ai_copilot.copilot_masker import SensitiveDataMasker
+            masker = SensitiveDataMasker()
+            context_dict = masker.mask_dict_or_list(context_dict)
+        except Exception:
+            pass
+
+        json_str = json.dumps(context_dict, ensure_ascii=False, default=str)
+        if len(json_str) <= max_chars:
+            return json_str
+
+        if sub_limit > 5:
+            sub_limit = max(5, sub_limit - 15)
+        elif url_limit > 5:
+            url_limit = max(5, url_limit - 15)
+        elif med_limit > 5:
+            med_limit = max(5, med_limit - 15)
+        else:
+            break
+
+    minimal_context = {
+        "target": target,
+        "logic_vulnerabilities": logic_prioritized,
+        "vulnerabilities": {
+            "logic": normalized_logic,
+            "nuclei_critical_high": high_crit_nuclei,
+            "secrets": secrets_vulns,
+        }
+    }
+    return json.dumps(minimal_context, ensure_ascii=False, default=str)[:max_chars]
+
 
 def run_oast(host: str, port: int) -> None:
     server = ADQInteractionServer(host=host, port=port)
@@ -283,8 +370,6 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         print(f"[{worker_id}] Invalid job data missing target: {job_data}", flush=True)
         return
 
-    print(f"[{worker_id}] Executing Job {job_id} for target: {target}", flush=True)
-
     cmd = [sys.executable, "quoc_omni.py", target]
 
     if req_data.get("logic_scan"):
@@ -307,6 +392,10 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
     extra_args = req_data.get("extra_args", [])
     if isinstance(extra_args, list):
         cmd.extend(extra_args)
+
+    public_req_data = sanitize_request_data(req_data)
+    sanitized_cmd = sanitize_extra_args(cmd)
+    print(f"[{worker_id}] Executing Job {job_id} for target: {target} (cmd: {' '.join(sanitized_cmd)})", flush=True)
 
     env = os.environ.copy()
 
@@ -341,7 +430,7 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         "worker_id": worker_id,
         "target": target,
         "started_at": time.time(),
-        "request": req_data,
+        "request": public_req_data,
         "stdout_tail": "",
         "stderr_tail": "",
         "current_step": 0,
@@ -581,9 +670,9 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         })
 
         if job_data.get("skip_ai"):
-            # FREE tier vẫn có kết quả scanner/rule-based,
-            # UI có thể khóa phần AI theo package.
             ai_analysis = fallback_advice
+            ai_source = "locked"
+            ai_status = "locked"
 
         else:
             try:
@@ -598,13 +687,8 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
 
                 copilot = ADQSecurityCopilot()
 
-                # Giới hạn kích thước prompt nhưng giữ dữ liệu có cấu trúc:
-                # hosts, URLs, ports, nuclei, secrets, logic, highlights...
-                structured_context = json.dumps(
-                    scan_tree_data,
-                    ensure_ascii=False,
-                    default=str,
-                )[:24000]
+                # Cấu hình prompt context có cấu trúc, mã hóa secret và an toàn tuyệt đối với 24KB limit
+                structured_context = build_ai_scan_context(scan_tree_data, max_chars=24000)
 
                 ai_prompt = (
                     "Bạn là ADQ Security Copilot. "
@@ -623,29 +707,40 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
 
                 raw_ai = copilot._call_gemini_api(ai_prompt)
 
-                if isinstance(raw_ai, dict):
+                if isinstance(raw_ai, dict) and raw_ai.get("status") == "SUCCESS":
                     ai_analysis = str(
                         raw_ai.get("text")
                         or raw_ai.get("content")
                         or raw_ai.get("message")
                         or ""
                     )
+                    ai_source = "gemini"
+                    ai_status = "success"
+                elif isinstance(raw_ai, str) and raw_ai.strip():
+                    ai_analysis = raw_ai.strip()
+                    ai_source = "gemini"
+                    ai_status = "success"
                 else:
-                    ai_analysis = str(raw_ai or "")
+                    err_msg = str(raw_ai.get("error") if isinstance(raw_ai, dict) else raw_ai)
+                    scan_tree_data["ai_error"] = err_msg
+                    ai_analysis = fallback_advice
+                    ai_source = "rule_fallback"
+                    ai_status = "provider_error"
 
             except Exception as exc:
                 print(
-                    f"[{worker_id}] AI analysis failed for "
-                    f"{job_id}: {exc}",
+                    f"[{worker_id}] AI analysis failed for {job_id}: {exc}",
                     flush=True,
                 )
                 scan_tree_data["ai_error"] = str(exc)
                 ai_analysis = fallback_advice
+                ai_source = "rule_fallback"
+                ai_status = "provider_error"
 
         scan_tree_data["ai_analysis"] = ai_analysis
-        scan_tree_data["recommendations"] = (
-            ai_analysis or fallback_advice
-        )
+        scan_tree_data["recommendations"] = ai_analysis or fallback_advice
+        scan_tree_data["ai_source"] = ai_source
+        scan_tree_data["ai_status"] = ai_status
 
         progress_state["ai_remediation"] = "done"
         _publish_progress({
@@ -697,6 +792,20 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
             nuclei_vulns = scan_tree_data.get("vulnerabilities", {}).get("nuclei", [])
             if nuclei_vulns:
                 save_vulnerabilities(job_id, nuclei_vulns)
+
+            secrets_vulns = scan_tree_data.get("vulnerabilities", {}).get("secrets", [])
+            if secrets_vulns:
+                save_vulnerabilities(job_id, secrets_vulns)
+
+            logic_vulns = scan_tree_data.get("vulnerabilities", {}).get("logic", [])
+            if not logic_vulns and scan_tree_data.get("logic_vulnerabilities"):
+                try:
+                    from backend.quoc_omni import normalize_logic_findings
+                    logic_vulns = normalize_logic_findings(scan_tree_data["logic_vulnerabilities"], target)
+                except Exception:
+                    pass
+            if logic_vulns:
+                save_vulnerabilities(job_id, logic_vulns)
 
             # ------------------------------------------------
             # Persist discovery endpoints separately.
@@ -971,9 +1080,6 @@ def run_worker(worker_id: str, capability: str) -> None:
     signal.signal(signal.SIGTERM, handle_stop)
     signal.signal(signal.SIGINT, handle_stop)
 
-    # Heartbeat chạy ở thread riêng.
-    # Scanner có thể block execute_job() trong nhiều phút nhưng heartbeat
-    # vẫn tiếp tục được refresh trên Redis.
     heartbeat_stop = threading.Event()
 
     worker_state: Dict[str, Any] = {
@@ -1018,15 +1124,6 @@ def run_worker(worker_id: str, capability: str) -> None:
     )
     heartbeat_thread.start()
 
-    # ------------------------------------------------------------
-    # Reliable queue
-    #
-    # Thay vì BLPOP xóa job khỏi scan_queue ngay lập tức, BLMOVE
-    # chuyển job atomically sang processing queue của worker.
-    #
-    # Job chỉ được ACK (LREM) sau khi execute_job() hoàn tất.
-    # Nếu worker crash giữa chừng, message vẫn còn trong Redis.
-    # ------------------------------------------------------------
     processing_key = f"scan_processing:{worker_id}"
 
     worker_capabilities = [
@@ -1038,9 +1135,6 @@ def run_worker(worker_id: str, capability: str) -> None:
     if not worker_capabilities:
         worker_capabilities = ["recon_infra"]
 
-    # Worker chỉ consume queue mà nó hỗ trợ.
-    # Legacy scan_queue được giữ cuối danh sách để không làm kẹt
-    # các job đã được enqueue trước khi capability routing được bật.
     queue_keys = [
         f"scan_queue:{cap}"
         for cap in worker_capabilities
@@ -1114,7 +1208,7 @@ def run_worker(worker_id: str, capability: str) -> None:
 
             if recovered:
                 print(
-                    f"[{worker_id}] Requeued {recovered} unfinished job(s) "
+                    f"[{worker_id}] Handled {recovered} unfinished job(s) "
                     "from previous worker session",
                     flush=True,
                 )
@@ -1131,10 +1225,6 @@ def run_worker(worker_id: str, capability: str) -> None:
             continue
 
         try:
-            # Atomic move từ queue capability sang processing queue.
-            #
-            # Timeout 1 giây/queue để một worker có nhiều capability
-            # vẫn luân phiên kiểm tra được các hàng đợi.
             message = None
             source_queue = None
 
@@ -1174,9 +1264,6 @@ def run_worker(worker_id: str, capability: str) -> None:
                 job_data.get("required_capability") or ""
             ).strip()
 
-            # Legacy queue có thể chứa job cũ/chưa route.
-            # Nếu job đã có capability nhưng worker hiện tại không
-            # hỗ trợ, trả nó sang đúng queue thay vì chạy nhầm.
             if (
                 required_capability
                 and "all" not in worker_capabilities

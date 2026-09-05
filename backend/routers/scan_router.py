@@ -178,11 +178,14 @@ def get_scan_status(job_id: str, user: Dict[str, Any] = Depends(get_current_user
     job = ScanService.get_job_status(job_id)
     tier = get_user_tier(user)
     
-    # Đối với gói FREE, không trả về nội dung AI thật mà trả cờ khóa
-    if tier == "FREE" and job:
+    if job and isinstance(job, dict):
         job = dict(job)
-        job["ai_locked"] = True
-        job["ai_summary"] = None
+        if isinstance(job.get("request"), dict):
+            from backend.schemas.scan import sanitize_request_data
+            job["request"] = sanitize_request_data(job["request"])
+        if tier == "FREE":
+            job["ai_locked"] = True
+            job["ai_summary"] = None
     
     return {"ok": True, "job": job}
 

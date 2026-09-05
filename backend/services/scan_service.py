@@ -20,15 +20,17 @@ try:
         CopilotChatRequest,
         StressRequest,
         WafDetectRequest,
+        sanitize_request_data,
+        sanitize_extra_args,
     )
     from backend.core.recon_scan.waf_detector import WAFFingerprintDetector
     from backend.core.recon_scan.scanner import perform_real_dynamic_scan
     from backend.core.security.ssrf_guard import (
         validate_and_canonicalize_url,
         resolve_and_validate_target,
+        safe_http_fetch,
         create_pinned_session,
         is_dev_private_allowed,
-        safe_http_fetch,
     )
 except ImportError:
     from core.config import settings
@@ -37,19 +39,21 @@ except ImportError:
         CopilotChatRequest,
         StressRequest,
         WafDetectRequest,
+        sanitize_request_data,
+        sanitize_extra_args,
     )
     from core.recon_scan.waf_detector import WAFFingerprintDetector
     from core.recon_scan.scanner import perform_real_dynamic_scan
     from core.security.ssrf_guard import (
         validate_and_canonicalize_url,
         resolve_and_validate_target,
+        safe_http_fetch,
         create_pinned_session,
         is_dev_private_allowed,
-        safe_http_fetch,
     )
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 JOBS_STORAGE: Dict[str, Dict[str, Any]] = {}
-REDIS_URL = getattr(settings, "REDIS_URL", None) or os.getenv("REDIS_URL", "redis://adq_redis:6379/0")
 
 try:
     redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
@@ -75,12 +79,6 @@ class ScanService:
 
         # --------------------------------------------------------
         # Capability routing
-        #
-        # Scan thông thường -> worker light/recon.
-        # Các module active đặc biệt -> worker elite.
-        # Deep logic -> worker elite/deep_logic.
-        #
-        # Không thay đổi API schema; routing được suy ra từ extra_args.
         # --------------------------------------------------------
         required_capability = "recon_infra"
 
@@ -91,7 +89,8 @@ class ScanService:
 
         queue_name = f"scan_queue:{required_capability}"
 
-        job_data = {
+        # Execution payload dành riêng cho worker (giữ raw secret để thực thi)
+        execution_job_data = {
             "job_id": job_id,
             "target": req.target.strip(),
             "request": request_payload,
@@ -101,8 +100,13 @@ class ScanService:
             "required_capability": required_capability,
             "queue_name": queue_name,
         }
+
+        # Public payload dành cho status/API/Meta (đã redact secret)
+        public_request_payload = sanitize_request_data(request_payload)
+        public_job_data = dict(execution_job_data)
+        public_job_data["request"] = public_request_payload
+
         # Tạo DB record bằng CHÍNH job_id trước khi đưa vào Redis.
-        # Nhờ đó FastAPI, Redis worker và PostgreSQL dùng cùng một scan ID.
         try:
             save_scan_job(
                 scan_id=job_id,
@@ -117,23 +121,24 @@ class ScanService:
                 detail=f"Unable to create scan database record: {exc}",
             )
 
-        JOBS_STORAGE[job_id] = job_data
+        JOBS_STORAGE[job_id] = public_job_data
 
         if redis_client:
             try:
+                # Execution payload đi vào worker queue
                 redis_client.rpush(
                     queue_name,
-                    json.dumps(job_data),
+                    json.dumps(execution_job_data),
                 )
+                # Public payload sanitized đi vào job_meta
                 redis_client.set(
                     f"job_meta:{job_id}",
-                    json.dumps(job_data),
+                    json.dumps(public_job_data),
                     ex=86400,
                 )
             except Exception as exc:
                 print(f"[ScanService] Redis queue error: {exc}")
 
-                # Queue thất bại thì đánh dấu job FAILED trong DB.
                 try:
                     from backend.core.engine.db import update_scan_status
                     update_scan_status(job_id, "FAILED")
@@ -145,7 +150,7 @@ class ScanService:
                     detail=f"Unable to queue scan job: {exc}",
                 )
 
-        return job_data
+        return public_job_data
 
     @staticmethod
     def get_job_status(job_id: str) -> Dict[str, Any]:
@@ -176,6 +181,11 @@ class ScanService:
 
         if not job_data:
             raise HTTPException(status_code=404, detail=f"Scan job '{job_id}' not found")
+
+        # Defense-in-depth: Đảm bảo request metadata trả về API luôn sanitized
+        if isinstance(job_data.get("request"), dict):
+            job_data["request"] = sanitize_request_data(job_data["request"])
+
         return job_data
 
     @staticmethod
