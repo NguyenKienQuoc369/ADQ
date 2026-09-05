@@ -14,16 +14,31 @@ class SensitiveDataMasker:
         "AWS Access Key": r"AKIA[0-9A-Z]{16}",
         "Postgres / MySQL Connection String": r"(postgres(?:ql)?|mysql)://[^\s:]+:[^\s]+@[a-zA-Z0-9.-]+:\d+/[a-zA-Z0-9_-]+",
         "JWT Bearer Token": r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+",
-        "Generic Password Field": r"(?i)(?:password|passwd|pwd|pass|secret_key|api_key)[\s]*[=:]\s*['\"]([^'\"]{8,})['\"]",
         "Supabase Key": r"sb_[a-zA-Z0-9_-]{20,}",
         "Stripe Secret Key": r"sk_live_[0-9a-zA-Z]{24}",
         "Private Key Header": r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC )?PRIVATE KEY-----",
     }
 
+    KEY_NAMES: str = (
+        r"(?:password|passwd|pwd|pass|"
+        r"client_secret|secret_key|secret|"
+        r"api[_-]?key|apikey|"
+        r"access[_-]?token|refresh[_-]?token|token|"
+        r"authorization|auth|"
+        r"cookie|session)"
+    )
+
     def __init__(self):
         self.compiled_patterns = {
             name: re.compile(pat) for name, pat in self.PATTERNS.items()
         }
+        q = "['\"]"
+        self.quoted_kv = re.compile(
+            rf"(?i)((?:(?<=[\s,{{[(\x27\x22])|(?<![a-zA-Z0-9_-])){self.KEY_NAMES}{q}?\s*[:=]\s*)({q})(?:(Bearer\s+))?(.*?)\2"
+        )
+        self.unquoted_kv = re.compile(
+            rf"(?i)((?:(?<=[\s,{{[(\x27\x22\?&])|(?<![a-zA-Z0-9_-])){self.KEY_NAMES}{q}?\s*[:=]\s*)(?!{q})(?:(Bearer\s+))?([^\s,;\x27\x22}}]+)"
+        )
 
     def mask_text(self, text: str) -> str:
         """Applies regex redaction rules to arbitrary text string."""
@@ -38,15 +53,26 @@ class SensitiveDataMasker:
         masked = self.compiled_patterns["Stripe Secret Key"].sub("[REDACTED_STRIPE_KEY]", masked)
         masked = self.compiled_patterns["Private Key Header"].sub("[REDACTED_PRIVATE_KEY]", masked)
 
-        # Mask generic password key=value pairs
-        def _pwd_replacer(match: re.Match) -> str:
-            full_match = match.group(0)
-            secret_val = match.group(1) if match.lastindex and match.lastindex >= 1 else ""
-            if secret_val:
-                return full_match.replace(secret_val, "[REDACTED_SECRET]")
-            return full_match
+        def _replace_quoted(m: re.Match) -> str:
+            prefix = m.group(1)
+            quote = m.group(2)
+            bearer = m.group(3) or ""
+            val = m.group(4)
+            if val.startswith("[REDACTED_"):
+                return m.group(0)
+            return f"{prefix}{quote}{bearer}[REDACTED_SECRET]{quote}"
 
-        masked = self.compiled_patterns["Generic Password Field"].sub(_pwd_replacer, masked)
+        def _replace_unquoted(m: re.Match) -> str:
+            prefix = m.group(1)
+            bearer = m.group(2) or ""
+            val = m.group(3)
+            if not val or val.startswith("[REDACTED_"):
+                return m.group(0)
+            return f"{prefix}{bearer}[REDACTED_SECRET]"
+
+        masked = self.quoted_kv.sub(_replace_quoted, masked)
+        masked = self.unquoted_kv.sub(_replace_unquoted, masked)
+
         return masked
 
     def mask_dict_or_list(self, data: Union[Dict[str, Any], List[Any], str]) -> Union[Dict[str, Any], List[Any], str]:

@@ -135,3 +135,29 @@ def test_copilot_function_call_dispatch():
     assert dispatch_res["function"] == "trigger_deep_scan"
     assert dispatch_res["args"]["target_path"] == "/api/v1/admin/debug"
     assert dispatch_res["dispatched"] is True
+
+
+def test_sensitive_data_masker_raw_json_and_text():
+    masker = SensitiveDataMasker()
+
+    cases = [
+        ('{"password": "my_super_secret_password_123"}', '{"password": "[REDACTED_SECRET]"}'),
+        ('{"api_key":"abcdef1234567890"}', '{"api_key":"[REDACTED_SECRET]"}'),
+        ("{'client_secret': 'abcdef1234567890'}", "{'client_secret': '[REDACTED_SECRET]'}"),
+        ("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", "Authorization: Bearer [REDACTED_JWT_TOKEN]"),
+        ("https://x.test?a=1&token=super_secret_value", "https://x.test?a=1&token=[REDACTED_SECRET]"),
+        ("password=super_secret_value", "password=[REDACTED_SECRET]"),
+        ('nested: {"refresh_token": "very_secret_refresh_token"}', 'nested: {"refresh_token": "[REDACTED_SECRET]"}'),
+        ("The password policy requires 12 characters", "The password policy requires 12 characters"),
+        ("token bucket algorithm", "token bucket algorithm"),
+        ("The api_key parameter is optional", "The api_key parameter is optional"),
+        ('"authorization": "Bearer SECRET"', '"authorization": "Bearer [REDACTED_SECRET]"'),
+        ('"cookie": "SECRET"', '"cookie": "[REDACTED_SECRET]"'),
+        ('"session": "SECRET"', '"session": "[REDACTED_SECRET]"'),
+        ('password: "SECRET"', 'password: "[REDACTED_SECRET]"'),
+        ("password='SECRET'", "password='[REDACTED_SECRET]'"),
+    ]
+
+    for raw, expected in cases:
+        assert masker.mask_text(raw) == expected
+

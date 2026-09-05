@@ -63,54 +63,45 @@ function CopilotContent() {
     return (
       <DashboardShell area="dashboard">
         <div className="flex min-h-[70vh] items-center justify-center px-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-purple-500/20 bg-slate-950/80 p-8 text-center shadow-2xl">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-purple-500/30 bg-purple-500/10">
-              <Bot className="h-7 w-7 text-purple-400" />
+          <div className="w-full max-w-xl rounded-lg border border-[#222222] bg-[#000000] p-8 text-center shadow-xl">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900">
+              <Bot className="h-6 w-6 text-white" />
             </div>
 
-            <Badge className="mb-4 border border-purple-500/30 bg-purple-950/40 text-purple-300">
-              <Sparkles className="mr-1 h-3.5 w-3.5" />
-              TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO MAX
-            </Badge>
+            <span className="inline-block mb-3 border border-neutral-700 bg-neutral-800 text-white text-[10px] font-mono px-2.5 py-0.5 rounded-full">
+              DÀNH CHO GÓI PRO MAX
+            </span>
 
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-xl font-semibold text-white">
               Mở Khóa Trợ Lý An Ninh AI Copilot
             </h1>
 
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400">
-              Tài khoản hiện tại (
-              <span className="font-mono font-bold text-cyan-400">{userTier}</span>
-              ) chưa được cấp quyền truy cập AI Copilot. Tính năng này dành riêng cho
-              gói <span className="font-bold text-purple-300">PRO MAX</span>.
+            <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-neutral-400">
+              Tài khoản hiện tại ({userTier}) chưa được cấp quyền truy cập AI Copilot. Tính năng này dành riêng cho gói PRO MAX.
             </p>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-left">
-                <p className="text-xs font-semibold text-cyan-300">FREE / PRO</p>
-                <p className="mt-1 text-sm font-bold text-white">
-                  Chưa bao gồm AI Copilot
-                </p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Các tính năng quét và phân tích tương ứng với gói hiện tại vẫn hoạt động bình thường.
+              <div className="rounded-md border border-[#222222] bg-[#0a0a0a] p-4 text-left">
+                <p className="text-[11px] font-mono uppercase text-neutral-400">FREE / PRO</p>
+                <p className="mt-1 text-sm font-semibold text-white">Chưa bao gồm AI Copilot</p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Các tính năng quét và phân tích tương ứng vẫn hoạt động bình thường.
                 </p>
               </div>
 
-              <div className="rounded-xl border border-purple-500/20 bg-purple-950/20 p-4 text-left">
-                <p className="text-xs font-semibold text-purple-300">PRO MAX</p>
-                <p className="mt-1 text-sm font-bold text-white">
-                  Mở khóa toàn bộ AI Copilot
-                </p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">
-                  Chat với AI bảo mật, phân tích kết quả scan theo ngữ cảnh
-                  và tạo One-Click Patch hỗ trợ khắc phục lỗ hổng.
+              <div className="rounded-md border border-[#222222] bg-[#0a0a0a] p-4 text-left">
+                <p className="text-[11px] font-mono uppercase text-neutral-400">PRO MAX</p>
+                <p className="mt-1 text-sm font-semibold text-white">Mở khóa toàn bộ AI Copilot</p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Chat bảo mật theo ngữ cảnh và tạo One-Click Patch vá lỗi tức thì.
                 </p>
               </div>
             </div>
 
-            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+            <div className="mt-6 flex flex-col justify-center gap-2.5 sm:flex-row">
               <Button
                 onClick={() => router.push("/dashboard/billing")}
-                className="bg-purple-600 text-white hover:bg-purple-500"
+                className="h-8 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md px-4 shadow-sm cursor-pointer"
               >
                 Nâng cấp PRO MAX
               </Button>
@@ -118,7 +109,7 @@ function CopilotContent() {
               <Button
                 variant="outline"
                 onClick={() => router.push("/dashboard")}
-                className="border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                className="h-8 border-[#333333] bg-[#111111] hover:bg-neutral-800 text-neutral-300 text-xs rounded-md px-4"
               >
                 Quay lại Dashboard
               </Button>
@@ -325,37 +316,28 @@ function CopilotContent() {
 
   return (
     <DashboardShell area="dashboard">
-      <div className="mx-auto max-w-6xl space-y-4 font-sans">
-        <Card className="border border-white/[0.08] bg-slate-950/85 shadow-2xl backdrop-blur-xl">
-          <CardHeader className="border-b border-white/[0.06] pb-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <CardTitle className="flex items-center gap-2 text-lg font-bold text-white sm:text-xl">
-                  <Bot className="h-5 w-5 shrink-0 text-cyan-400" />
-                  ADQ Security Copilot
-                </CardTitle>
-
-                <CardDescription className="mt-0.5 text-xs text-slate-400">
-                  AI Agentic Security: Phân tích báo cáo scan, truy vấn kỹ
-                  thuật và sinh mã sửa lỗi tự động.
-                </CardDescription>
-              </div>
-
-              {target && (
-                <Badge
-                  variant="muted"
-                  className="w-fit max-w-full border border-cyan-500/40 bg-cyan-950/40 font-mono text-xs text-cyan-300"
-                >
-                  <span className="truncate">
-                    Target: {target}
-                  </span>
-                </Badge>
-              )}
+      <div className="mx-auto max-w-5xl space-y-4 font-sans text-[#ededed]">
+        <div className="rounded-lg border border-[#222222] bg-[#000000]">
+          <div className="p-4 border-b border-[#222222] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h2 className="flex items-center gap-2 text-base font-semibold text-white">
+                <Bot className="h-4 w-4 shrink-0 text-white" />
+                ADQ Security Copilot
+              </h2>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                AI Agentic Security: Phân tích báo cáo scan, truy vấn kỹ thuật và sinh mã sửa lỗi tự động.
+              </p>
             </div>
-          </CardHeader>
 
-          <CardContent className="space-y-3 pt-3">
-            <div className="h-[calc(100vh-18rem)] min-h-[400px] space-y-3.5 overflow-y-auto rounded-2xl border border-white/[0.06] bg-slate-900/60 p-3 sm:p-4">
+            {target && (
+              <span className="w-fit border border-neutral-700 bg-neutral-800 text-neutral-300 font-mono text-[11px] px-2.5 py-0.5 rounded-full">
+                Target: {target}
+              </span>
+            )}
+          </div>
+
+          <div className="p-4 space-y-3">
+            <div className="h-[calc(100vh-19rem)] min-h-[420px] space-y-3 overflow-y-auto rounded-lg border border-[#222222] bg-[#0a0a0a] p-4">
               {messages.map((message) => {
                 const isUser = message.sender === "user";
 
@@ -369,10 +351,10 @@ function CopilotContent() {
                     }`}
                   >
                     <div
-                      className={`max-w-[92%] rounded-2xl p-3 text-xs leading-relaxed shadow-lg sm:max-w-[88%] sm:p-4 sm:text-sm ${
+                      className={`max-w-[90%] rounded-lg p-3 text-xs leading-relaxed sm:max-w-[85%] ${
                         isUser
-                          ? "bg-gradient-to-r from-cyan-600 to-emerald-600 font-semibold text-slate-950"
-                          : "border border-white/[0.08] bg-slate-950/90 text-slate-200"
+                          ? "bg-white text-black font-medium shadow-sm"
+                          : "border border-[#222222] bg-[#000000] text-neutral-200"
                       }`}
                     >
                       {isUser ? (
@@ -386,7 +368,7 @@ function CopilotContent() {
                       )}
 
                       {message.toolResult?.content && (
-                        <div className="relative mt-3 overflow-hidden rounded-xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs text-emerald-300">
+                        <div className="relative mt-3 overflow-hidden rounded-md border border-[#222222] bg-[#0a0a0a] p-3 font-mono text-xs text-emerald-300">
                           <button
                             type="button"
                             onClick={() =>
@@ -395,7 +377,7 @@ function CopilotContent() {
                                 message.id
                               )
                             }
-                            className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-[10px] text-slate-300 transition hover:bg-slate-700"
+                            className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded border border-[#333333] bg-[#111111] px-2 py-1 text-[10px] text-neutral-300 transition hover:bg-neutral-800"
                           >
                             {copiedId === message.id ? (
                               <Check className="h-3 w-3 text-emerald-400" />
@@ -408,7 +390,7 @@ function CopilotContent() {
                               : "Copy patch"}
                           </button>
 
-                          <pre className="overflow-x-auto whitespace-pre-wrap break-words pr-20">
+                          <pre className="overflow-x-auto whitespace-pre-wrap break-words pr-20 font-mono text-xs">
                             {message.toolResult.content}
                           </pre>
                         </div>
@@ -420,8 +402,8 @@ function CopilotContent() {
 
               {loading && (
                 <div className="flex justify-start">
-                  <div className="flex items-center gap-2 rounded-2xl border border-white/[0.08] bg-slate-950/90 px-4 py-3 text-xs text-slate-400 sm:text-sm">
-                    <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400" />
+                  <div className="flex items-center gap-2 rounded-lg border border-[#222222] bg-[#000000] px-3.5 py-2.5 text-xs text-neutral-400">
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin text-white" />
                     ADQ Copilot đang xử lý...
                   </div>
                 </div>
@@ -446,27 +428,27 @@ function CopilotContent() {
                 }}
                 disabled={loading}
                 placeholder="Hỏi ADQ Copilot về lỗ hổng, đề xuất mã sửa lỗi..."
-                className="h-11 min-w-0 flex-1 rounded-xl border-slate-800 bg-slate-900/80 text-xs text-slate-100 placeholder:text-slate-500 sm:text-sm"
+                className="h-9 min-w-0 flex-1 rounded-md border-[#333333] bg-[#0a0a0a] text-xs text-white placeholder:text-neutral-500 focus:border-white focus:ring-0"
               />
 
               <Button
                 type="button"
                 onClick={() => void send()}
                 disabled={loading || !text.trim()}
-                className="h-11 shrink-0 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 px-4 text-xs font-bold text-slate-950 transition sm:px-5"
+                className="h-9 shrink-0 rounded-md bg-white hover:bg-neutral-200 px-4 text-xs font-semibold text-black transition shadow-sm cursor-pointer"
               >
                 {loading ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <>
-                    <Send className="mr-1.5 h-4 w-4" />
+                    <Send className="mr-1.5 h-3.5 w-3.5" />
                     Gửi
                   </>
                 )}
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </DashboardShell>
   );
@@ -476,7 +458,7 @@ export default function CopilotPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#020617]" />
+        <div className="min-h-screen bg-[#000000]" />
       }
     >
       <CopilotContent />

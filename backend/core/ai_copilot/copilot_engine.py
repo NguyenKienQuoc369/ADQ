@@ -447,6 +447,9 @@ class ADQSecurityCopilot:
                 "status": "CONFIG_ERROR",
             }
 
+        # Ensure zero-leakage sensitive data masking on prompt before outbound request
+        prompt = self.masker.mask_text(prompt)
+
         # Check Redis Cache
         cached_res = self._check_cache(prompt)
         if cached_res:
