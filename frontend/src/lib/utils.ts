@@ -39,3 +39,29 @@ export function getPackageGlow(packageName: string) {
       return "from-slate-700/20 via-slate-800/20 to-slate-950";
   }
 }
+
+/**
+ * Che giấu một phần email để bảo vệ quyền riêng tư người dùng
+ * Ví dụ: kienquocn64@gmail.com -> ki***4@gmail.com
+ */
+export function maskEmail(email?: string | null): string {
+  if (!email || typeof email !== "string") return "";
+  const atIndex = email.indexOf("@");
+  if (atIndex <= 0) return email;
+
+  const username = email.slice(0, atIndex);
+  const domain = email.slice(atIndex + 1);
+
+  let maskedUser = "";
+  if (username.length <= 2) {
+    maskedUser = `${username[0]}*`;
+  } else if (username.length <= 4) {
+    maskedUser = `${username[0]}**${username[username.length - 1]}`;
+  } else {
+    const prefix = username.slice(0, 2);
+    const suffix = username.slice(-1);
+    maskedUser = `${prefix}***${suffix}`;
+  }
+
+  return `${maskedUser}@${domain}`;
+}

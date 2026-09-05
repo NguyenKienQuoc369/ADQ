@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, Lock, User, AtSign, Eye, EyeOff, LoaderCircle, KeyRound, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { maskEmail } from "@/lib/utils";
 
 interface GoogleSetupModalProps {
   isOpen: boolean;
@@ -68,76 +70,84 @@ export function GoogleSetupModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl font-sans text-slate-100">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-sans text-[#ededed] selection:bg-white selection:text-black">
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className="relative w-full max-w-md rounded-2xl border border-cyan-500/30 bg-slate-950 p-6 sm:p-7 shadow-[0_0_60px_rgba(6,182,212,0.18)]"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.96 }}
+          className="relative w-full max-w-md rounded-lg border border-[#222222] bg-[#000000] p-6 shadow-xl"
         >
-          <div className="flex items-center gap-3 pb-4 border-b border-white/[0.08]">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
-              <KeyRound className="h-5 w-5" />
+          <div className="flex items-center gap-3 pb-4 border-b border-[#222222]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[#222222] bg-[#000000] p-1">
+              <Image
+                src="/logo.png"
+                alt="ADQ logo"
+                width={32}
+                height={32}
+                className="h-full w-full object-contain"
+              />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white tracking-wide">Thiết Lập Mật Khẩu Dự Phòng</h3>
-              <p className="text-[11px] text-slate-400">Đăng nhập tài khoản khi gặp sự cố với Google</p>
+              <h3 className="text-sm font-semibold text-white tracking-tight">Thiết Lập Mật Khẩu Dự Phòng</h3>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Dùng để đăng nhập khi gặp sự cố với Google {userEmail ? `(${maskEmail(userEmail)})` : ""}
+              </p>
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
+          <form onSubmit={handleSubmit} className="mt-4 space-y-3 font-sans">
             {errorMessage && (
-              <div className="p-2.5 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2">
+              <div className="p-3 rounded-md bg-rose-950/20 border border-rose-500/30 text-xs text-rose-300 flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                <span className="flex-1">{errorMessage}</span>
+                <span className="flex-1 leading-relaxed">{errorMessage}</span>
               </div>
             )}
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Họ và Tên</label>
+              <label className="text-[10px] font-mono uppercase text-neutral-400 tracking-wider">Họ và Tên</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   disabled={submitting}
-                  className="h-9 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+                  className="h-9 pl-9 border-[#333333] bg-[#0a0a0a] text-xs text-white placeholder:text-neutral-500 focus:border-white focus:ring-0 rounded-md"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Tên Đăng Nhập (Username)</label>
+              <label className="text-[10px] font-mono uppercase text-neutral-400 tracking-wider">Tên Đăng Nhập (Username)</label>
               <div className="relative">
-                <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
                 <Input
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   disabled={submitting}
-                  className="h-9 pl-9 border-slate-800 bg-slate-900/60 text-xs text-cyan-300 font-mono focus:border-cyan-500/60 rounded-xl"
+                  className="h-9 pl-9 border-[#333333] bg-[#0a0a0a] text-xs text-white font-mono focus:border-white focus:ring-0 rounded-md"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Mật Khẩu Dự Phòng (Tối thiểu 8 ký tự)</label>
+              <label className="text-[10px] font-mono uppercase text-neutral-400 tracking-wider">Mật Khẩu Dự Phòng (Tối thiểu 8 ký tự)</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
                 <Input
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={submitting}
                   placeholder="••••••••••••"
-                  className="h-9 pl-9 pr-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+                  className="h-9 pl-9 pr-9 border-[#333333] bg-[#0a0a0a] text-xs text-white placeholder:text-neutral-500 focus:border-white focus:ring-0 rounded-md"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-1"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white p-1 cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
@@ -145,16 +155,16 @@ export function GoogleSetupModal({
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold uppercase text-slate-400 tracking-wider">Xác Nhận Mật Khẩu</label>
+              <label className="text-[10px] font-mono uppercase text-neutral-400 tracking-wider">Xác Nhận Mật Khẩu</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
                 <Input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   disabled={submitting}
                   placeholder="••••••••••••"
-                  className="h-9 pl-9 border-slate-800 bg-slate-900/60 text-xs text-slate-100 focus:border-cyan-500/60 rounded-xl"
+                  className="h-9 pl-9 pr-9 border-[#333333] bg-[#0a0a0a] text-xs text-white placeholder:text-neutral-500 focus:border-white focus:ring-0 rounded-md"
                   required
                 />
               </div>
@@ -163,15 +173,15 @@ export function GoogleSetupModal({
             <Button
               type="submit"
               disabled={submitting}
-              className="h-9 w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.2)] transition rounded-xl mt-2"
+              className="h-9 w-full bg-white hover:bg-neutral-200 text-black font-semibold text-xs rounded-md shadow-sm transition active:scale-[0.99] cursor-pointer mt-3"
             >
               {submitting ? (
-                <span className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 font-mono">
                   <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                  Đang lưu thiết lập...
+                  Đang lưu cấu hình...
                 </span>
               ) : (
-                "Hoàn Tất Thiết Lập & Vào Console"
+                "Hoàn Tất & Tiếp Tục"
               )}
             </Button>
           </form>

@@ -1,73 +1,95 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Mail, ShieldCheck, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { maskEmail } from "@/lib/utils";
 
 function ConfirmEmailContent() {
   const searchParams = useSearchParams();
   const targetEmail = searchParams.get("email") ?? "email của bạn";
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-10 text-slate-100">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.18),transparent_35%),radial-gradient(circle_at_bottom_right,_rgba(168,85,247,0.12),transparent_30%)]" />
-
-      <div className="relative w-full max-w-2xl overflow-hidden rounded-[28px] border border-slate-800 bg-slate-900/75 shadow-2xl shadow-cyan-950/40 backdrop-blur-xl">
-        <div className="border-b border-slate-800 bg-slate-950/60 px-6 py-5">
+    <div className="flex min-h-screen items-center justify-center bg-[#000000] px-4 py-10 text-[#ededed] font-sans selection:bg-white selection:text-black">
+      <div className="w-full max-w-md rounded-lg border border-[#222222] bg-[#000000] p-6 sm:p-8 shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5 pb-4 border-b border-[#222222]">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-300 ring-1 ring-cyan-500/30">
-              <Mail className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-[#222222] bg-[#000000] p-1">
+              <Image
+                src="/logo.png"
+                alt="ADQ logo"
+                width={32}
+                height={32}
+                className="h-full w-full object-contain"
+              />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80">NQ SECURITY</p>
-              <h1 className="text-xl font-semibold text-white">Xác nhận email</h1>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-xs text-white">
+                  ADQ PLATFORM
+                </span>
+                <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[9px] font-mono font-medium text-neutral-300 border border-neutral-700">
+                  VERIFY
+                </span>
+              </div>
+              <h1 className="text-base font-semibold text-white tracking-tight">Xác Nhận Hộp Thư Email</h1>
             </div>
           </div>
+          <ThemeToggle />
         </div>
 
-        <div className="space-y-6 px-6 py-8 sm:px-8">
-          <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-            <CheckCircle2 className="h-5 w-5 text-emerald-300" />
-            <span>Đăng ký đã được nhận. Vui lòng kích hoạt tài khoản bằng email xác nhận.</span>
+        <div className="space-y-4">
+          <div className="flex items-center gap-2.5 rounded-md border border-neutral-700 bg-neutral-900 px-3.5 py-2.5 text-xs font-medium text-neutral-200">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            <span>Đăng ký đã được tiếp nhận. Vui lòng kích hoạt tài khoản bằng email xác nhận.</span>
           </div>
 
-          <div className="space-y-3">
-            <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-400">Gửi tới</p>
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-base font-medium text-cyan-200 break-all">
-              {targetEmail}
+          <div className="space-y-1.5">
+            <p className="text-[10px] uppercase tracking-wider text-neutral-500 font-mono">
+              Địa chỉ nhận liên kết
+            </p>
+            <div className="rounded-md border border-[#333333] bg-[#0a0a0a] px-3 py-2 text-xs font-mono text-white break-all">
+              {maskEmail(targetEmail)}
             </div>
           </div>
 
-          <div className="space-y-4 text-slate-300">
+          <div className="space-y-3 text-xs text-neutral-400 leading-relaxed">
             <p>
-              Vui lòng mở hộp thư và nhấn vào liên kết xác nhận để kích hoạt tài khoản. Nếu email chưa đến, hãy kiểm tra
-              hộp thư Spam hoặc Promotions.
+              Vui lòng mở hộp thư và nhấn vào liên kết xác nhận để kích hoạt tài khoản. Nếu email chưa đến, hãy kiểm tra hộp thư Spam.
             </p>
 
-            <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-300">
-              <div className="flex items-start gap-3">
-                <Sparkles className="mt-0.5 h-4 w-4 text-cyan-300" />
+            <div className="grid gap-2 rounded-md border border-[#222222] bg-[#0a0a0a] p-3 text-xs text-neutral-400">
+              <div className="flex items-start gap-2">
+                <Sparkles className="mt-0.5 h-3.5 w-3.5 text-white shrink-0" />
                 <span>Đảm bảo bạn đang dùng đúng địa chỉ email khi đăng ký.</span>
               </div>
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="mt-0.5 h-4 w-4 text-cyan-300" />
-                <span>Liên kết xác nhận sẽ có hiệu lực trong thời gian ngắn nhất định.</span>
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 text-white shrink-0" />
+                <span>Liên kết xác nhận sẽ có hiệu lực trong vòng 24 giờ.</span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 pt-2 sm:flex-row">
-            <a href="mailto:support@yourdomain.com?subject=Xác nhận email không đến" className="flex-1">
-              <Button className="w-full">Liên hệ hỗ trợ</Button>
+          <div className="flex flex-col gap-2.5 pt-2 sm:flex-row">
+            <a href="mailto:support@adqsecurity.com?subject=Xác nhận email không đến" className="flex-1">
+              <Button className="h-9 w-full bg-white hover:bg-neutral-200 text-black font-semibold text-xs rounded-md shadow-sm transition active:scale-[0.99] cursor-pointer">
+                Liên Hệ Hỗ Trợ
+              </Button>
             </a>
 
             <Link href="/login" className="flex-1">
-              <Button variant="secondary" className="w-full">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Quay lại đăng nhập
+              <Button
+                variant="outline"
+                className="h-9 w-full border border-[#333333] bg-[#111111] hover:bg-neutral-800 text-xs font-medium text-neutral-300 rounded-md flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <ArrowLeft className="h-3.5 w-3.5 text-neutral-400" />
+                Quay Lại Đăng Nhập
               </Button>
             </Link>
           </div>
@@ -79,7 +101,7 @@ function ConfirmEmailContent() {
 
 export default function ConfirmEmailPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-100">Đang tải...</div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#000000] text-neutral-400">Đang tải...</div>}>
       <ConfirmEmailContent />
     </Suspense>
   );

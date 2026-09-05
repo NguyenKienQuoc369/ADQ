@@ -3,8 +3,10 @@
 import React, { Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { ShieldCheck, Lock, Sparkles } from "lucide-react";
+import { Lock, Shield, Cpu, ArrowLeft } from "lucide-react";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 interface AuthShellProps {
   title: string;
@@ -23,91 +25,162 @@ function AuthShellInner({
   footerLinkText,
   footerLinkHref,
 }: AuthShellProps) {
+  const pathname = usePathname();
+  const isLogin = pathname === "/login";
+  const isRegister = pathname === "/register";
+
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 bg-[#020617] text-slate-100 font-sans selection:bg-cyan-500 selection:text-black overflow-hidden">
-      {/* Background Matrix Grid */}
-      <div
-        className="fixed inset-0 pointer-events-none opacity-20"
-        style={{
-          backgroundImage: `
-            linear-gradient(to right, rgba(6, 182, 212, 0.08) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(6, 182, 212, 0.08) 1px, transparent 1px)
-          `,
-          backgroundSize: "36px 36px",
-        }}
-      />
+    <div className="relative min-h-screen w-full flex bg-[#000000] text-[#ededed] font-sans selection:bg-white selection:text-black overflow-x-hidden">
+      {/* ======================================================== */}
+      {/* LEFT COLUMN: HERO 3D ARTWORK & BRAND CITADEL (DESKTOP) */}
+      {/* ======================================================== */}
+      <div className="relative hidden lg:flex lg:w-[48%] xl:w-[50%] flex-col justify-between p-10 xl:p-14 overflow-hidden border-r border-[#222222] bg-[#000000]">
+        {/* Full background 3D Artwork */}
+        <div className="absolute inset-0 z-0">
+          <Image
+            src="/images/auth-hero-citadel.jpg"
+            alt="ADQ Cyber Defense Command Citadel"
+            fill
+            priority
+            className="object-cover object-center scale-105 opacity-60 transition-transform duration-1000 hover:scale-110"
+          />
+          {/* Multi-layered dark overlays */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/40 to-[#000000]/70" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#000000]/40 via-transparent to-[#000000]" />
+        </div>
 
-      {/* Ambient Multi-Point Neon Glows */}
-      <div className="fixed top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-cyan-500/10 blur-[140px] pointer-events-none" />
-      <div className="fixed bottom-10 right-1/3 w-[500px] h-[250px] bg-emerald-500/5 blur-[130px] pointer-events-none" />
-
-      {/* Main Container */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
-        className="relative w-full max-w-[440px] z-10"
-      >
-        {/* Glassmorphism Card */}
-        <div className="relative rounded-2xl border border-white/[0.08] bg-slate-950/85 p-6 sm:p-8 backdrop-blur-2xl shadow-[0_0_50px_rgba(0,0,0,0.8),inset_0_1px_0_0_rgba(255,255,255,0.06)]">
-          {/* Corner HUD Accents */}
-          <div className="absolute top-0 right-0 h-3 w-3 border-t-2 border-r-2 border-cyan-500/40 pointer-events-none rounded-tr-lg" />
-          <div className="absolute bottom-0 left-0 h-3 w-3 border-b-2 border-l-2 border-cyan-500/40 pointer-events-none rounded-bl-lg" />
-
-          {/* Logo & Header */}
-          <div className="flex flex-col items-center text-center space-y-3 mb-6">
-            <Link
-              href="/"
-              className="group flex items-center justify-center h-12 w-12 rounded-xl bg-slate-900/80 border border-cyan-500/30 p-1.5 shadow-[0_0_20px_rgba(6,182,212,0.15)] transition-all duration-300 hover:border-cyan-400 hover:scale-105"
-            >
+        {/* Top Brand Bar */}
+        <div className="relative z-10 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-3 group">
+            <div className="h-9 w-9 rounded-md border border-[#222222] bg-[#000000] p-1 flex items-center justify-center">
               <Image
                 src="/logo.png"
                 alt="ADQ logo"
-                width={40}
-                height={40}
+                width={32}
+                height={32}
                 className="h-full w-full object-contain"
               />
-            </Link>
-
+            </div>
             <div>
-              <div className="flex items-center justify-center gap-1.5 mb-1">
-                <span className="font-extrabold text-base tracking-wider text-white">
-                  ADQ<span className="text-cyan-400">.SEC</span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-base tracking-tight text-white">
+                  ADQ <span className="text-neutral-400">SECURITY</span>
                 </span>
-                <span className="rounded bg-cyan-950/80 px-1.5 py-0.2 text-[9px] font-mono text-cyan-300 border border-cyan-500/40">
-                  SOC
+                <span className="rounded border border-[#333333] bg-[#111111] px-1.5 py-0.2 text-[9px] font-mono font-medium text-neutral-300">
+                  PRO
                 </span>
               </div>
-              <h1 className="text-lg font-bold text-white tracking-tight">{title}</h1>
-              <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>
+              <p className="text-[11px] text-neutral-500 font-mono">Automated Cyber Defense</p>
             </div>
+          </Link>
+
+          <div className="flex items-center gap-2 px-3 py-1 rounded-md border border-[#222222] bg-[#0a0a0a] text-[11px] font-mono text-neutral-400">
+            <Shield className="h-3.5 w-3.5 text-white" />
+            <span>SECURITY GATEWAY v2.4</span>
+          </div>
+        </div>
+        {/* Middle Hero Statement & Value Proposition */}
+        <div className="relative z-10 my-auto py-8 max-w-xl">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-neutral-700 bg-neutral-900 text-neutral-200 text-[11px] font-mono font-medium tracking-wider uppercase mb-4">
+            <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+            Hạ Tầng Giám Sát Chủ Động
+          </div>
+
+          <h2 className="text-3xl xl:text-4xl font-bold tracking-tight text-white leading-tight">
+            Nền Tảng Đánh Giá An Ninh <br />
+            & Phản Ứng Tự Động Hóa.
+          </h2>
+
+          <p className="mt-4 text-xs xl:text-sm text-neutral-400 leading-relaxed">
+            Hợp nhất toàn bộ quy trình kiểm thử xâm nhập: Quét bề mặt mạng, phát hiện lỗ hổng DAST chuyên sâu, phân tích mã nguồn APK và AI Copilot hỗ trợ viết bản vá bảo mật chuẩn công nghiệp.
+          </p>
+
+          {/* Feature Badges */}
+          <div className="flex items-center gap-4 text-[11px] font-mono text-neutral-400 pt-6">
+            <span className="flex items-center gap-1.5"><Shield className="h-3.5 w-3.5 text-white" /> OWASP ASVS</span>
+            <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-white" /> TLS 1.3</span>
+            <span className="flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5 text-white" /> Zero-Trust</span>
+          </div>
+        </div>
+
+        {/* Bottom Details Bar */}
+        <div className="relative z-10 flex items-center justify-between text-xs text-neutral-500 font-mono pt-4 border-t border-[#222222]">
+          <p>© 2026 ADQ CYBERSECURITY</p>
+          <div className="flex items-center gap-1.5 text-neutral-400">
+            <Lock className="h-3.5 w-3.5 text-white" />
+            <span>256-BIT ENCRYPTED</span>
+          </div>
+        </div>
+      </div>
+      {/* ======================================================== */}
+      {/* RIGHT COLUMN: DIRECT CLEAN AUTH CANVAS */}
+      {/* ======================================================== */}
+      <div className="relative flex-1 flex flex-col justify-between p-4 sm:p-6 lg:px-12 lg:py-6 min-h-screen lg:max-h-screen bg-[#000000] overflow-y-auto">
+        {/* Main Form Center Area */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+          className="w-full max-w-[440px] mx-auto my-auto py-2 z-10"
+        >
+          {/* Segmented Switcher Tab giữa Đăng Nhập & Đăng Ký */}
+          {(isLogin || isRegister) && (
+            <div className="grid grid-cols-2 p-1 rounded-md bg-[#111111] border border-[#222222] mb-4">
+              <Link
+                href="/login"
+                className={`flex items-center justify-center py-1.5 text-xs rounded transition-all duration-200 ${
+                  isLogin
+                    ? "bg-white !text-black font-bold shadow-md"
+                    : "text-neutral-400 hover:text-white font-medium"
+                }`}
+              >
+                <span className={isLogin ? "!text-black font-bold" : ""}>
+                  Đăng Nhập
+                </span>
+              </Link>
+              <Link
+                href="/register"
+                className={`flex items-center justify-center py-1.5 text-xs rounded transition-all duration-200 ${
+                  isRegister
+                    ? "bg-white !text-black font-bold shadow-md"
+                    : "text-neutral-400 hover:text-white font-medium"
+                }`}
+              >
+                <span className={isRegister ? "!text-black font-bold" : ""}>
+                  Đăng Ký Mới
+                </span>
+              </Link>
+            </div>
+          )}
+
+          <div className="mb-4">
+            <h1 className="text-xl font-semibold text-white tracking-tight">
+              {title}
+            </h1>
+            <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+              {subtitle}
+            </p>
           </div>
 
           {/* Form Content */}
-          {children}
+          <div className="relative">{children}</div>
 
           {/* Footer Switcher */}
           {footerText && footerLinkHref && footerLinkText && (
-            <div className="mt-6 pt-4 border-t border-white/[0.06] text-center">
-              <p className="text-xs text-slate-400">
+            <div className="mt-4 pt-3.5 border-t border-[#222222] text-center">
+              <p className="text-xs text-neutral-500">
                 {footerText}{" "}
                 <Link
                   href={footerLinkHref}
-                  className="font-semibold text-cyan-400 hover:text-cyan-300 transition hover:underline"
+                  className="font-medium text-white hover:underline transition-colors"
                 >
                   {footerLinkText}
                 </Link>
               </p>
             </div>
           )}
-        </div>
-
-        {/* Security Badge */}
-        <div className="mt-4 flex items-center justify-center gap-1.5 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
-          <Lock className="h-3 w-3 text-cyan-500/70" />
-          <span>256-Bit SOC Encrypted Gateway</span>
-        </div>
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 }

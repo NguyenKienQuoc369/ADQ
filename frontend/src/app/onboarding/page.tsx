@@ -203,14 +203,14 @@ export default function OnboardingPage() {
 
   if (stage === "loading") {
     return (
-      <main className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-100">
+      <main className="min-h-screen bg-[#000000] flex items-center justify-center text-[#ededed] font-sans">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-14 w-14 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 flex items-center justify-center">
-            <ShieldCheck className="h-7 w-7 text-cyan-400" />
+          <div className="h-12 w-12 rounded-lg border border-[#222222] bg-[#0a0a0a] flex items-center justify-center">
+            <ShieldCheck className="h-6 w-6 text-white" />
           </div>
 
-          <div className="flex items-center gap-2 text-sm text-slate-400">
-            <LoaderCircle className="h-4 w-4 animate-spin text-cyan-400" />
+          <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin text-white" />
             Đang chuẩn bị tài khoản ADQ Security...
           </div>
         </div>
@@ -219,7 +219,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950">
+    <main className="min-h-screen bg-[#000000]">
       <GoogleSetupModal
         isOpen={stage === "google-setup"}
         userEmail={email}
