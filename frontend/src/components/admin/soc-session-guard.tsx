@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import AdminLoginPage from "@/app/admin/login/page";
+import { AdminLoginForm } from "@/components/admin/admin-login-form";
 
 export function SocSessionGuard({
   children,
@@ -40,7 +40,7 @@ export function SocSessionGuard({
 
   if (!authorized) {
     return (
-      <AdminLoginPage
+      <AdminLoginForm
         onSuccess={() => {
           setAuthorized(true);
         }}

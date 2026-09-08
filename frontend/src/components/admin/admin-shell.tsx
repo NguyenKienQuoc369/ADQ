@@ -2,9 +2,11 @@
 
 import React, { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
 import { Gauge, Users, KeyRound, LogOut, Terminal, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const adminNav = [
   { href: "/admin", label: "Tổng quan SOC & Máy chủ", icon: Gauge },
@@ -37,19 +39,25 @@ export function AdminShell({ children, onLogout }: { children: React.ReactNode; 
     }
   };
 
-  if (!mounted) return <div className="min-h-screen bg-[#020617]" />;
+  if (!mounted) return <div className="min-h-screen bg-[#000000]" />;
 
   return (
-    <div className="flex min-h-screen bg-[#020617] text-slate-100 font-sans selection:bg-rose-500 selection:text-white">
+    <div className="flex min-h-screen bg-[#000000] text-[#ededed] font-sans selection:bg-white selection:text-black">
       {/* Sidebar Admin Riêng Biệt */}
-      <aside className="w-64 shrink-0 border-r border-white/[0.08] bg-slate-950/90 p-4 flex flex-col justify-between backdrop-blur-2xl">
+      <aside className="w-64 shrink-0 border-r border-[#222222] bg-[#000000] p-4 flex flex-col justify-between">
         <div className="space-y-6">
-          <div className="flex items-center gap-3 p-2 rounded-2xl bg-slate-900/80 border border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.15)]">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/40">
-              <Terminal className="h-5 w-5" />
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-[#0a0a0a] border border-[#222222]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#222222] bg-[#000000] p-1">
+              <Image
+                src="/logo.png"
+                alt="ADQ logo"
+                width={28}
+                height={28}
+                className="h-full w-full object-contain"
+              />
             </div>
             <div>
-              <div className="text-xs font-black tracking-wider text-white">ADQ <span className="text-rose-400">ROOT SOC</span></div>
+              <div className="text-xs font-semibold tracking-tight text-white">ADQ ROOT SOC</div>
               <div className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> MASTER ACTIVE
               </div>
@@ -65,27 +73,32 @@ export function AdminShell({ children, onLogout }: { children: React.ReactNode; 
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium transition cursor-pointer",
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-xs font-medium transition cursor-pointer select-none",
                     active
-                      ? "border border-rose-500/40 bg-rose-950/40 text-rose-300 shadow-md font-bold"
-                      : "text-slate-400 hover:bg-slate-900/60 hover:text-slate-200"
+                      ? "active-sidebar-link bg-white text-black font-semibold shadow-sm"
+                      : "text-neutral-400 hover:bg-[#111111] hover:text-white"
                   )}
                 >
-                  <Icon className={cn("h-4 w-4", active ? "text-rose-400" : "text-slate-400")} />
-                  <span>{item.label}</span>
+                  <Icon className={cn("h-4 w-4", active ? "text-black" : "text-neutral-400")} />
+                  <span className={active ? "text-black font-semibold" : ""}>{item.label}</span>
                 </a>
               );
             })}
           </nav>
         </div>
 
-        <Button
-          variant="ghost"
-          onClick={handleLogout}
-          className="w-full justify-start gap-2 text-xs text-rose-400 hover:bg-rose-950/30 rounded-xl"
-        >
-          <LogOut className="h-4 w-4" /> Thoát Root Console
-        </Button>
+        <div className="space-y-2 pt-3 border-t border-[#222222]">
+          <div className="w-full flex justify-center">
+            <ThemeToggle />
+          </div>
+          <Button
+            variant="ghost"
+            onClick={handleLogout}
+            className="w-full justify-start gap-2 text-xs text-neutral-400 hover:text-white hover:bg-neutral-900 rounded-md"
+          >
+            <LogOut className="h-4 w-4" /> Thoát Root Console
+          </Button>
+        </div>
       </aside>
 
       {/* Main Content */}

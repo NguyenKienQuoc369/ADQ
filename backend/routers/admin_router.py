@@ -1,7 +1,9 @@
+import hmac
+import os
+import uuid
+from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, Query, status, HTTPException
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
-import uuid
 
 from backend.schemas.admin import (
     UserCreateManual,
@@ -21,7 +23,10 @@ class AdminLoginRequest(BaseModel):
 
 @router.post("/admin/auth/login")
 def admin_root_login(payload: AdminLoginRequest):
-    if payload.master_key.strip() != "@sisiniki123":
+    expected_key = os.getenv("ADQ_SOC_MASTER_KEY", "").strip()
+    provided_key = (payload.master_key or "").strip()
+
+    if not expected_key or not provided_key or not hmac.compare_digest(provided_key, expected_key):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sai mã khóa xác thực quản trị viên (Root Master Key).")
     
     return {
@@ -36,11 +41,11 @@ def get_system_telemetry():
     return AdminService.get_system_health()
 
 @router.get("/admin/global-scans")
-def get_global_scans():
+def get_global_scans(admin: Dict[str, Any] = Depends(require_admin_role)):
     return {"scans": AdminService.get_global_scan_history()}
 
 @router.post("/admin/global-scans/{job_id}/kill")
-def kill_scan(job_id: str):
+def kill_scan(job_id: str, admin: Dict[str, Any] = Depends(require_admin_role)):
     return AdminService.kill_scan_job(job_id)
 
 @router.get("/admin/users")

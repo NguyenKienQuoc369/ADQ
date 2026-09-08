@@ -89,15 +89,15 @@ function statusClass(status?: string) {
     case "ONLINE":
     case "HEALTHY":
     case "READY":
-      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+      return "border-neutral-700 bg-neutral-800 text-white";
     case "BUSY":
-      return "border-cyan-500/30 bg-cyan-500/10 text-cyan-300";
+      return "border-neutral-700 bg-neutral-800 text-white";
     case "DEGRADED":
-      return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+      return "border-amber-500/40 bg-amber-950/30 text-amber-300";
     case "OFFLINE":
-      return "border-rose-500/30 bg-rose-500/10 text-rose-300";
+      return "border-rose-500/40 bg-rose-950/30 text-rose-300";
     default:
-      return "border-slate-700 bg-slate-800/70 text-slate-400";
+      return "border-neutral-800 bg-neutral-900 text-neutral-400";
   }
 }
 
@@ -106,7 +106,7 @@ function StatusBadge({ status }: { status?: string }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-wider ${statusClass(
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-mono font-medium ${statusClass(
         value
       )}`}
     >
@@ -127,18 +127,18 @@ function MetricCard({
   icon: LucideIcon;
 }) {
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+    <div className="rounded-lg border border-[#222222] bg-[#000000] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[11px] font-mono uppercase text-neutral-400">
           {label}
         </span>
-        <Icon className="h-4 w-4 text-slate-500" />
+        <Icon className="h-4 w-4 text-neutral-400" />
       </div>
 
-      <div className="text-2xl font-black text-white">{value}</div>
+      <div className="text-2xl font-bold font-mono text-white">{value}</div>
 
       {detail ? (
-        <div className="mt-2 text-xs text-slate-500">{detail}</div>
+        <div className="mt-1 text-xs text-neutral-500">{detail}</div>
       ) : null}
     </div>
   );
@@ -203,27 +203,26 @@ function OperationsContent() {
 
   return (
     <AdminShell>
-      <div className="mx-auto max-w-[1500px] space-y-6">
+      <div className="mx-auto max-w-[1500px] space-y-6 font-sans text-[#ededed]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-rose-400">
-              <Activity className="h-4 w-4" />
+            <div className="mb-1 flex items-center gap-2 text-xs font-mono uppercase text-neutral-400">
+              <Activity className="h-3.5 w-3.5" />
               SOC Operations
             </div>
 
-            <h1 className="text-2xl font-black tracking-tight text-white">
+            <h1 className="text-xl font-semibold text-white tracking-tight">
               Runtime Operations
             </h1>
 
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Trạng thái runtime đọc trực tiếp từ telemetry backend. Không sử dụng
-              trạng thái worker giả hoặc fallback READY.
+            <p className="mt-1 max-w-2xl text-xs text-neutral-400">
+              Trạng thái runtime đọc trực tiếp từ telemetry backend. Không sử dụng trạng thái worker giả hoặc fallback.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             {data?.timestamp ? (
-              <div className="flex items-center gap-2 text-xs text-slate-500">
+              <div className="flex items-center gap-2 text-xs font-mono text-neutral-500">
                 <Clock3 className="h-3.5 w-3.5" />
                 {new Date(data.timestamp).toLocaleString()}
               </div>
@@ -234,10 +233,10 @@ function OperationsContent() {
               size="sm"
               disabled={refreshing}
               onClick={() => loadTelemetry(true)}
-              className="border-white/10 bg-slate-950 text-slate-300 hover:bg-slate-900"
+              className="h-8 border-[#333333] bg-[#111111] hover:bg-neutral-800 text-xs text-white rounded-md cursor-pointer"
             >
               <RefreshCw
-                className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                className={`mr-1.5 h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
               />
               Làm mới
             </Button>
@@ -245,11 +244,11 @@ function OperationsContent() {
         </div>
 
         {error ? (
-          <div className="flex items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-950/20 p-4 text-sm text-rose-300">
+          <div className="flex items-start gap-3 rounded-lg border border-rose-500/30 bg-rose-950/20 p-4 text-xs text-rose-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              <div className="font-bold">Telemetry unavailable</div>
-              <div className="mt-1 font-mono text-xs text-rose-300/80">
+              <div className="font-semibold">Telemetry unavailable</div>
+              <div className="mt-1 font-mono text-[11px] text-rose-300/80">
                 {error}
               </div>
             </div>
@@ -257,8 +256,8 @@ function OperationsContent() {
         ) : null}
 
         {loading && !data ? (
-          <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-white/[0.08] bg-slate-950/50">
-            <RefreshCw className="h-5 w-5 animate-spin text-slate-500" />
+          <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-[#222222] bg-[#000000]">
+            <RefreshCw className="h-5 w-5 animate-spin text-neutral-500" />
           </div>
         ) : (
           <>
@@ -354,8 +353,8 @@ function OperationsContent() {
 
             <section>
               <div className="mb-3 flex items-center gap-2">
-                <Server className="h-4 w-4 text-slate-500" />
-                <h2 className="text-sm font-bold text-white">Core Services</h2>
+                <Server className="h-4 w-4 text-neutral-400" />
+                <h2 className="text-sm font-semibold text-white">Core Services</h2>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -370,14 +369,14 @@ function OperationsContent() {
                 ].map(([label, status]) => (
                   <div
                     key={String(label)}
-                    className="flex items-center justify-between rounded-2xl border border-white/[0.08] bg-slate-950/60 p-4"
+                    className="flex items-center justify-between rounded-lg border border-[#222222] bg-[#000000] p-3.5"
                   >
                     <div>
-                      <div className="text-sm font-semibold text-slate-200">
+                      <div className="text-xs font-semibold text-white">
                         {label}
                       </div>
 
-                      <div className="mt-1 text-[11px] text-slate-600">
+                      <div className="mt-0.5 text-[11px] text-neutral-500 font-mono">
                         Runtime health
                       </div>
                     </div>
@@ -391,48 +390,47 @@ function OperationsContent() {
             <section>
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-slate-500" />
-                  <h2 className="text-sm font-bold text-white">
+                  <Activity className="h-4 w-4 text-neutral-400" />
+                  <h2 className="text-sm font-semibold text-white">
                     Worker Heartbeats
                   </h2>
                 </div>
 
-                <span className="text-xs text-slate-500">
+                <span className="text-xs font-mono text-neutral-500">
                   {workers.length} worker{workers.length === 1 ? "" : "s"}
                 </span>
               </div>
 
               {workers.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/[0.1] bg-slate-950/40 px-6 py-10 text-center">
-                  <WifiOff className="mx-auto mb-3 h-6 w-6 text-slate-600" />
+                <div className="rounded-lg border border-dashed border-[#333333] bg-[#0a0a0a] px-6 py-8 text-center">
+                  <WifiOff className="mx-auto mb-2 h-5 w-5 text-neutral-500" />
 
-                  <div className="text-sm font-semibold text-slate-300">
+                  <div className="text-xs font-semibold text-white">
                     Không phát hiện worker heartbeat
                   </div>
 
-                  <div className="mx-auto mt-1 max-w-lg text-xs leading-5 text-slate-500">
-                    Đây không được coi là READY. Worker sẽ xuất hiện tại đây khi
-                    Redis telemetry phát hiện heartbeat thật.
+                  <div className="mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-neutral-500 font-mono">
+                    Worker sẽ xuất hiện tại đây khi Redis telemetry phát hiện heartbeat thật.
                   </div>
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-slate-950/60">
+                <div className="overflow-hidden rounded-lg border border-[#222222] bg-[#000000]">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
-                      <thead className="border-b border-white/[0.08] bg-slate-900/60 text-slate-500">
+                      <thead className="border-b border-[#222222] bg-[#0a0a0a] text-neutral-500 font-mono">
                         <tr>
-                          <th className="px-4 py-3 font-semibold">Worker</th>
-                          <th className="px-4 py-3 font-semibold">Status</th>
-                          <th className="px-4 py-3 font-semibold">
+                          <th className="px-4 py-2.5 font-medium">Worker</th>
+                          <th className="px-4 py-2.5 font-medium">Status</th>
+                          <th className="px-4 py-2.5 font-medium">
                             Processing
                           </th>
-                          <th className="px-4 py-3 font-semibold">
+                          <th className="px-4 py-2.5 font-medium">
                             Heartbeat TTL
                           </th>
                         </tr>
                       </thead>
 
-                      <tbody>
+                      <tbody className="divide-y divide-[#222222]">
                         {workers.map((worker, index) => {
                           const workerName =
                             worker.worker_id ||
@@ -443,23 +441,23 @@ function OperationsContent() {
                           return (
                             <tr
                               key={`${workerName}-${index}`}
-                              className="border-b border-white/[0.05] last:border-0"
+                              className="hover:bg-neutral-900/40"
                             >
-                              <td className="px-4 py-3 font-mono text-slate-300">
+                              <td className="px-4 py-2.5 font-mono text-white">
                                 {workerName}
                               </td>
 
-                              <td className="px-4 py-3">
+                              <td className="px-4 py-2.5">
                                 <StatusBadge status={worker.status} />
                               </td>
 
-                              <td className="px-4 py-3 font-mono text-slate-400">
+                              <td className="px-4 py-2.5 font-mono text-neutral-400">
                                 {worker.processing_jobs ??
                                   worker.queue_depth ??
                                   0}
                               </td>
 
-                              <td className="px-4 py-3 font-mono text-slate-400">
+                              <td className="px-4 py-2.5 font-mono text-neutral-400">
                                 {worker.heartbeat_ttl === null ||
                                 worker.heartbeat_ttl === undefined
                                   ? "—"
@@ -477,13 +475,13 @@ function OperationsContent() {
 
             <section>
               <div className="mb-3 flex items-center gap-2">
-                <Activity className="h-4 w-4 text-slate-500" />
-                <h2 className="text-sm font-bold text-white">External Watchdog</h2>
+                <Activity className="h-4 w-4 text-neutral-400" />
+                <h2 className="text-sm font-semibold text-white">External Watchdog</h2>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-4">
-                  <div className="text-[11px] uppercase tracking-wider text-slate-500">
+                <div className="rounded-lg border border-[#222222] bg-[#000000] p-4">
+                  <div className="text-[11px] uppercase font-mono text-neutral-400">
                     Reachability
                   </div>
                   <div className="mt-2">
@@ -499,8 +497,8 @@ function OperationsContent() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-4">
-                  <div className="text-[11px] uppercase tracking-wider text-slate-500">
+                <div className="rounded-lg border border-[#222222] bg-[#000000] p-4">
+                  <div className="text-[11px] uppercase font-mono text-neutral-400">
                     API Latency
                   </div>
                   <div className="mt-2 font-mono text-xl font-bold text-white">
@@ -510,11 +508,11 @@ function OperationsContent() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-4">
-                  <div className="text-[11px] uppercase tracking-wider text-slate-500">
+                <div className="rounded-lg border border-[#222222] bg-[#000000] p-4">
+                  <div className="text-[11px] uppercase font-mono text-neutral-400">
                     Last Check
                   </div>
-                  <div className="mt-2 font-mono text-sm font-semibold text-white">
+                  <div className="mt-2 font-mono text-xs font-medium text-white">
                     {data?.timestamp
                       ? new Date(data.timestamp).toLocaleString()
                       : "UNAVAILABLE"}
@@ -525,19 +523,19 @@ function OperationsContent() {
 
             <section>
               <div className="mb-3 flex items-center gap-2">
-                <Database className="h-4 w-4 text-slate-500" />
-                <h2 className="text-sm font-bold text-white">Diagnostics</h2>
+                <Database className="h-4 w-4 text-neutral-400" />
+                <h2 className="text-sm font-semibold text-white">Diagnostics</h2>
               </div>
 
               {diagnostics.length === 0 ? (
-                <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-950/10 p-4">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                <div className="flex items-center gap-3 rounded-lg border border-[#222222] bg-[#000000] p-4">
+                  <CheckCircle2 className="h-4 w-4 text-white" />
 
                   <div>
-                    <div className="text-sm font-semibold text-emerald-300">
+                    <div className="text-xs font-semibold text-white">
                       Không có diagnostic error
                     </div>
-                    <div className="mt-0.5 text-xs text-slate-500">
+                    <div className="mt-0.5 text-xs text-neutral-500">
                       Các health check hiện tại không báo lỗi.
                     </div>
                   </div>
@@ -547,14 +545,14 @@ function OperationsContent() {
                   {diagnostics.map(([key, message]) => (
                     <div
                       key={key}
-                      className="rounded-2xl border border-amber-500/20 bg-amber-950/10 p-4"
+                      className="rounded-lg border border-[#222222] bg-[#000000] p-4"
                     >
-                      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300">
+                      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-amber-400">
                         <AlertTriangle className="h-4 w-4" />
                         {key.replaceAll("_", " ")}
                       </div>
 
-                      <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-slate-400">
+                      <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-neutral-400">
                         {message}
                       </pre>
                     </div>
@@ -563,7 +561,7 @@ function OperationsContent() {
               )}
             </section>
 
-            <div className="text-right text-[10px] uppercase tracking-[0.16em] text-slate-700">
+            <div className="text-right text-[10px] uppercase font-mono tracking-wider text-neutral-600">
               Auto refresh every 5 seconds · Read-only
             </div>
           </>
