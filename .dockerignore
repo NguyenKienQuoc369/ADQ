@@ -1,0 +1,9 @@
+.git
+.venv
+frontend/node_modules
+frontend/.next
+node_modules
+__pycache__
+*.pyc
+.gemini
+.pytest_cache

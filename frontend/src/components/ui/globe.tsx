@@ -370,7 +370,6 @@ export function Globe() {
       {/* HUD */}
       <div className="pointer-events-none absolute left-5 top-5 z-10">
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]" />
           <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-300">
             Global Attack Surface
           </span>
@@ -379,10 +378,6 @@ export function Globe() {
         <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.15em] text-slate-600">
           Infrastructure intelligence
         </p>
-      </div>
-
-      <div className="pointer-events-none absolute right-5 top-5 z-10 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-1 font-mono text-[9px] tracking-[0.18em] text-emerald-400">
-        LIVE
       </div>
 
       {/* Corner HUD decorations */}

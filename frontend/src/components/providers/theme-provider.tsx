@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-type Theme = "dark";
+export type Theme = "dark" | "light";
 
 type ThemeContextValue = {
   theme: Theme;
@@ -14,35 +14,61 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 function applyTheme(theme: Theme) {
+  if (typeof document === "undefined") return;
   document.documentElement.dataset.theme = theme;
-  document.documentElement.classList.add("dark");
+  if (theme === "light") {
+    document.documentElement.classList.remove("dark");
+    document.documentElement.classList.add("light");
+    document.documentElement.style.colorScheme = "light";
+  } else {
+    document.documentElement.classList.remove("light");
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.colorScheme = "dark";
+  }
 }
 
 function getInitialTheme(): Theme {
+  if (typeof window === "undefined") return "dark";
+  const stored = localStorage.getItem("adq_theme") as Theme | null;
+  if (stored === "light" || stored === "dark") {
+    return stored;
+  }
   return "dark";
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
+  const [theme, setThemeState] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    applyTheme(theme);
+    const initial = getInitialTheme();
+    setThemeState(initial);
+    applyTheme(initial);
     setMounted(true);
-  }, [theme]);
+  }, []);
 
   const setTheme = useCallback((nextTheme: Theme) => {
-    setThemeState("dark");
+    setThemeState(nextTheme);
+    applyTheme(nextTheme);
+    try {
+      localStorage.setItem("adq_theme", nextTheme);
+    } catch {
+      // ignore
+    }
   }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(theme === "dark" ? "light" : "dark");
+  }, [setTheme, theme]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
       theme,
       mounted,
       setTheme,
-      toggleTheme: () => setTheme("dark"),
+      toggleTheme,
     }),
-    [mounted, setTheme, theme],
+    [mounted, setTheme, theme, toggleTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -57,3 +83,4 @@ export function useTheme() {
 
   return context;
 }
+

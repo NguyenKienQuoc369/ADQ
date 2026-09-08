@@ -5,19 +5,23 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowRight, LayoutDashboard, LogIn } from "lucide-react";
-
+import { motion } from "framer-motion";
 import { useAuth } from "@/components/providers/auth-provider";
-import { Button } from "@/components/ui/button";
+import { LiquidGlassButton } from "@/components/ui/liquid-glass";
 
 export function Navigation() {
   const { user } = useAuth();
   const pathname = usePathname();
   const onMarketingPage = pathname === "/";
   const [mounted, setMounted] = useState(false);
+  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // CHỈ hiển thị duy nhất ở trang chủ ("/")
+  if (pathname !== "/") return null;
 
   const menu = [
     {
@@ -43,8 +47,14 @@ export function Navigation() {
   ];
 
   return (
-    <header className="sticky top-0 z-50 border-b border-cyan-500/20 bg-[#020617]/75 font-sans text-slate-100 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-8">
+    <header className="sticky top-3.5 z-50 w-full px-4 md:px-8 font-sans text-slate-100 transition-all pointer-events-none">
+      <div
+        className="pointer-events-auto relative mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2.5 sm:px-6 rounded-2xl md:rounded-full border border-white/[0.12] bg-[#020617]/25 backdrop-blur-md transition-all overflow-hidden"
+        style={{
+          boxShadow:
+            "inset 0 1px 1px 0 rgba(255, 255, 255, 0.2), 0 20px 45px -12px rgba(0, 0, 0, 0.5)",
+        }}
+      >
         <Link href="/" className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl border border-cyan-400/30 bg-cyan-400/10 shadow-[0_0_26px_rgba(6,182,212,0.22)]">
             <Image
@@ -64,50 +74,65 @@ export function Navigation() {
           </div>
         </Link>
 
-        <nav className="hidden items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-sm md:flex">
-          {menu.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="rounded-full px-3 py-1.5 text-slate-300 transition hover:bg-cyan-400/10 hover:text-cyan-200"
-            >
-              {item.label}
-            </Link>
-          ))}
+        <nav
+          onMouseLeave={() => setHoveredNav(null)}
+          className="relative hidden items-center gap-1 rounded-full border border-cyan-500/20 bg-slate-950/70 px-2 py-1 text-sm backdrop-blur-md md:flex shadow-inner"
+        >
+          {menu.map((item) => {
+            const isHovered = hoveredNav === item.label;
+
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                onMouseEnter={() => setHoveredNav(item.label)}
+                className="relative rounded-full px-3.5 py-1.5 text-slate-300 transition-colors duration-200 hover:text-white"
+              >
+                {isHovered && (
+                  <motion.div
+                    layoutId="nav-pill"
+                    transition={{ type: "spring", stiffness: 380, damping: 26 }}
+                    className="absolute inset-0 rounded-full border border-cyan-400/40 bg-gradient-to-r from-cyan-500/25 via-sky-500/15 to-cyan-500/25 shadow-[0_0_15px_rgba(6,182,212,0.35)] -z-10"
+                  />
+                )}
+                <span className="relative z-10 font-medium text-xs tracking-wide">
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-3">
           {mounted && user ? (
             <Link href="/dashboard">
-              <Button
+              <LiquidGlassButton
                 variant="secondary"
-                className="cursor-pointer border-cyan-500/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20"
+                className="px-3.5 py-1.5 text-xs font-semibold"
               >
-                <LayoutDashboard className="mr-1.5 h-4 w-4" />
+                <LayoutDashboard className="h-3.5 w-3.5" />
                 Dashboard
-              </Button>
+              </LiquidGlassButton>
             </Link>
           ) : (
             <>
               <Link href="/login" className="hidden sm:block">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="cursor-pointer text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-100"
+                <LiquidGlassButton
+                  variant="secondary"
+                  className="px-3 py-1.5 text-xs font-medium border-white/10 hover:border-cyan-400/40"
                 >
                   Đăng nhập
-                </Button>
+                </LiquidGlassButton>
               </Link>
 
               <Link href="/register">
-                <Button
-                  size="sm"
-                  className="cursor-pointer border border-cyan-300/60 bg-gradient-to-r from-cyan-300 via-cyan-400 to-sky-400 text-slate-950 shadow-[0_12px_28px_rgba(34,211,238,0.32)] hover:shadow-[0_16px_32px_rgba(34,211,238,0.42)]"
+                <LiquidGlassButton
+                  variant="primary"
+                  className="px-3.5 py-1.5 text-xs font-bold"
                 >
-                  <LogIn className="mr-1 h-3.5 w-3.5" />
+                  <LogIn className="h-3.5 w-3.5" />
                   Bắt đầu miễn phí
-                  
-                </Button>
+                </LiquidGlassButton>
               </Link>
             </>
           )}

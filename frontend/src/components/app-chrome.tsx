@@ -17,19 +17,12 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const hideNavigation =
-    isAdminDomain ||
-    pathname?.startsWith("/admin") ||
-    pathname?.startsWith("/dashboard") ||
-    pathname?.startsWith("/scan") ||
-    pathname?.startsWith("/stress-test") ||
-    pathname?.startsWith("/apk-audit") ||
-    pathname?.startsWith("/copilot") ||
-    pathname?.startsWith("/settings");
+  // Navigation CHỈ hiển thị duy nhất trên trang chủ ("/")
+  const isLandingPage = pathname === "/" && !isAdminDomain;
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#020617] text-slate-100 selection:bg-rose-500 selection:text-white font-sans">
-      {!hideNavigation && <Navigation />}
+    <div className="flex min-h-screen flex-col font-sans">
+      {isLandingPage && <Navigation />}
       <main className="flex-1">{children}</main>
     </div>
   );

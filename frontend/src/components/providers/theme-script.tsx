@@ -1,8 +1,12 @@
-import Script from "next/script";
-
 export function ThemeScript() {
-  const code = `(function(){try{document.documentElement.dataset.theme='dark';document.documentElement.classList.add('dark');}catch(e){}})();`;
+  const code = `(function(){try{var t=localStorage.getItem('adq_theme')||'dark';document.documentElement.dataset.theme=t;if(t==='light'){document.documentElement.classList.remove('dark');document.documentElement.classList.add('light');document.documentElement.style.colorScheme='light';}else{document.documentElement.classList.remove('light');document.documentElement.classList.add('dark');document.documentElement.style.colorScheme='dark';}}catch(e){}})();`;
 
-  return <Script id="adq-theme-script" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: code }} />;
+  return (
+    <script
+      id="adq-theme-script"
+      dangerouslySetInnerHTML={{ __html: code }}
+    />
+  );
 }
+
 
