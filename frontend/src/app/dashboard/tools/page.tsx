@@ -41,43 +41,40 @@ const advancedTools = [
 export default function DashboardToolsPage() {
   return (
     <DashboardShell area="dashboard">
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Công cụ nâng cao</CardTitle>
-            <CardDescription>
-              Mình đã gom các màn chuyên sâu về chung một nơi để sidebar gọn hơn. Nếu bạn chỉ cần thao tác cơ bản, cứ ở
-              `Trang tổng quan`.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+      <div className="space-y-6 font-sans text-[#ededed]">
+        <div className="rounded-lg border border-[#222222] bg-[#000000] p-6">
+          <h1 className="text-xl font-semibold text-white">Công cụ nâng cao</h1>
+          <p className="text-xs text-neutral-400 mt-1">
+            Tổng hợp các mô-đun chuyên sâu về bảo mật và phân tích hạ tầng tập trung.
+          </p>
+        </div>
 
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-2">
           {advancedTools.map((tool) => {
             const Icon = tool.icon;
 
             return (
               <Link key={tool.href} href={tool.href} className="group">
-                <Card className="h-full transition hover:-translate-y-0.5">
-                  <CardContent className="flex h-full flex-col gap-5 p-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[color:color-mix(in_srgb,var(--accent)_20%,transparent)] bg-[color:var(--accent-soft)]">
-                        <Icon className="h-5 w-5 text-[color:var(--accent-strong)]" />
+                <div className="h-full rounded-lg border border-[#222222] bg-[#000000] p-6 hover:border-neutral-700 transition flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-md border border-[#333333] bg-[#0a0a0a]">
+                        <Icon className="h-5 w-5 text-white" />
                       </div>
-                      <Badge variant="muted">{tool.badge}</Badge>
+                      <span className="border border-neutral-700 bg-neutral-800 text-neutral-300 font-mono text-[10px] px-2 py-0.5 rounded-full">
+                        {tool.badge}
+                      </span>
                     </div>
 
-                    <div className="space-y-2">
-                      <h3 className="text-xl font-semibold text-[var(--foreground)]">{tool.title}</h3>
-                      <p className="text-sm leading-6 text-[var(--foreground-muted)]">{tool.description}</p>
-                    </div>
+                    <h3 className="text-base font-semibold text-white group-hover:text-white transition">{tool.title}</h3>
+                    <p className="text-xs leading-relaxed text-neutral-400 mt-1">{tool.description}</p>
+                  </div>
 
-                    <div className="mt-auto flex items-center gap-2 text-sm font-medium text-[color:var(--accent-strong)]">
-                      <span>Mở công cụ</span>
-                      <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                    </div>
-                  </CardContent>
-                </Card>
+                  <div className="mt-5 flex items-center gap-1.5 text-xs font-medium text-white">
+                    <span>Mở công cụ</span>
+                    <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-1" />
+                  </div>
+                </div>
               </Link>
             );
           })}
