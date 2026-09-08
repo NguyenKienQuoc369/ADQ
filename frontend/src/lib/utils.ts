@@ -65,3 +65,123 @@ export function maskEmail(email?: string | null): string {
 
   return `${maskedUser}@${domain}`;
 }
+
+/**
+ * Nén và thay đổi kích thước ảnh avatar thành Base64 nhỏ gọn (256x256)
+ * Giúp tối ưu hóa tốc độ tải và không làm phình Supabase JWT
+ * Nén và thay đổi kích thước ảnh avatar thành Base64 nhỏ gọn (256x256 WebP/JPEG)
+ * Giúp tối ưu hóa tốc độ tải và không làm phình Supabase JWT payload
+ */
+export async function resizeImageToBase64(file: File, maxDimension = 256, quality = 0.85): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new (window as any).Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let { width, height } = img;
+    const boundedDimension = Math.max(16, Math.min(Math.round(maxDimension) || 256, 1024));
+    const boundedQuality = Math.max(0.1, Math.min(Number.isFinite(quality) ? quality : 0.85, 1.0));
+
+    if (!file || !file.type.startsWith("image/")) {
+      return reject(new Error("Định dạng tệp không phải hình ảnh hợp lệ."));
+    }
+
+    let objectUrl: string | null = null;
+    try {
+      objectUrl = URL.createObjectURL(file);
+    } catch {
+      return reject(new Error("Không thể đọc tệp hình ảnh."));
+    }
+
+    const img = new (window as any).Image();
+
+    const cleanup = () => {
+      img.onload = null;
+      img.onerror = null;
+      if (objectUrl) {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch {}
+        objectUrl = null;
+      }
+    };
+
+    img.onload = () => {
+      try {
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        if (!width || !height || width <= 0 || height <= 0) {
+          cleanup();
+          return reject(new Error("Không thể giải mã kích thước hình ảnh."));
+        }
+
+        if (width > height) {
+          if (width > maxDimension) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          if (width > boundedDimension) {
+            height = Math.round((height * boundedDimension) / width);
+            width = boundedDimension;
+          }
+        } else {
+          if (height > maxDimension) {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          if (height > boundedDimension) {
+            width = Math.round((width * boundedDimension) / height);
+            height = boundedDimension;
+          }
+        }
+
+        width = Math.max(1, Math.round(width));
+        height = Math.max(1, Math.round(height));
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+          cleanup();
+          return reject(new Error("Trình duyệt không hỗ trợ Canvas 2D context."));
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/webp", quality) || canvas.toDataURL("image/jpeg", quality);
+        cleanup();
+
+        let dataUrl = canvas.toDataURL("image/webp", boundedQuality);
+        // Fallback sang image/jpeg nếu trình duyệt không xuất WebP (canvas trả về image/png)
+        if (!dataUrl || dataUrl.startsWith("data:image/png")) {
+          dataUrl = canvas.toDataURL("image/jpeg", boundedQuality);
+        }
+
+        if (!dataUrl || dataUrl === "data:,") {
+          return reject(new Error("Không thể xuất dữ liệu hình ảnh sau khi nén."));
+        }
+
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+      img.src = e.target?.result as string;
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+
+    img.onerror = () => {
+      cleanup();
+      reject(new Error("Giải mã hình ảnh thất bại. Tệp có thể bị lỗi hoặc định dạng không hỗ trợ."));
+    };
+
+    img.src = objectUrl;
+  });
+}
+
+
