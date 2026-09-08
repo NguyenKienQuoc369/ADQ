@@ -1,5 +1,4 @@
 "use client";
-"use client";
 
 import { useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
@@ -56,8 +55,8 @@ export default function ProjectDetailPage() {
   return (
     <DashboardShell area="dashboard">
       <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-4 text-center">
-        <LoaderCircle className="h-8 w-8 animate-spin text-cyan-400" />
-        <p className="text-sm text-slate-400">
+        <LoaderCircle className="h-7 w-7 animate-spin text-white" />
+        <p className="text-xs text-neutral-400 font-mono">
           Đang nạp toàn bộ phiên làm việc và lịch sử phân tích...
         </p>
       </div>
