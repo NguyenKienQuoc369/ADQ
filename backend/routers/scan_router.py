@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 import json
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from backend.schemas.scan import (
     ScanRequest,
@@ -42,18 +42,54 @@ def get_user_usage(user_id: str) -> Dict[str, Any]:
     return USAGE_TRACKER[user_id]
 
 
-def get_user_tier(user: Dict[str, Any]) -> str:
+def parse_iso_datetime(value: Any) -> Optional[datetime]:
     """
-    Package claim resolver.
+    Chuyển đổi chuỗi ISO timestamp thành datetime có timezone UTC an toàn.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        except Exception:
+            return None
+    if isinstance(value, str):
+        val = value.strip()
+        if not val:
+            return None
+        try:
+            # Chuẩn hóa ký tự Z thành +00:00 cho tương thích
+            dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        except Exception:
+            return None
+    return None
 
-    Ưu tiên app_metadata vì đây là vùng metadata do server quản lý.
-    packageTier top-level được giữ để tương thích JWT/custom claim hiện tại.
-    user_metadata chỉ là fallback legacy, không phải nguồn entitlement chính.
+
+def get_effective_user_tier(user: Dict[str, Any]) -> str:
+    """
+    Authoritative Effective Package Tier Resolver.
+
+    1. Trích xuất raw package tier từ app_metadata (vùng server-managed) hoặc user root.
+    2. Nếu tier là FREE: luôn giữ FREE.
+    3. Nếu tier là PRO hoặc PRO_MAX:
+       - Trích xuất planExpiresAt từ app_metadata, user hoặc user_metadata.
+       - Nếu có planExpiresAt: parse ISO timestamp và so sánh với datetime.now(timezone.utc).
+         + Nếu đã hết hạn (planExpiresAt <= now): Tự động hạ về FREE (Fail-closed).
+         + Nếu chuỗi expiry bị malformed/không thể parse: Fail-closed hạ về FREE.
+         + Nếu còn hạn: Giữ nguyên PRO / PRO_MAX.
+       - Nếu không có planExpiresAt (ví dụ gói vĩnh viễn hoặc dev mock): Giữ nguyên PRO / PRO_MAX.
     """
     app_metadata = user.get("app_metadata") or {}
     user_metadata = user.get("user_metadata") or {}
 
-    tier = (
+    raw_tier = (
         app_metadata.get("packageTier")
         or app_metadata.get("package_tier")
         or user.get("packageTier")
@@ -62,14 +98,42 @@ def get_user_tier(user: Dict[str, Any]) -> str:
         or "FREE"
     )
 
-    tier = str(tier).upper()
+    tier = str(raw_tier).strip().upper()
+    if tier not in {"PRO", "PRO_MAX"}:
+        return "FREE"
 
-    if tier == "PRO_MAX":
-        return "PRO_MAX"
-    if tier == "PRO":
-        return "PRO"
+    # Trích xuất hạn dùng planExpiresAt
+    raw_expiry = (
+        app_metadata.get("planExpiresAt")
+        or app_metadata.get("plan_expires_at")
+        or user.get("planExpiresAt")
+        or user.get("plan_expires_at")
+        or user_metadata.get("planExpiresAt")
+        or user_metadata.get("plan_expires_at")
+    )
 
-    return "FREE"
+    if raw_expiry is not None:
+        if isinstance(raw_expiry, str) and not raw_expiry.strip():
+            # Chuỗi rỗng: không có hạn cụ thể
+            pass
+        else:
+            expiry_dt = parse_iso_datetime(raw_expiry)
+            if expiry_dt is None:
+                # Malformed timestamp string provided -> fail-closed về FREE
+                return "FREE"
+
+            now_utc = datetime.now(timezone.utc)
+            if expiry_dt <= now_utc:
+                return "FREE"
+
+    return tier
+
+
+def get_user_tier(user: Dict[str, Any]) -> str:
+    """
+    Resolver tương thích toàn cục gọi get_effective_user_tier.
+    """
+    return get_effective_user_tier(user)
 
 
 def enforce_stress_quota(user: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
