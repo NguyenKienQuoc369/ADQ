@@ -9,23 +9,19 @@ import {
   LoaderCircle,
   Check,
   X,
-  Sparkles,
   Crown,
-  Headphones,
   Mail,
-  Building2,
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
 
 import { DashboardShell } from "@/components/dashboard-shell";
 import { useAuth } from "@/components/providers/auth-provider";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { redeemCode } from "@/lib/api";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, maskEmail } from "@/lib/utils";
 
 const redeemSchema = z.object({
   code: z.string().min(4, "Vui lòng nhập mã kích hoạt hợp lệ."),
@@ -43,6 +39,7 @@ export function BillingClient() {
   });
 
   const onSubmit = form.handleSubmit(async (values) => {
+    if (submitting) return;
     setSubmitting(true);
     setMessage(null);
     try {
@@ -63,264 +60,270 @@ export function BillingClient() {
     }
   });
 
-  const currentTier = user?.packageTier || "FREE";
+  const isPlanExpired = user?.planExpiresAt
+    ? new Date(user.planExpiresAt).getTime() <= Date.now()
+    : false;
+  const currentTier = isPlanExpired ? "FREE" : (user?.packageTier || "FREE");
 
   return (
     <DashboardShell area="dashboard">
-      <div className="space-y-6 max-w-7xl mx-auto font-sans text-slate-100 selection:bg-cyan-500 selection:text-black">
-        {/* Header giống PlansModal */}
-        <div className="text-center space-y-2 border-b border-slate-800 pb-6">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300 text-xs font-mono">
-            <Sparkles className="h-3.5 w-3.5" /> QUẢN LÝ GÓI DỊCH VỤ & GIẤY PHÉP SOC
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Nâng Tầm Năng Lực Bảo Mật Cùng ADQ Security
+      <div className="space-y-6 max-w-7xl mx-auto font-sans text-[#ededed]">
+        {/* Header */}
+        <div className="space-y-2 border-b border-[#222222] pb-6">
+          <h1 className="text-xl sm:text-2xl font-semibold text-white tracking-tight">
+            Gói Dịch Vụ & Giấy Phép
           </h1>
-          <p className="text-xs text-slate-400 max-w-xl mx-auto">
-            Lựa chọn gói dịch vụ tối ưu cho nhu cầu rà quét lỗ hổng DAST, kiểm thử an ninh hạ tầng và AI Copilot.
+          <p className="text-xs text-neutral-400 max-w-xl">
+            Kích hoạt tính năng và nâng cấp hạn ngạch rà quét an ninh DAST, kiểm thử hạ tầng L7 và AI Copilot qua Redeem Code.
           </p>
         </div>
 
-        {/* 4 Cột Gói Cước (Free, Pro, Pro Max, Enterprise) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        {/* 3 Cột Gói Cước Chính (FREE, PRO, PRO MAX) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* GÓI 1: FREE */}
-          <div className={`rounded-2xl border p-5 flex flex-col justify-between transition ${
-            currentTier === "FREE"
-              ? "border-cyan-500/50 bg-slate-900/80 shadow-lg shadow-cyan-950/30"
-              : "border-white/[0.08] bg-slate-900/50 hover:border-slate-700"
-          }`}>
+          <div
+            className={`rounded-lg border p-5 flex flex-col justify-between transition bg-[#000000] ${
+              currentTier === "FREE"
+                ? "border-white"
+                : "border-[#222222] hover:border-neutral-700"
+            }`}
+          >
             <div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold font-mono text-slate-400 uppercase">Gói 1</span>
-                {currentTier === "FREE" && <Badge variant="success" className="text-[10px]">Đang dùng</Badge>}
+                <span className="text-[11px] font-mono uppercase text-neutral-500">Mặc Định</span>
+                {currentTier === "FREE" && (
+                  <span className="px-2 py-0.5 rounded-full border border-neutral-700 bg-neutral-800 text-[10px] font-mono text-white">
+                    Đang dùng
+                  </span>
+                )}
               </div>
-              <h3 className="text-base font-bold text-white mt-1">Dùng Thử Miễn Phí</h3>
-              <div className="text-xl font-extrabold text-slate-200 mt-2">0 VNĐ</div>
-              <p className="text-[11px] text-slate-400 mt-1">Dành cho trải nghiệm thử nghiệm</p>
-              <div className="border-t border-white/[0.06] my-4" />
-              <ul className="space-y-2.5 text-xs text-slate-300">
+              <h3 className="text-base font-semibold text-white mt-1">Dùng Thử Miễn Phí (FREE)</h3>
+              <div className="text-lg font-bold font-mono text-white mt-2">0 VNĐ <span className="text-xs text-neutral-500 font-normal">/ Trọn đời</span></div>
+              <p className="text-[11px] text-neutral-500 mt-1">Trải nghiệm rà quét DAST cơ bản</p>
+              <div className="border-t border-[#1f1f1f] my-4" />
+              <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
                 <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-emerald-400 shrink-0" />
-                  <span><strong>2 lượt quét DAST / ngày</strong></span>
+                  <Check className="h-3.5 w-3.5 text-white shrink-0" />
+                  <span>2 lượt quét DAST trọn đời</span>
                 </li>
-                <li className="flex items-center gap-2 text-slate-500">
-                  <X className="h-4 w-4 text-slate-600 shrink-0" />
+                <li className="flex items-center gap-2 text-neutral-600">
+                  <X className="h-3.5 w-3.5 text-neutral-700 shrink-0" />
                   <span>Không có phân tích AI</span>
                 </li>
-                <li className="flex items-center gap-2 text-slate-500">
-                  <X className="h-4 w-4 text-slate-600 shrink-0" />
+                <li className="flex items-center gap-2 text-neutral-600">
+                  <X className="h-3.5 w-3.5 text-neutral-700 shrink-0" />
                   <span>Khóa tính năng Stress Test</span>
                 </li>
-                <li className="flex items-center gap-2 text-slate-500">
-                  <X className="h-4 w-4 text-slate-600 shrink-0" />
-                  <span>Khóa AI Copilot Chat</span>
+                <li className="flex items-center gap-2 text-neutral-600">
+                  <X className="h-3.5 w-3.5 text-neutral-700 shrink-0" />
+                  <span>Khóa AI Copilot & APK Audit</span>
                 </li>
               </ul>
             </div>
             <Button
               variant="outline"
-              disabled={currentTier === "FREE"}
-              className="mt-6 h-9 w-full border-slate-800 bg-slate-950 text-xs text-slate-300 rounded-xl cursor-default"
+              disabled
+              className="mt-6 h-8 w-full border-[#333333] bg-[#111111] text-xs text-neutral-400 rounded-md cursor-default"
             >
               {currentTier === "FREE" ? "Gói Hiện Tại" : "Miễn Phí"}
             </Button>
           </div>
 
           {/* GÓI 2: PRO */}
-          <div className={`relative rounded-2xl border p-5 flex flex-col justify-between shadow-[0_0_30px_rgba(6,182,212,0.12)] transition ${
-            currentTier === "PRO"
-              ? "border-cyan-400 bg-cyan-950/40 shadow-cyan-950/60"
-              : "border-cyan-500/50 bg-gradient-to-b from-cyan-950/30 to-slate-950 hover:border-cyan-400"
-          }`}>
-            <div className="absolute -top-2.5 right-4 bg-cyan-500 text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono">
-              PHỔ BIẾN
-            </div>
+          <div
+            className={`rounded-lg border p-5 flex flex-col justify-between transition bg-[#000000] ${
+              currentTier === "PRO"
+                ? "border-white"
+                : "border-[#222222] hover:border-neutral-700"
+            }`}
+          >
             <div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold font-mono text-cyan-400 uppercase">Gói 2</span>
-                {currentTier === "PRO" && <Badge variant="success" className="text-[10px]">Đang dùng</Badge>}
+                <span className="text-[11px] font-mono uppercase text-neutral-500">Professional</span>
+                {currentTier === "PRO" && (
+                  <span className="px-2 py-0.5 rounded-full border border-neutral-700 bg-neutral-800 text-[10px] font-mono text-white">
+                    Đang dùng
+                  </span>
+                )}
               </div>
-              <h3 className="text-base font-bold text-white mt-1">Chuyên Nghiệp (PRO)</h3>
-              <div className="text-xl font-extrabold text-cyan-300 mt-2">
-                199.000 <span className="text-xs text-slate-400 font-normal">/ tháng</span>
+              <h3 className="text-base font-semibold text-white mt-1">Chuyên Nghiệp (PRO)</h3>
+              <div className="text-lg font-bold font-mono text-white mt-2">
+                License Key <span className="text-xs text-neutral-500 font-normal">/ Kích hoạt</span>
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">Tối ưu cho Pentester & DevSecOps</p>
-              <div className="border-t border-cyan-500/20 my-4" />
-              <ul className="space-y-2.5 text-xs text-slate-200">
+              <p className="text-[11px] text-neutral-500 mt-1">Tối ưu cho Pentester & DevSecOps</p>
+              <div className="border-t border-[#1f1f1f] my-4" />
+              <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
                 <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-cyan-400 shrink-0" />
-                  <span><strong>Quét DAST không giới hạn</strong></span>
+                  <Check className="h-3.5 w-3.5 text-white shrink-0" />
+                  <span>Quét DAST không giới hạn</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-cyan-400 shrink-0" />
-                  <span><strong>Phân tích lỗ hổng chuyên sâu với AI</strong></span>
+                  <Check className="h-3.5 w-3.5 text-white shrink-0" />
+                  <span>Phân tích lỗ hổng chuyên sâu với AI</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-cyan-400 shrink-0" />
-                  <span>Stress Test L7 (<strong>1 lượt/ngày</strong>)</span>
+                  <Check className="h-3.5 w-3.5 text-white shrink-0" />
+                  <span>Stress Test L7 (1 lượt/ngày)</span>
                 </li>
-                <li className="flex items-center gap-2 text-slate-500">
-                  <X className="h-4 w-4 text-slate-600 shrink-0" />
-                  <span>Khóa AI Copilot Chat</span>
+                <li className="flex items-center gap-2 text-neutral-600">
+                  <X className="h-3.5 w-3.5 text-neutral-700 shrink-0" />
+                  <span>Khóa AI Copilot Chat & APK Audit</span>
                 </li>
               </ul>
             </div>
             {currentTier === "PRO" ? (
-              <Button disabled variant="outline" className="mt-6 h-9 w-full border-cyan-500/40 bg-cyan-950/30 text-cyan-300 text-xs font-bold rounded-xl">
+              <Button disabled variant="outline" className="mt-6 h-8 w-full border-[#333333] bg-[#111111] text-white text-xs rounded-md">
                 Gói Hiện Tại
               </Button>
             ) : (
               <Button
                 onClick={() => setSelectedPlanUpgrade("PRO")}
-                className="mt-6 h-9 w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md rounded-xl transition active:scale-98 cursor-pointer"
+                className="mt-6 h-8 w-full bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md transition cursor-pointer"
               >
-                Nâng Cấp Gói PRO
+                Yêu Cầu Cấp Key PRO
               </Button>
             )}
           </div>
 
           {/* GÓI 3: PRO MAX */}
-          <div className={`rounded-2xl border p-5 flex flex-col justify-between transition ${
-            currentTier === "PRO_MAX"
-              ? "border-purple-400 bg-purple-950/40 shadow-purple-950/60"
-              : "border-purple-500/40 bg-gradient-to-b from-purple-950/20 to-slate-950 hover:border-purple-500/60"
-          }`}>
+          <div
+            className={`rounded-lg border p-5 flex flex-col justify-between transition bg-[#000000] ${
+              currentTier === "PRO_MAX"
+                ? "border-white"
+                : "border-[#222222] hover:border-neutral-700"
+            }`}
+          >
             <div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold font-mono text-purple-400 uppercase">Gói 3</span>
-                {currentTier === "PRO_MAX" && <Badge variant="success" className="text-[10px]">Đang dùng</Badge>}
+                <span className="text-[11px] font-mono uppercase text-neutral-500">Enterprise Ready</span>
+                {currentTier === "PRO_MAX" && (
+                  <span className="px-2 py-0.5 rounded-full border border-neutral-700 bg-neutral-800 text-[10px] font-mono text-white">
+                    Đang dùng
+                  </span>
+                )}
               </div>
-              <h3 className="text-base font-bold text-white mt-1">Cao Cấp (PRO MAX)</h3>
-              <div className="text-xl font-extrabold text-purple-300 mt-2">
-                499.000 <span className="text-xs text-slate-400 font-normal">/ tháng</span>
+              <h3 className="text-base font-semibold text-white mt-1">Cao Cấp (PRO MAX)</h3>
+              <div className="text-lg font-bold font-mono text-white mt-2">
+                License Key <span className="text-xs text-neutral-500 font-normal">/ Kích hoạt</span>
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">Toàn quyền hạ tầng và Agentic AI</p>
-              <div className="border-t border-purple-500/20 my-4" />
-              <ul className="space-y-2.5 text-xs text-slate-200">
+              <p className="text-[11px] text-neutral-500 mt-1">Toàn quyền hạ tầng & Agentic AI Copilot</p>
+              <div className="border-t border-[#1f1f1f] my-4" />
+              <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
                 <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-purple-400 shrink-0" />
-                  <span><strong>Quét DAST không giới hạn + AI</strong></span>
+                  <Check className="h-3.5 w-3.5 text-white shrink-0" />
+                  <span>Quét DAST không giới hạn + AI</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-purple-400 shrink-0" />
-                  <span><strong>Mở khóa toàn bộ AI Copilot Chat</strong></span>
+                  <Check className="h-3.5 w-3.5 text-white shrink-0" />
+                  <span>Mở khóa toàn bộ AI Copilot Chat</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-purple-400 shrink-0" />
-                  <span>Stress Test L7 (<strong>10 lượt/ngày</strong>)</span>
+                  <Check className="h-3.5 w-3.5 text-white shrink-0" />
+                  <span>Stress Test L7 (10 lượt/ngày)</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-purple-400 shrink-0" />
-                  <span>Sinh bản vá One-Click Patch tự động</span>
+                  <Check className="h-3.5 w-3.5 text-white shrink-0" />
+                  <span>Sinh bản vá One-Click Patch & APK Audit</span>
                 </li>
               </ul>
             </div>
             {currentTier === "PRO_MAX" ? (
-              <Button disabled variant="outline" className="mt-6 h-9 w-full border-purple-500/40 bg-purple-950/30 text-purple-300 text-xs font-bold rounded-xl">
+              <Button disabled variant="outline" className="mt-6 h-8 w-full border-[#333333] bg-[#111111] text-white text-xs rounded-md">
                 Gói Hiện Tại
               </Button>
             ) : (
               <Button
                 onClick={() => setSelectedPlanUpgrade("PRO_MAX")}
-                className="mt-6 h-9 w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md rounded-xl transition active:scale-98 cursor-pointer"
+                className="mt-6 h-8 w-full bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md transition cursor-pointer"
               >
-                Nâng Cấp PRO MAX
+                Yêu Cầu Cấp Key PRO MAX
               </Button>
             )}
           </div>
+        </div>
 
-          {/* GÓI 4: ENTERPRISE (DOANH NGHIỆP - LIÊN HỆ) */}
-          <div className="rounded-2xl border border-amber-500/40 bg-gradient-to-b from-amber-950/20 to-slate-950 p-5 flex flex-col justify-between hover:border-amber-500/60 transition">
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold font-mono text-amber-400 uppercase">Doanh Nghiệp</span>
-                <Crown className="h-4 w-4 text-amber-400" />
-              </div>
-              <h3 className="text-base font-bold text-white mt-1">Gói Doanh Nghiệp</h3>
-              <div className="text-xl font-extrabold text-amber-300 mt-2">Liên hệ</div>
-              <p className="text-[11px] text-slate-400 mt-1">Hạ tầng SOC riêng & SLA Cam kết</p>
-              <div className="border-t border-amber-500/20 my-4" />
-              <ul className="space-y-2.5 text-xs text-slate-200">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-amber-400 shrink-0" />
-                  <span><strong>Dedicated SOC Nodes & IP riêng</strong></span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-amber-400 shrink-0" />
-                  <span><strong>Stress Test Distributed 50,000+ RPS</strong></span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-amber-400 shrink-0" />
-                  <span>Tích hợp CI/CD & SIEM Webhook</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-amber-400 shrink-0" />
-                  <span>Hỗ trợ kỹ thuật 24/7 từ Lead Developer</span>
-                </li>
-              </ul>
+        {/* Khung Hạ Tầng Doanh Nghiệp Tùy Biến (Custom Deployment) */}
+        <div className="rounded-lg border border-[#222222] bg-[#000000] p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+          <div className="space-y-1.5 max-w-2xl">
+            <div className="flex items-center gap-2">
+              <Crown className="h-4 w-4 text-neutral-300" />
+              <h3 className="text-sm font-semibold text-white">Hạ Tầng Doanh Nghiệp & Tùy Biến (Custom Deployment)</h3>
             </div>
-            <Button
-              onClick={() => setSelectedPlanUpgrade("ENTERPRISE")}
-              className="mt-6 h-9 w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs shadow-md rounded-xl transition active:scale-98 cursor-pointer"
-            >
-              Liên Hệ Doanh Nghiệp
-            </Button>
+            <p className="text-xs text-neutral-400 leading-relaxed">
+              Dành cho tổ chức cần triển khai cụm Worker phân tán, Node rà quét chuyên dụng (Dedicated SOC Nodes & IP riêng), Stress Test 50,000+ RPS, tích hợp SIEM/Webhook nội bộ và cam kết SLA hỗ trợ 24/7 từ Lead Developer.
+            </p>
           </div>
+          <Button
+            type="button"
+            onClick={() => setSelectedPlanUpgrade("ENTERPRISE")}
+            className="shrink-0 h-8 border border-[#333333] hover:border-neutral-500 bg-[#111111] hover:bg-neutral-900 text-white font-medium text-xs rounded-md px-4 transition cursor-pointer"
+          >
+            Liên Hệ Doanh Nghiệp
+          </Button>
         </div>
 
         {/* Khung Thông Tin & Redeem Code */}
-        <div className="grid gap-6 md:grid-cols-2 pt-4">
-          {/* Card Trạng Thái Thuê Bao */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 backdrop-blur-xl shadow-xl space-y-4">
-            <div className="border-b border-slate-800 pb-3">
-              <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400">Tài khoản hiện tại</p>
-              <h3 className="text-xl font-bold text-white mt-0.5">{currentTier.replace("_", " ")}</h3>
+        <div className="grid gap-6 md:grid-cols-2 pt-2">
+          {/* Card Trạng Thái Tài Khoản */}
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-5 space-y-4">
+            <div className="border-b border-[#222222] pb-3">
+              <p className="text-[11px] font-mono uppercase tracking-wider text-neutral-500">Tài khoản hiện tại</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <h3 className="text-lg font-semibold text-white">{currentTier.replace("_", " ")}</h3>
+                {isPlanExpired && user?.packageTier !== "FREE" && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-950/40 border border-rose-800 text-rose-300">
+                    Gói {user?.packageTier.replace("_", " ")} đã hết hạn
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-xs text-slate-400">
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between p-3 rounded-md bg-[#0a0a0a] border border-[#222222]">
+                <span className="text-neutral-400">
                   {currentTier === "FREE" ? "Lượt quét miễn phí:" : "Lượt quét DAST:"}
                 </span>
-                <span className="font-mono text-xs font-bold text-cyan-300">
+                <span className="font-mono font-medium text-white">
                   {currentTier === "FREE"
                     ? `${user?.scansToday ?? 0} / 2 lượt trọn đời`
                     : "Không giới hạn"}
                 </span>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-xs text-slate-400">Thời hạn giấy phép:</span>
-                <span className="font-mono text-xs text-slate-200">
-                  {user?.planExpiresAt ? formatDateTime(user.planExpiresAt) : "Vĩnh viễn (Chưa hết hạn)"}
+              <div className="flex items-center justify-between p-3 rounded-md bg-[#0a0a0a] border border-[#222222]">
+                <span className="text-neutral-400">Thời hạn giấy phép:</span>
+                <span className={`font-mono ${isPlanExpired ? "text-rose-400 font-semibold" : "text-neutral-300"}`}>
+                  {user?.planExpiresAt
+                    ? isPlanExpired
+                      ? `Đã hết hạn (${formatDateTime(user.planExpiresAt)})`
+                      : formatDateTime(user.planExpiresAt)
+                    : "Vĩnh viễn"}
                 </span>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-xs text-slate-400">Trạng thái xác thực:</span>
-                <Badge variant="success" className="text-[10px]">
+              <div className="flex items-center justify-between p-3 rounded-md bg-[#0a0a0a] border border-[#222222]">
+                <span className="text-neutral-400">Trạng thái xác thực:</span>
+                <span className="font-mono text-emerald-400 font-semibold">
                   {user?.status || "ACTIVE"}
-                </Badge>
+                </span>
               </div>
             </div>
           </div>
 
           {/* Card Kích Hoạt Mã License (Redeem Code) */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 backdrop-blur-xl shadow-xl space-y-4">
-            <div className="flex items-center gap-2.5 border-b border-slate-800 pb-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                <Gift className="h-4 w-4" />
-              </div>
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-5 space-y-4">
+            <div className="flex items-center gap-2.5 border-b border-[#222222] pb-3">
+              <Gift className="h-4 w-4 text-white" />
               <div>
-                <h3 className="font-bold text-sm text-white">Kích Hoạt Mã License</h3>
-                <p className="text-[11px] text-slate-400">Nhập Redeem Code để nâng cấp gói tức thì</p>
+                <h3 className="font-semibold text-sm text-white">Kích Hoạt Mã License</h3>
+                <p className="text-[11px] text-neutral-500">Nhập Redeem Code để nâng cấp gói tức thì</p>
               </div>
             </div>
 
             {message && (
               <div
-                className={`p-3 rounded-xl flex items-center gap-2 text-xs border ${
+                className={`p-3 rounded-md flex items-center gap-2 text-xs border ${
                   message.type === "success"
-                    ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
-                    : "bg-rose-950/40 border-rose-500/40 text-rose-300"
+                    ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-300"
+                    : "bg-rose-950/20 border-rose-500/40 text-rose-300"
                 }`}
               >
                 {message.type === "success" ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
@@ -330,14 +333,14 @@ export function BillingClient() {
 
             <form onSubmit={onSubmit} className="space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor="redeem-code" className="text-xs font-semibold uppercase text-slate-400">
+                <Label htmlFor="redeem-code" className="text-[11px] font-medium uppercase tracking-wider text-neutral-400 font-mono">
                   Mã License / Voucher
                 </Label>
                 <Input
                   id="redeem-code"
                   placeholder="VD: PRO-MAX-2026-VIP"
                   {...form.register("code")}
-                  className="h-10 border-slate-800 bg-slate-950/80 font-mono uppercase text-xs text-white focus:border-cyan-500/60 rounded-xl"
+                  className="h-9 border-[#333333] bg-[#0a0a0a] font-mono uppercase text-xs text-white focus:border-white focus:ring-0 rounded-md"
                 />
                 {form.formState.errors.code && (
                   <p className="text-[11px] text-rose-400">{form.formState.errors.code.message}</p>
@@ -347,73 +350,68 @@ export function BillingClient() {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="w-full h-10 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-950/50"
+                className="w-full h-8 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
               >
-                {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Gift className="h-4 w-4" />}
+                {submitting ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Gift className="h-3.5 w-3.5" />}
                 {submitting ? "Đang xác thực mã..." : "Kích Hoạt Ngay"}
               </Button>
             </form>
           </div>
         </div>
 
-        {/* Modal Hỗ Trợ Nâng Cấp Gói Trực Tiếp */}
+        {/* Modal Hỗ Trợ Cấp Mã License Trực Tiếp */}
         {selectedPlanUpgrade && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setSelectedPlanUpgrade(null)} />
-            <div className="relative z-10 w-full max-w-md rounded-2xl border border-cyan-500/40 bg-slate-900 p-6 shadow-2xl space-y-5 text-slate-100">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
-                    <Headphones className="h-5 w-5" />
-                  </div>
-                  <h3 className="font-bold text-base text-white">Yêu Cầu Nâng Cấp Gói</h3>
-                </div>
-                <button onClick={() => setSelectedPlanUpgrade(null)} className="text-slate-400 hover:text-white p-1">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedPlanUpgrade(null)} />
+            <div className="relative z-10 w-full max-w-md rounded-xl border border-[#262626] bg-[#0a0a0a] p-6 shadow-2xl space-y-4 text-[#ededed]">
+              <div className="flex items-center justify-between border-b border-[#222222] pb-3">
+                <h3 className="font-semibold text-sm text-white">Yêu Cầu Cấp Mã License</h3>
+                <button onClick={() => setSelectedPlanUpgrade(null)} className="text-neutral-500 hover:text-white p-1">
                   ✕
                 </button>
               </div>
 
               <div className="space-y-3 text-xs">
-                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
-                  <p className="text-[10px] font-mono uppercase text-slate-500">Gói đã chọn</p>
-                  <p className="font-bold text-sm text-cyan-300">
+                <div className="p-3.5 rounded-md bg-[#000000] border border-[#222222] space-y-1">
+                  <p className="text-[10px] font-mono uppercase text-neutral-500">Mục yêu cầu</p>
+                  <p className="font-semibold text-sm text-white">
                     {selectedPlanUpgrade === "ENTERPRISE"
-                      ? "Gói ENTERPRISE (Doanh Nghiệp)"
+                      ? "Hạ Tầng Doanh Nghiệp (Custom Deployment)"
                       : selectedPlanUpgrade === "PRO_MAX"
-                      ? "Gói PRO MAX (499.000 VNĐ / tháng)"
-                      : "Gói PRO (199.000 VNĐ / tháng)"}
+                      ? "Gói PRO MAX (Mã Kích Hoạt License)"
+                      : "Gói PRO (Mã Kích Hoạt License)"}
                   </p>
-                  <p className="text-slate-400">
-                    Tài khoản yêu cầu: <span className="font-mono text-white">{user?.email}</span>
+                  <p className="text-neutral-400">
+                    Tài khoản yêu cầu: <span className="font-mono text-white">{maskEmail(user?.email)}</span>
                   </p>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+                <div className="p-3.5 rounded-md bg-[#000000] border border-[#222222] space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Người phụ trách duyệt:</span>
-                    <span className="font-semibold text-white">Nguyễn Kiến Quốc (Lead Developer)</span>
+                    <span className="text-neutral-400">Người phụ trách duyệt:</span>
+                    <span className="font-medium text-white">Nguyễn Kiến Quốc (Lead Developer)</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Email xử lý:</span>
-                    <a href="mailto:kienquocn64@gmail.com" className="font-mono text-cyan-400 hover:underline">
+                    <span className="text-neutral-400">Email xử lý:</span>
+                    <a href="mailto:kienquocn64@gmail.com" className="font-mono text-white hover:underline">
                       kienquocn64@gmail.com
                     </a>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Thời gian cấp key:</span>
-                    <span className="text-emerald-400 font-semibold">Ngay sau khi xác nhận</span>
+                    <span className="text-neutral-400">Thời gian cấp key:</span>
+                    <span className="text-emerald-400 font-medium">Ngay sau khi xác nhận</span>
                   </div>
                 </div>
               </div>
 
               <div className="pt-2 flex gap-2">
                 <a
-                  href={`mailto:kienquocn64@gmail.com?subject=[ADQ License] Yêu cầu nâng cấp gói ${selectedPlanUpgrade}&body=Xin chào Developer Nguyễn Kiến Quốc, tôi muốn đăng ký gói ${selectedPlanUpgrade} cho tài khoản email: ${user?.email}`}
-                  className="flex-1 h-10 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-950/60"
+                  href={`mailto:kienquocn64@gmail.com?subject=[ADQ License] Yêu cầu mã kích hoạt ${selectedPlanUpgrade}&body=Xin chào Developer Nguyễn Kiến Quốc, tôi muốn yêu cầu mã kích hoạt cho mục ${selectedPlanUpgrade} cho tài khoản email: ${user?.email}`}
+                  className="flex-1 h-8 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md flex items-center justify-center gap-1.5 shadow-sm"
                 >
-                  <Mail className="h-4 w-4" /> Gửi Yêu Cầu Nâng Cấp
+                  <Mail className="h-3.5 w-3.5" /> Gửi Yêu Cầu Cấp Mã
                 </a>
-                <Button variant="outline" onClick={() => setSelectedPlanUpgrade(null)} className="h-10 border-slate-800 text-xs">
+                <Button variant="outline" onClick={() => setSelectedPlanUpgrade(null)} className="h-8 border-[#333333] text-xs rounded-md">
                   Đóng
                 </Button>
               </div>
