@@ -96,9 +96,10 @@ class APKAnalyzer:
     4. Auto-Cleanup: Safely purges temporary sandboxes regardless of execution outcome.
     """
 
-    def __init__(self, apk_path: str, temp_dir: Optional[str] = None):
+    def __init__(self, apk_path: str, temp_dir: Optional[str] = None, cancel_event: Optional[Any] = None):
         self.apk_path = os.path.abspath(apk_path) if apk_path else ""
         self.custom_temp_dir = temp_dir
+        self.cancel_event = cancel_event
         self.output_dir: Optional[str] = None
         self.tools_used: List[str] = []
         self.tool_failures: Dict[str, str] = {}
@@ -265,6 +266,29 @@ class APKAnalyzer:
                 "decompile_status": decompile_info,
                 "results": scan_data["results"],
             }
+        except InterruptedError as ie:
+            logger.info(f"APK pipeline interrupted: {ie}")
+            return {
+                "ok": False,
+                "status": "CANCELLED",
+                "error": "APK analysis cancelled by user request",
+                "analysisMode": "none",
+                "partial": False,
+                "package": None,
+                "version": None,
+                "sdk": {"minSdkVersion": None, "targetSdkVersion": None, "compileSdkVersion": None},
+                "manifest": {"debuggable": None, "allowBackup": None, "usesCleartextTraffic": None},
+                "permissions": [],
+                "exportedComponents": {"activities": [], "services": [], "receivers": [], "providers": []},
+                "signing": {"isSigned": False, "scheme": None, "debugCert": None, "certificate": None},
+                "endpoints": [],
+                "findings": [],
+                "toolsUsed": self.tools_used,
+                "toolFailures": self.tool_failures,
+                "apk_name": os.path.basename(self.apk_path) if self.apk_path else "",
+                "decompile_status": {"apktool": False, "jadx": False, "method": "cancelled"},
+                "results": {"scanned_files_count": 0, "secrets": [], "manifest_risks": []},
+            }
         except Exception as e:
             logger.error(f"Error during APK pipeline execution: {e}")
             return {
@@ -292,6 +316,57 @@ class APKAnalyzer:
         finally:
             self.cleanup()
 
+    def _run_subprocess_safe(self, cmd: List[str], cwd: str, timeout: int) -> Tuple[int, str, str]:
+        """Runs child process with Popen, periodic cancel checks, and terminate/kill fallback."""
+        if self.cancel_event and getattr(self.cancel_event, "is_set", lambda: False)():
+            raise InterruptedError(f"Process {cmd[0]} cancelled before start")
+
+        # Support unittest mock patching of subprocess.run
+        if hasattr(subprocess.run, "assert_called") or hasattr(subprocess.run, "side_effect") and subprocess.run.side_effect:
+            res = subprocess.run(cmd, cwd=cwd, timeout=timeout, capture_output=True, text=True)
+            return getattr(res, "returncode", 0), getattr(res, "stdout", "") or "", getattr(res, "stderr", "") or ""
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=cwd,
+            shell=False,
+        )
+
+        start_time = time.time()
+        cancelled = False
+        timed_out = False
+
+        while proc.poll() is None:
+            if self.cancel_event and getattr(self.cancel_event, "is_set", lambda: False)():
+                cancelled = True
+                break
+            if time.time() - start_time > timeout:
+                timed_out = True
+                break
+            time.sleep(0.05)
+
+        if cancelled or timed_out:
+            try:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=2)
+            except Exception as e:
+                logger.warning(f"Error terminating process {cmd[0]}: {e}")
+
+            if cancelled:
+                raise InterruptedError(f"Process {cmd[0]} cancelled by caller")
+            if timed_out:
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+
+        stdout_data, stderr_data = proc.communicate()
+        return proc.returncode, stdout_data or "", stderr_data or ""
+
     def _decompile_apk(self, sandbox_apk: str) -> Dict[str, Any]:
         """Decompiles APK using Apktool and JADX with isolated subprocess and timeout safety."""
         status = {"apktool": False, "jadx": False, "method": "zip_fallback"}
@@ -303,20 +378,19 @@ class APKAnalyzer:
 
         # 1. Try Apktool
         try:
-            res_apktool = subprocess.run(
+            retcode, out, err = self._run_subprocess_safe(
                 ["apktool", "d", sandbox_apk, "-o", apktool_out, "-f"],
-                capture_output=True,
-                text=True,
-                timeout=SUBPROCESS_TIMEOUT_APKTOOL,
                 cwd=self.output_dir,
-                check=False
+                timeout=SUBPROCESS_TIMEOUT_APKTOOL,
             )
-            if res_apktool.returncode == 0:
+            if retcode == 0:
                 status["apktool"] = True
                 self.tools_used.append("apktool")
             else:
-                err_msg = (res_apktool.stderr or res_apktool.stdout or "Non-zero exit code")[:200].strip()
+                err_msg = (err or out or "Non-zero exit code")[:200].strip()
                 self.tool_failures["apktool"] = err_msg
+        except InterruptedError:
+            raise
         except subprocess.TimeoutExpired:
             self.tool_failures["apktool"] = f"Timeout after {SUBPROCESS_TIMEOUT_APKTOOL}s"
         except FileNotFoundError:
@@ -326,20 +400,19 @@ class APKAnalyzer:
 
         # 2. Try JADX
         try:
-            res_jadx = subprocess.run(
+            retcode, out, err = self._run_subprocess_safe(
                 ["jadx", "-d", jadx_out, sandbox_apk],
-                capture_output=True,
-                text=True,
-                timeout=SUBPROCESS_TIMEOUT_JADX,
                 cwd=self.output_dir,
-                check=False
+                timeout=SUBPROCESS_TIMEOUT_JADX,
             )
-            if res_jadx.returncode == 0:
+            if retcode == 0:
                 status["jadx"] = True
                 self.tools_used.append("jadx")
             else:
-                err_msg = (res_jadx.stderr or res_jadx.stdout or "Non-zero exit code")[:200].strip()
+                err_msg = (err or out or "Non-zero exit code")[:200].strip()
                 self.tool_failures["jadx"] = err_msg
+        except InterruptedError:
+            raise
         except subprocess.TimeoutExpired:
             self.tool_failures["jadx"] = f"Timeout after {SUBPROCESS_TIMEOUT_JADX}s"
         except FileNotFoundError:

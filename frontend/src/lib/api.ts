@@ -210,7 +210,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       path.startsWith("/api/copilot") ||
       path.startsWith("/api/stress") ||
       path.startsWith("/api/c2") ||
-      path.startsWith("/api/oast");
+      path.startsWith("/api/oast") ||
+      path.startsWith("/api/apk-audit");
 
     if (isBackendRoute) {
       const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
@@ -867,3 +868,178 @@ export async function streamStressJob(
     }
   }
 }
+
+// ------------------------------------------------------------
+// Mobile APK Audit API
+// ------------------------------------------------------------
+
+export interface ApkFinding {
+  id: string;
+  title: string;
+  severity: Severity;
+  category: string;
+  description: string;
+  evidence: string;
+  remediation: string;
+  file: string;
+}
+
+export interface ApkPermission {
+  name: string;
+  isDangerous: boolean;
+  description: string;
+}
+
+export interface ApkExportedComponents {
+  activities?: string[];
+  services?: string[];
+  receivers?: string[];
+  providers?: string[];
+}
+
+export interface ApkSigningInfo {
+  isSigned?: boolean;
+  scheme?: string | null;
+  debugCert?: boolean | null;
+  certificate?: string | null;
+}
+
+export interface ApkManifestInfo {
+  debuggable?: boolean | null;
+  allowBackup?: boolean | null;
+  usesCleartextTraffic?: boolean | null;
+}
+
+export interface ApkSdkInfo {
+  minSdkVersion?: string | number | null;
+  targetSdkVersion?: string | number | null;
+  compileSdkVersion?: string | number | null;
+}
+
+export interface ApkAuditResultPayload {
+  status: "COMPLETED" | "PARTIAL" | "FAILED" | string;
+  analysisMode?: string;
+  partial?: boolean;
+  package?: string | null;
+  version?: string | null;
+  sdk?: ApkSdkInfo;
+  manifest?: ApkManifestInfo;
+  permissions?: ApkPermission[];
+  exportedComponents?: ApkExportedComponents;
+  signing?: ApkSigningInfo;
+  endpoints?: string[];
+  findings?: ApkFinding[];
+  toolsUsed?: string[];
+  toolFailures?: Record<string, string>;
+  apk_name?: string;
+}
+
+export interface ApkJobStatusResponse {
+  ok: boolean;
+  job_id: string;
+  status: "QUEUED" | "VALIDATING" | "DECOMPILING" | "ANALYZING" | "PARTIAL" | "COMPLETED" | "FAILED" | "CANCELLING" | "CANCELLED" | string;
+  stage?: string;
+  progress?: number;
+  created_at?: number;
+  started_at?: number | null;
+  completed_at?: number | null;
+  error?: string | null;
+  partial?: boolean;
+  message?: string;
+}
+
+export interface ApkJobResultResponse {
+  ok: boolean;
+  job_id: string;
+  status: string;
+  result: ApkAuditResultPayload;
+}
+
+export async function createApkAuditJob(
+  file: File,
+  projectId?: string,
+  signal?: AbortSignal
+): Promise<ApkJobStatusResponse> {
+  const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  const url = `${backendUrl}/api/apk-audit/jobs`;
+
+  let authHeader: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        authHeader["Authorization"] = `Bearer ${data.session.access_token}`;
+      }
+    } catch {}
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  if (projectId) {
+    formData.append("project_id", projectId);
+  }
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...authHeader,
+      // Note: do not set Content-Type header manually so fetch sets the boundary automatically
+    },
+    body: formData,
+    credentials: "include",
+    signal,
+  });
+
+  if (res.status === 401 && typeof window !== "undefined") {
+    window.location.href = "/login?error=session_expired";
+    throw new Error("UNAUTHORIZED: Phiên đăng nhập đã hết hạn.");
+  }
+
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message =
+      (payload && typeof payload === "object" && "detail" in payload && typeof payload.detail === "string"
+        ? payload.detail
+        : payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+        ? payload.error
+        : res.statusText) || "Upload APK thất bại";
+    throw new Error(message);
+  }
+
+  return payload as ApkJobStatusResponse;
+}
+
+export async function getApkAuditJobStatus(
+  jobId: string,
+  signal?: AbortSignal
+): Promise<ApkJobStatusResponse> {
+  return requestJson<ApkJobStatusResponse>(`/api/apk-audit/jobs/${encodeURIComponent(jobId)}`, {
+    method: "GET",
+    signal,
+  });
+}
+
+export async function getApkAuditJobResult(
+  jobId: string,
+  signal?: AbortSignal
+): Promise<ApkJobResultResponse> {
+  return requestJson<ApkJobResultResponse>(`/api/apk-audit/jobs/${encodeURIComponent(jobId)}/result`, {
+    method: "GET",
+    signal,
+  });
+}
+
+export async function cancelApkAuditJob(
+  jobId: string,
+  signal?: AbortSignal
+): Promise<{ ok: boolean; job_id: string; status: string; message: string }> {
+  return requestJson<{ ok: boolean; job_id: string; status: string; message: string }>(
+    `/api/apk-audit/jobs/${encodeURIComponent(jobId)}`,
+    {
+      method: "DELETE",
+      signal,
+    }
+  );
+}
+

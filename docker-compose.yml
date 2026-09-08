@@ -78,6 +78,8 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    volumes:
+      - apk_spool_data:/tmp/adq_apk_spool
     depends_on:
       - db
       - redis
@@ -132,16 +134,20 @@ services:
 
   worker-mobile:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.backend
+      context: .
+      dockerfile: Dockerfile.mobile-worker
+    container_name: adq_worker_mobile
     restart: always
-    command: python3 runtime_services.py --role worker --worker-id worker-mobile-1 --capability mobile_audit,apk_decompile
+    command: python -m backend.workers.apk_worker
     environment:
-      - WORKER_CAPABILITIES=mobile_audit,apk_decompile
+      - REDIS_URL=redis://redis:6379/0
+      - APK_SPOOL_ROOT=/tmp/adq_apk_spool
     env_file:
       - .env
+    volumes:
+      - apk_spool_data:/tmp/adq_apk_spool
     depends_on:
-      - master-node
+      - redis
     networks:
       - adq_net
 
@@ -192,3 +198,5 @@ volumes:
   redis_data:
   caddy_data:
   caddy_config:
+  apk_spool_data:
+

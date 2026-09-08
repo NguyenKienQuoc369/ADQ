@@ -7,6 +7,7 @@ from backend.routers.scan_router import router as scan_router
 from backend.routers.project_router import router as project_router
 from backend.routers.admin_router import router as admin_router
 from backend.routers.maintenance_router import router as maintenance_router
+from backend.routers.apk_router import router as apk_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -43,6 +44,7 @@ app.add_middleware(
 app.include_router(scan_router)
 app.include_router(project_router)
 app.include_router(admin_router)
+app.include_router(apk_router)
 
 
 @app.get("/health", tags=["Health"])

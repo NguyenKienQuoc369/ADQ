@@ -4,6 +4,7 @@ FROM python:3.11-slim
 # Prevent interactive prompts during apt installation
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -34,4 +35,4 @@ COPY backend /app/backend
 COPY adq_cli.py /app/adq_cli.py
 
 # Default entrypoint for Mobile Worker
-CMD ["python", "backend/worker.py"]
+CMD ["python", "-m", "backend.workers.apk_worker"]

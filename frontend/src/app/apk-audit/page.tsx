@@ -1,11 +1,10 @@
 "use client";
 
-import React, { Suspense, useState, useEffect } from "react";
+import React, { Suspense, useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getEntitlements } from "@/lib/entitlements";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,23 +16,42 @@ import {
   BookmarkCheck,
   PlusCircle,
   Lock,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Ban,
+  Clock,
+  Globe,
+  Layers,
+  Key,
+  Info,
 } from "lucide-react";
-import { getProjectById, saveProjectDetail } from "@/lib/api";
+import {
+  getProjectById,
+  saveProjectDetail,
+  createApkAuditJob,
+  getApkAuditJobStatus,
+  getApkAuditJobResult,
+  cancelApkAuditJob,
+  ApkAuditResultPayload,
+  ApkFinding,
+} from "@/lib/api";
 import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
 
-interface ApkAnalysisResult {
-  packageName: string;
-  versionName: string;
-  minSdkVersion: number;
-  targetSdkVersion: number;
-  permissions: string[];
-  vulnerabilities: {
-    title: string;
-    severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
-    description: string;
-  }[];
-  hardcodedSecrets: string[];
-}
+type JobStatus =
+  | "idle"
+  | "uploading"
+  | "queued"
+  | "validating"
+  | "decompiling"
+  | "analyzing"
+  | "partial"
+  | "completed"
+  | "failed"
+  | "cancelling"
+  | "cancelled";
+
+const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
 
 function ApkAuditContent() {
   const router = useRouter();
@@ -45,14 +63,44 @@ function ApkAuditContent() {
 
   const [projectName, setProjectName] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<ApkAnalysisResult | null>(null);
 
+  // Real Job State Machine
+  const [jobState, setJobState] = useState<JobStatus>("idle");
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [jobStage, setJobStage] = useState<string>("");
+  const [jobProgress, setJobProgress] = useState<number>(0);
+  const [jobError, setJobError] = useState<string | null>(null);
+
+  // Result & Persistence
+  const [analysisResult, setAnalysisResult] = useState<ApkAuditResultPayload | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
   const [showRescanModal, setShowRescanModal] = useState(false);
 
-  // Tải dữ liệu phiên APK cũ nếu có projectId
+  // Polling ref
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isPollingRef = useRef<boolean>(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const clearPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    isPollingRef.current = false;
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearPolling();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [clearPolling]);
+
+  // Load existing project data if projectId is present
   useEffect(() => {
     if (!projectId) return;
 
@@ -63,99 +111,157 @@ function ApkAuditContent() {
         const summary = (p.projectDetail?.summary as Record<string, any>) || {};
         if (summary.apkAudit) {
           setAnalysisResult(summary.apkAudit);
+          setJobState("completed");
         }
       })
       .catch((e) => console.warn("Load APK detail error:", e));
   }, [projectId]);
 
-  if (!isAllowed) {
-    return (
-      <DashboardShell area="dashboard">
-        <div className="flex min-h-[70vh] items-center justify-center px-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-purple-500/20 bg-slate-950/80 p-8 text-center shadow-2xl">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-purple-500/30 bg-purple-500/10">
-              <Shield className="h-7 w-7 text-purple-400" />
-            </div>
+  // Poll job status
+  const startPolling = useCallback(
+    (jobId: string) => {
+      clearPolling();
+      isPollingRef.current = true;
 
-            <Badge className="mb-4 border border-purple-500/30 bg-purple-950/40 text-purple-300">
-              TÍNH NĂNG DÀNH RIÊNG CHO GÓI PRO MAX
-            </Badge>
+      const poll = async () => {
+        if (!isPollingRef.current) return;
 
-            <h1 className="text-2xl font-bold text-white">
-              Kiểm Toán An Ninh Mobile APK
-            </h1>
+        try {
+          const statusResp = await getApkAuditJobStatus(jobId);
+          if (!isPollingRef.current) return;
 
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400">
-              APK Audit là bộ công cụ kiểm toán bảo mật ứng dụng Android chuyên sâu
-              và chỉ khả dụng trên gói <span className="font-bold text-purple-300">PRO MAX</span>.
-            </p>
+          const rawStatus = (statusResp.status || "").toUpperCase();
+          const progress = typeof statusResp.progress === "number" ? statusResp.progress : 0;
+          setJobProgress(progress);
+          setJobStage(statusResp.stage || "");
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-left">
-                <p className="text-xs font-semibold text-cyan-300">FREE / PRO</p>
-                <p className="mt-1 text-sm font-bold text-white">
-                  Chưa bao gồm APK Audit
-                </p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Tiếp tục sử dụng các công cụ quét và phân tích bảo mật có trong gói hiện tại.
-                </p>
-              </div>
+          if (rawStatus === "QUEUED") {
+            setJobState("queued");
+          } else if (rawStatus === "VALIDATING") {
+            setJobState("validating");
+          } else if (rawStatus === "DECOMPILING") {
+            setJobState("decompiling");
+          } else if (rawStatus === "ANALYZING") {
+            setJobState("analyzing");
+          } else if (rawStatus === "CANCELLING") {
+            setJobState("cancelling");
+          } else if (rawStatus === "CANCELLED") {
+            setJobState("cancelled");
+            clearPolling();
+            return;
+          } else if (rawStatus === "FAILED") {
+            setJobState("failed");
+            setJobError(statusResp.error || "Quá trình phân tích APK thất bại.");
+            clearPolling();
+            return;
+          } else if (rawStatus === "COMPLETED" || rawStatus === "PARTIAL") {
+            setJobState(rawStatus === "PARTIAL" ? "partial" : "completed");
+            clearPolling();
 
-              <div className="rounded-xl border border-purple-500/20 bg-purple-950/20 p-4 text-left">
-                <p className="text-xs font-semibold text-purple-300">PRO MAX</p>
-                <p className="mt-1 text-sm font-bold text-white">
-                  Mở khóa APK Audit
-                </p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">
-                  Phân tích APK, kiểm tra quyền ứng dụng, phát hiện hardcoded secrets
-                  và đánh giá rủi ro bảo mật Android.
-                </p>
-              </div>
-            </div>
+            // Fetch final sanitized result
+            try {
+              const resResp = await getApkAuditJobResult(jobId);
+              if (resResp.ok && resResp.result) {
+                setAnalysisResult(resResp.result);
+              }
+            } catch (err: any) {
+              console.error("Failed to fetch APK job result:", err);
+              setJobError(err?.message || "Không thể tải kết quả phân tích.");
+            }
+            return;
+          }
 
-            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
-              <Button
-                onClick={() => router.push("/dashboard/billing")}
-                className="bg-purple-600 text-white hover:bg-purple-500"
-              >
-                Nâng cấp PRO MAX
-              </Button>
+          // Schedule next poll tick
+          if (isPollingRef.current) {
+            pollTimerRef.current = setTimeout(poll, 1500);
+          }
+        } catch (err: any) {
+          console.warn("Poll status error:", err);
+          // If network error, retry after 2s without crashing UI
+          if (isPollingRef.current) {
+            pollTimerRef.current = setTimeout(poll, 2000);
+          }
+        }
+      };
 
-              <Button
-                variant="outline"
-                onClick={() => router.push("/dashboard")}
-                className="border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
-              >
-                Quay lại Dashboard
-              </Button>
-            </div>
-          </div>
-        </div>
-      </DashboardShell>
-    );
-  }
+      poll();
+    },
+    [clearPolling]
+  );
 
-  const handleSaveSession = async () => {
-    if (!projectId) {
-      alert("Vui lòng gắn một Project ID hoặc tạo dự án để lưu phiên này.");
+  const startAnalysis = async () => {
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".apk")) {
+      setJobError("Chỉ chấp nhận tệp định dạng .apk Android.");
       return;
     }
-    setIsSaving(true);
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setJobError("Kích thước tệp vượt quá giới hạn 100 MB.");
+      return;
+    }
+
+    clearPolling();
+    setJobError(null);
+    setJobState("uploading");
+    setJobStage("Đang tải tệp lên máy chủ...");
+    setJobProgress(5);
+    setAnalysisResult(null);
+
+    abortControllerRef.current = new AbortController();
+
     try {
-      await saveProjectDetail(projectId, {
-        apkAudit: analysisResult,
-      });
-      setIsSavedSuccess(true);
-      setTimeout(() => setIsSavedSuccess(false), 3000);
-    } catch (e) {
-      console.error("Save APK audit failed:", e);
-    } finally {
-      setIsSaving(false);
+      const resp = await createApkAuditJob(
+        file,
+        projectId || undefined,
+        abortControllerRef.current.signal
+      );
+
+      if (resp.ok && resp.job_id) {
+        setCurrentJobId(resp.job_id);
+        setJobState("queued");
+        setJobStage("Đã xếp hàng xử lý...");
+        setJobProgress(resp.progress || 10);
+        startPolling(resp.job_id);
+      } else {
+        setJobState("failed");
+        setJobError(resp.message || "Không thể khởi tạo phiên kiểm toán APK.");
+      }
+    } catch (err: any) {
+      setJobState("failed");
+      const msg = err?.message || "Lỗi tải lên tệp APK.";
+      setJobError(msg);
+    }
+  };
+
+  const handleCancelClick = async () => {
+    if (!currentJobId) return;
+
+    setJobState("cancelling");
+    setJobStage("Đang gửi yêu cầu hủy...");
+
+    try {
+      await cancelApkAuditJob(currentJobId);
+      setJobState("cancelled");
+      setJobStage("Phiên kiểm toán đã bị hủy.");
+      clearPolling();
+    } catch (err: any) {
+      console.error("Cancel job failed:", err);
+      setJobError(err?.message || "Không thể hủy phiên kiểm toán.");
     }
   };
 
   const handleUploadClick = () => {
-    if (isAnalyzing || !file) return;
+    const isBusy =
+      jobState === "uploading" ||
+      jobState === "queued" ||
+      jobState === "validating" ||
+      jobState === "decompiling" ||
+      jobState === "analyzing" ||
+      jobState === "cancelling";
+
+    if (isBusy || !file) return;
 
     const hasExistingData = analysisResult !== null;
     const isSuppressed =
@@ -170,187 +276,534 @@ function ApkAuditContent() {
     startAnalysis();
   };
 
-  const startAnalysis = async () => {
-    if (!file) return;
-    setIsAnalyzing(true);
+  const handleSaveSession = async () => {
+    if (!projectId) {
+      alert("Vui lòng gắn một Project ID hoặc tạo dự án để lưu phiên này.");
+      return;
+    }
+    if (!analysisResult) return;
 
-    setTimeout(async () => {
-      const mockResult: ApkAnalysisResult = {
-        packageName: "com.example.secureapp",
-        versionName: "1.0.4-prod",
-        minSdkVersion: 24,
-        targetSdkVersion: 33,
-        permissions: [
-          "android.permission.INTERNET",
-          "android.permission.ACCESS_FINE_LOCATION",
-          "android.permission.READ_EXTERNAL_STORAGE",
-          "android.permission.CAMERA",
-        ],
-        vulnerabilities: [
-          {
-            title: "AllowBackup Flag Enabled in Manifest",
-            severity: "HIGH",
-            description: "Ứng dụng cho phép sao lưu dữ liệu ADB qua cờ android:allowBackup=true, tiềm ẩn nguy cơ trích xuất dữ liệu nhạy cảm.",
-          },
-          {
-            title: "Insecure TLS/SSL TrustManager Implementation",
-            severity: "CRITICAL",
-            description: "Phát hiện mã nguồn bỏ qua kiểm tra chứng chỉ X.509, mở đường cho tấn công Man-in-the-Middle (MitM).",
-          },
-        ],
-        hardcodedSecrets: [
-          "AIzaSyD-mockFirebaseApiKey9920129",
-          "jwt_signing_secret_dev_key_2026",
-        ],
-      };
-
-      setAnalysisResult(mockResult);
-      setIsAnalyzing(false);
-
-      if (projectId) {
-        await saveProjectDetail(projectId, {
-          apkAudit: mockResult,
-        });
-      }
-    }, 3000);
+    setIsSaving(true);
+    try {
+      await saveProjectDetail(projectId, {
+        apkAudit: analysisResult,
+      });
+      setIsSavedSuccess(true);
+      setTimeout(() => setIsSavedSuccess(false), 3000);
+    } catch (e) {
+      console.error("Save APK audit failed:", e);
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const handleNewSession = () => {
+    clearPolling();
+    setFile(null);
+    setAnalysisResult(null);
+    setCurrentJobId(null);
+    setJobState("idle");
+    setJobStage("");
+    setJobProgress(0);
+    setJobError(null);
+  };
+
+  if (!isAllowed) {
+    return (
+      <DashboardShell area="dashboard">
+        <div className="flex min-h-[70vh] items-center justify-center px-4">
+          <div className="w-full max-w-xl rounded-lg border border-[#222222] bg-[#000000] p-8 text-center shadow-xl">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900">
+              <Shield className="h-6 w-6 text-white" />
+            </div>
+
+            <span className="inline-block mb-3 border border-neutral-700 bg-neutral-800 text-white text-[10px] font-mono px-2.5 py-0.5 rounded-full">
+              DÀNH CHO GÓI PRO MAX
+            </span>
+
+            <h1 className="text-xl font-semibold text-white">
+              Kiểm Toán An Ninh Mobile APK
+            </h1>
+
+            <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-neutral-400">
+              APK Audit là bộ công cụ kiểm toán bảo mật ứng dụng Android chuyên sâu
+              và chỉ khả dụng trên gói PRO MAX đang hoạt động.
+            </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-md border border-[#222222] bg-[#0a0a0a] p-4 text-left">
+                <p className="text-[11px] font-mono uppercase text-neutral-400">FREE / PRO</p>
+                <p className="mt-1 text-sm font-semibold text-white">Chưa bao gồm APK Audit</p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Tiếp tục sử dụng các công cụ quét và phân tích bảo mật có trong gói.
+                </p>
+              </div>
+
+              <div className="rounded-md border border-[#222222] bg-[#0a0a0a] p-4 text-left">
+                <p className="text-[11px] font-mono uppercase text-neutral-400">PRO MAX</p>
+                <p className="mt-1 text-sm font-semibold text-white">Mở khóa APK Audit</p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Phân tích APK, kiểm tra quyền ứng dụng, bóc tách hardcoded secrets.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col justify-center gap-2.5 sm:flex-row">
+              <Button
+                onClick={() => router.push("/dashboard/billing")}
+                className="h-8 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md px-4 shadow-sm cursor-pointer"
+              >
+                Nâng cấp PRO MAX
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => router.push("/dashboard")}
+                className="h-8 border-[#333333] bg-[#111111] hover:bg-neutral-800 text-neutral-300 text-xs rounded-md px-4"
+              >
+                Quay lại Dashboard
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DashboardShell>
+    );
+  }
+
+  const isJobActive =
+    jobState === "uploading" ||
+    jobState === "queued" ||
+    jobState === "validating" ||
+    jobState === "decompiling" ||
+    jobState === "analyzing" ||
+    jobState === "cancelling";
 
   return (
     <DashboardShell area="dashboard">
-      <div className="space-y-6 text-slate-100 font-sans">
+      <div className="space-y-6 text-[#ededed] font-sans">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#222222] pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                <FileCode2 className="h-5 w-5 text-purple-400"/> Dịch Ngược & Kiểm Toán File APK
+              <h1 className="text-xl font-semibold text-white tracking-tight flex items-center gap-2">
+                <FileCode2 className="h-5 w-5 text-white" /> Dịch Ngược & Kiểm Toán File APK
               </h1>
               {projectId && (
-                <Badge className="text-[10px] font-mono border border-purple-500/30 text-purple-400 bg-purple-950/40">
-                  DỰ ÁN: {projectName || projectId}
-                </Badge>
+                <span className="text-[10px] font-mono border border-neutral-700 bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full">
+                  TARGET: {projectName || projectId}
+                </span>
               )}
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Phân tích tĩnh tệp nhị phân Android, bóc tách Secret Keys, cờ Manifest và lỗ hổng mã nguồn
+            <p className="text-xs text-neutral-400 mt-1">
+              Phân tích tĩnh tệp nhị phân Android, bóc tách Secret Keys, cờ Manifest và lỗ hổng mã nguồn.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button className="h-8 text-xs border border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60" disabled={isSaving || isAnalyzing || !analysisResult} onClick={handleSaveSession} size="sm" variant="outline">
+            <Button
+              className="h-8 text-xs border border-[#333333] bg-[#111111] text-white hover:bg-neutral-800 rounded-md transition"
+              disabled={isSaving || isJobActive || !analysisResult}
+              onClick={handleSaveSession}
+              size="sm"
+              variant="outline"
+            >
               {isSaving ? (
-                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin"/>
+                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" />
               ) : isSavedSuccess ? (
-                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400"/>
+                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
               ) : (
-                <Save className="h-3.5 w-3.5 mr-1.5"/>
+                <Save className="h-3.5 w-3.5 mr-1.5" />
               )}
               {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Kết Quả"}
             </Button>
 
-            <Button onClick={() => router.push("/dashboard/projects")} size="sm" variant="outline"
-              className="h-8 text-xs border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
+            <Button
+              onClick={handleNewSession}
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs border border-[#333333] bg-[#111111] text-white hover:bg-neutral-800 rounded-md"
             >
-              <PlusCircle className="h-3.5 w-3.5 mr-1.5 text-cyan-400"/> Phiên Mới
+              <PlusCircle className="h-3.5 w-3.5 mr-1.5" /> Phiên Mới
             </Button>
           </div>
         </div>
 
-        {/* Upload Zone */}
-        <Card className="border border-white/[0.08] bg-slate-950/80">
-          <CardContent className="p-6">
-            <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-800 rounded-xl p-8 bg-slate-900/30 text-center hover:border-purple-500/40 transition-colors">
-              <UploadCloud className="h-10 w-10 text-purple-400 mb-3"/>
-              <p className="text-sm font-bold text-white mb-1">Tải lên tệp APK Android (.apk)</p>
-              <p className="text-xs text-slate-400 max-w-sm mb-4">
-                Hệ thống sẽ tiến hành Decompile bằng Jadx/Apktool và đối chiếu chữ ký bảo mật
-              </p>
-              <input
-                type="file"
-                accept=".apk"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer"
-              />
-              {file && (
-                <div className="mt-4 flex items-center gap-3">
-                  <span className="text-xs font-mono text-purple-300">
-                    {file.name} ({(file.size / (1024 * 1024)).toFixed(2)} MB)
-                  </span>
-                  <Button className="h-8 px-4 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg" disabled={isAnalyzing} onClick={handleUploadClick}>
-                    {isAnalyzing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin mr-1"/> : null}
-                    {isAnalyzing ? "Đang Dịch Ngược..." : "Bắt Đầu Kiểm Toán"}
+        {/* Upload & Execution Panel */}
+        <div className="rounded-lg border border-[#222222] bg-[#000000] p-6 space-y-4">
+          <div className="flex flex-col items-center justify-center border border-dashed border-[#333333] rounded-lg p-8 bg-[#0a0a0a] text-center hover:border-neutral-500 transition">
+            <UploadCloud className="h-9 w-9 text-neutral-400 mb-3" />
+            <p className="text-sm font-semibold text-white mb-1">Tải lên tệp APK Android (.apk)</p>
+            <p className="text-xs text-neutral-400 max-w-sm mb-4">
+              Hệ thống sẽ tiến hành Decompile bằng Jadx/Apktool và kiểm toán chữ ký, phân quyền, lỗ hổng.
+            </p>
+            <input
+              type="file"
+              accept=".apk"
+              disabled={isJobActive}
+              onChange={(e) => {
+                setFile(e.target.files?.[0] || null);
+                setJobError(null);
+              }}
+              className="text-xs text-neutral-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-white file:text-black hover:file:bg-neutral-200 cursor-pointer disabled:opacity-50"
+            />
+            {file && (
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                <span className="text-xs font-mono text-neutral-300">
+                  {file.name} ({(file.size / (1024 * 1024)).toFixed(2)} MB)
+                </span>
+                {!isJobActive ? (
+                  <Button
+                    className="h-8 px-4 bg-white hover:bg-neutral-200 text-black text-xs font-medium rounded-md shadow-sm cursor-pointer"
+                    onClick={handleUploadClick}
+                  >
+                    Bắt Đầu Kiểm Toán
                   </Button>
+                ) : (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="h-8 text-xs font-medium"
+                    onClick={handleCancelClick}
+                    disabled={jobState === "cancelling"}
+                  >
+                    <Ban className="h-3.5 w-3.5 mr-1" />
+                    {jobState === "cancelling" ? "Đang hủy..." : "Hủy Kiểm Toán"}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Active Job Status & Progress */}
+          {isJobActive && (
+            <div className="rounded-md border border-neutral-800 bg-[#0c0c0c] p-4 space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <LoaderCircle className="h-4 w-4 animate-spin text-white" />
+                  <span className="font-semibold text-white uppercase tracking-wider text-[11px]">
+                    Trạng Thái: {jobState}
+                  </span>
+                  {currentJobId && (
+                    <span className="text-[10px] font-mono text-neutral-500">
+                      ID: {currentJobId}
+                    </span>
+                  )}
                 </div>
+                <span className="font-mono text-neutral-300">{jobProgress}%</span>
+              </div>
+
+              <div className="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+                <div
+                  className="bg-white h-full transition-all duration-300"
+                  style={{ width: `${Math.max(5, jobProgress)}%` }}
+                />
+              </div>
+
+              {jobStage && (
+                <p className="text-[11px] text-neutral-400 font-mono">
+                  Giai đoạn: {jobStage}
+                </p>
               )}
             </div>
-          </CardContent>
-        </Card>
+          )}
 
-        {/* Analysis Results */}
+          {/* Error Banner */}
+          {jobError && (
+            <div className="rounded-md border border-rose-500/40 bg-rose-950/20 p-3.5 flex items-start gap-3">
+              <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-semibold text-rose-300">Lỗi Kiểm Toán APK</p>
+                <p className="text-rose-200/80 leading-relaxed font-mono text-[11px]">
+                  {jobError}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Cancelled Banner */}
+          {jobState === "cancelled" && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-950/20 p-3.5 flex items-center gap-3">
+              <Ban className="h-4 w-4 text-amber-400 shrink-0" />
+              <div className="text-xs">
+                <span className="font-semibold text-amber-300">Phiên Đã Bị Hủy: </span>
+                <span className="text-amber-200/80">Tác vụ giải mã APK đã được dừng lại an toàn.</span>
+              </div>
+            </div>
+          )}
+
+          {/* Partial Warning Banner */}
+          {analysisResult?.partial && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-950/20 p-3.5 flex items-start gap-3">
+              <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-semibold text-amber-300">Chế Độ Phân Tích Thu Gọn (Partial Analysis)</p>
+                <p className="text-amber-200/80 leading-relaxed">
+                  Một số công cụ decompilation chuyên sâu gặp cảnh báo hoặc giới hạn. Hệ thống đã tự động trích xuất tĩnh qua cơ chế ZIP Fallback.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Real Analysis Results */}
         {analysisResult && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Package Details */}
-              <Card className="border border-white/[0.08] bg-slate-950/80 p-4 space-y-2">
-                <p className="text-xs font-bold text-white flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-purple-400"/> Thông Tin Ứng Dụng
+          <div className="space-y-6">
+            {/* Metadata Overview Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* App / Package Info */}
+              <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 space-y-2.5">
+                <p className="text-xs font-semibold text-white flex items-center gap-2 border-b border-[#222222] pb-2">
+                  <Shield className="h-3.5 w-3.5 text-white" /> Thông Tin Ứng Dụng
                 </p>
-                <div className="text-xs space-y-1 text-slate-300 font-mono">
+                <div className="text-xs space-y-1.5 text-neutral-300 font-mono">
                   <p>
-                    Package: <span className="text-cyan-300">{analysisResult.packageName}</span>
+                    <span className="text-neutral-500">Package:</span>{" "}
+                    <span className="text-white">{analysisResult.package || "Không xác định"}</span>
                   </p>
                   <p>
-                    Version: <span className="text-cyan-300">{analysisResult.versionName}</span>
+                    <span className="text-neutral-500">Version:</span>{" "}
+                    <span className="text-white">{analysisResult.version || "Không xác định"}</span>
                   </p>
                   <p>
-                    Target SDK: <span className="text-cyan-300">{analysisResult.targetSdkVersion}</span> (Min:{" "}
-                    {analysisResult.minSdkVersion})
+                    <span className="text-neutral-500">Target SDK:</span>{" "}
+                    <span className="text-white">
+                      {analysisResult.sdk?.targetSdkVersion || "N/A"}
+                    </span>{" "}
+                    <span className="text-neutral-500">
+                      (Min: {analysisResult.sdk?.minSdkVersion || "N/A"})
+                    </span>
+                  </p>
+                  <p>
+                    <span className="text-neutral-500">Mode:</span>{" "}
+                    <span className="text-white uppercase text-[10px]">
+                      {analysisResult.analysisMode || "N/A"}
+                    </span>
                   </p>
                 </div>
-              </Card>
+              </div>
 
-              {/* Hardcoded Secrets */}
-              <Card className="border border-white/[0.08] bg-slate-950/80 p-4 space-y-2">
-                <p className="text-xs font-bold text-rose-400 flex items-center gap-2">
-                  <Lock className="h-4 w-4 text-rose-400"/> Hardcoded Secrets Phát Hiện
+              {/* Manifest Security Flags */}
+              <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 space-y-2.5">
+                <p className="text-xs font-semibold text-white flex items-center gap-2 border-b border-[#222222] pb-2">
+                  <Lock className="h-3.5 w-3.5 text-white" /> Cấu Hình Manifest
                 </p>
-                <div className="space-y-1">
-                  {analysisResult.hardcodedSecrets.map((s, i) => (
-                    <div
-                      key={i}
-                      className="rounded bg-rose-950/30 border border-rose-500/20 px-2 py-1 font-mono text-[11px] text-rose-300"
+                <div className="text-xs space-y-1.5 text-neutral-300 font-mono">
+                  <p className="flex items-center justify-between">
+                    <span className="text-neutral-500">Debuggable:</span>
+                    <span
+                      className={
+                        analysisResult.manifest?.debuggable === true
+                          ? "text-rose-400 font-semibold"
+                          : "text-emerald-400"
+                      }
                     >
-                      {s}
-                    </div>
-                  ))}
+                      {analysisResult.manifest?.debuggable === true
+                        ? "TRUE (Nguy cơ)"
+                        : analysisResult.manifest?.debuggable === false
+                        ? "FALSE (An toàn)"
+                        : "N/A"}
+                    </span>
+                  </p>
+                  <p className="flex items-center justify-between">
+                    <span className="text-neutral-500">AllowBackup:</span>
+                    <span
+                      className={
+                        analysisResult.manifest?.allowBackup === true
+                          ? "text-amber-400 font-semibold"
+                          : "text-neutral-300"
+                      }
+                    >
+                      {analysisResult.manifest?.allowBackup === true
+                        ? "TRUE (Bật)"
+                        : analysisResult.manifest?.allowBackup === false
+                        ? "FALSE"
+                        : "N/A"}
+                    </span>
+                  </p>
+                  <p className="flex items-center justify-between">
+                    <span className="text-neutral-500">Cleartext Traffic:</span>
+                    <span
+                      className={
+                        analysisResult.manifest?.usesCleartextTraffic === true
+                          ? "text-rose-400 font-semibold"
+                          : "text-emerald-400"
+                      }
+                    >
+                      {analysisResult.manifest?.usesCleartextTraffic === true
+                        ? "TRUE (HTTP allowed)"
+                        : analysisResult.manifest?.usesCleartextTraffic === false
+                        ? "FALSE (Strict HTTPS)"
+                        : "N/A"}
+                    </span>
+                  </p>
                 </div>
-              </Card>
+              </div>
+
+              {/* Signing & Certificates */}
+              <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 space-y-2.5">
+                <p className="text-xs font-semibold text-white flex items-center gap-2 border-b border-[#222222] pb-2">
+                  <Key className="h-3.5 w-3.5 text-white" /> Chữ Ký & Chứng Chỉ
+                </p>
+                <div className="text-xs space-y-1.5 text-neutral-300 font-mono">
+                  <p className="flex items-center justify-between">
+                    <span className="text-neutral-500">Trạng Thái Ký:</span>
+                    <span
+                      className={
+                        analysisResult.signing?.isSigned ? "text-emerald-400" : "text-rose-400"
+                      }
+                    >
+                      {analysisResult.signing?.isSigned ? "Đã Ký (Signed)" : "Chưa Ký"}
+                    </span>
+                  </p>
+                  <p className="flex items-center justify-between">
+                    <span className="text-neutral-500">Scheme:</span>
+                    <span className="text-white uppercase">
+                      {analysisResult.signing?.scheme || "N/A"}
+                    </span>
+                  </p>
+                  <p className="flex items-center justify-between">
+                    <span className="text-neutral-500">Debug Cert:</span>
+                    <span
+                      className={
+                        analysisResult.signing?.debugCert ? "text-rose-400 font-semibold" : "text-neutral-400"
+                      }
+                    >
+                      {analysisResult.signing?.debugCert ? "Phát hiện" : "Không"}
+                    </span>
+                  </p>
+                </div>
+              </div>
             </div>
 
-            {/* Vulnerabilities */}
-            <Card className="border border-white/[0.08] bg-slate-950/80">
-              <CardHeader className="pb-3 border-b border-slate-800">
-                <CardTitle className="text-sm font-bold text-white">Lỗ Hổng Code & Phân Quyền</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 divide-y divide-slate-800">
-                {analysisResult.vulnerabilities.map((v, i) => (
-                  <div key={i} className="p-3.5 text-xs space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Badge className="text-[9px] font-mono" variant={v.severity === "CRITICAL" || v.severity === "HIGH" ? "danger" : "default"}>
-                        {v.severity}
-                      </Badge>
-                      <span className="font-bold text-slate-200">{v.title}</span>
-                    </div>
-                    <p className="text-slate-400 leading-relaxed">{v.description}</p>
+            {/* Findings List */}
+            <div className="rounded-lg border border-[#222222] bg-[#000000] overflow-hidden">
+              <div className="p-4 border-b border-[#222222] flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-400" />
+                  Phát Hiện Lỗ Hổng & Rủi Ro Bảo Mật ({(analysisResult.findings || []).length})
+                </h3>
+              </div>
+              <div className="divide-y divide-[#222222]">
+                {(analysisResult.findings || []).length === 0 ? (
+                  <div className="p-6 text-center text-xs text-neutral-500">
+                    Không phát hiện lỗ hổng nghiêm trọng nào trong tệp APK này.
                   </div>
-                ))}
-              </CardContent>
-            </Card>
+                ) : (
+                  (analysisResult.findings || []).map((finding: ApkFinding, i: number) => {
+                    const isCritical = finding.severity === "CRITICAL";
+                    const isHigh = finding.severity === "HIGH";
+                    const isMed = finding.severity === "MEDIUM";
+
+                    return (
+                      <div key={finding.id || i} className="p-4 text-xs space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[9px] font-mono px-2 py-0.5 rounded border ${
+                                isCritical
+                                  ? "border-rose-500/50 bg-rose-950/40 text-rose-300 font-bold"
+                                  : isHigh
+                                  ? "border-rose-500/30 bg-rose-950/20 text-rose-300"
+                                  : isMed
+                                  ? "border-amber-500/30 bg-amber-950/20 text-amber-300"
+                                  : "border-neutral-700 bg-neutral-800 text-neutral-300"
+                              }`}
+                            >
+                              {finding.severity}
+                            </span>
+                            <span className="font-semibold text-white">{finding.title}</span>
+                          </div>
+                          {finding.file && (
+                            <span className="text-[10px] font-mono text-neutral-500 bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded">
+                              {finding.file}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-neutral-400 leading-relaxed">{finding.description}</p>
+
+                        {finding.evidence && (
+                          <div className="rounded bg-neutral-950 border border-neutral-800 p-2 font-mono text-[11px] text-neutral-300 overflow-x-auto">
+                            <span className="text-neutral-500 select-none">Bằng chứng: </span>
+                            {finding.evidence}
+                          </div>
+                        )}
+
+                        {finding.remediation && (
+                          <div className="text-[11px] text-emerald-400/90 font-mono">
+                            <span className="text-neutral-500">Khắc phục: </span>
+                            {finding.remediation}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Permissions & Discovered Endpoints */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Permissions */}
+              <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 space-y-3">
+                <h4 className="text-xs font-semibold text-white flex items-center gap-2 border-b border-[#222222] pb-2">
+                  <Layers className="h-3.5 w-3.5 text-white" /> Quyền Ứng Dụng Yêu Cầu (
+                  {(analysisResult.permissions || []).length})
+                </h4>
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  {(analysisResult.permissions || []).length === 0 ? (
+                    <p className="text-xs text-neutral-500">Không khai báo uses-permission.</p>
+                  ) : (
+                    (analysisResult.permissions || []).map((perm, idx) => (
+                      <div
+                        key={idx}
+                        className={`text-[11px] font-mono p-1.5 rounded border flex items-center justify-between ${
+                          perm.isDangerous
+                            ? "border-rose-500/30 bg-rose-950/20 text-rose-300"
+                            : "border-neutral-800 bg-[#0a0a0a] text-neutral-300"
+                        }`}
+                      >
+                        <span className="truncate">{perm.name}</span>
+                        {perm.isDangerous && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-900/40 text-rose-300 shrink-0 ml-2">
+                            DANGEROUS
+                          </span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Endpoints */}
+              <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 space-y-3">
+                <h4 className="text-xs font-semibold text-white flex items-center gap-2 border-b border-[#222222] pb-2">
+                  <Globe className="h-3.5 w-3.5 text-white" /> Endpoints & URLs Phát Hiện (
+                  {(analysisResult.endpoints || []).length})
+                </h4>
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  {(analysisResult.endpoints || []).length === 0 ? (
+                    <p className="text-xs text-neutral-500">Không tìm thấy URL/Endpoint tĩnh.</p>
+                  ) : (
+                    (analysisResult.endpoints || []).map((ep, idx) => (
+                      <div
+                        key={idx}
+                        className="text-[11px] font-mono p-1.5 rounded border border-neutral-800 bg-[#0a0a0a] text-neutral-300 truncate"
+                      >
+                        {ep}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Modal Xác Nhận Ghi Đè */}
-        <RescanConfirmModal isOpen={showRescanModal} onClose={() => setShowRescanModal(false)}
+        {/* Rescan Confirm Modal */}
+        <RescanConfirmModal
+          isOpen={showRescanModal}
+          onClose={() => setShowRescanModal(false)}
           onConfirm={(dontShowAgain) => {
             if (dontShowAgain && typeof window !== "undefined") {
               localStorage.setItem("adq_suppress_rescan_warning", "true");
@@ -370,8 +823,9 @@ function ApkAuditContent() {
 
 export default function ApkAuditPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
-      <ApkAuditContent/>
+    <Suspense fallback={<div className="min-h-screen bg-[#000000]" />}>
+      <ApkAuditContent />
     </Suspense>
   );
 }
+
