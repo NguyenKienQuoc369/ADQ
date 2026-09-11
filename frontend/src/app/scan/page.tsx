@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useState, useRef } from "react";
+import React, { Suspense, useEffect, useState, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Input } from "@/components/ui/input";
@@ -13,8 +13,6 @@ import {
   LoaderCircle,
   Check,
   Zap,
-  Radio,
-  Save,
   RotateCcw,
   CheckCircle2,
   XCircle,
@@ -25,7 +23,8 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
-  Code
+  Save,
+  Server
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getEntitlements } from "@/lib/entitlements";
@@ -33,6 +32,7 @@ import { AiAnalysisCard } from "@/components/scan/ai-analysis-card";
 import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
 import { TopStageRunner } from "@/components/scan/top-stage-runner";
 import { AssuranceMatrix } from "@/components/scan/assurance-matrix";
+import { DiscoveredAssets } from "@/components/scan/discovered-assets";
 import { WhatADQCheckedModal } from "@/components/scan/what-adq-checked-modal";
 import { OwnershipVerificationCard } from "@/components/scan/ownership-verification-card";
 import {
@@ -40,12 +40,10 @@ import {
   saveProjectDetail,
   startScanJob,
   getScanJobStatus,
-  getScanEndpoints,
   getTargetVerificationStatus,
   startTargetVerification,
   checkTargetVerification,
   streamScanJob,
-  ActionAdvice,
   ScanEndpoint,
   AssuranceMatrix as AssuranceMatrixType,
   EvaluatedSecurityControl,
@@ -62,6 +60,9 @@ interface Vulnerability {
   cve?: string;
   description?: string;
   evidence?: string;
+  owasp_category?: string;
+  cwe_ids?: string[];
+  control_id?: string;
 }
 
 interface ActivityEvent {
@@ -100,6 +101,9 @@ function ScanLandingContent() {
   const [startedAtTime, setStartedAtTime] = useState<Date | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
+  // Current active control / telemetry text
+  const [currentTestingControl, setCurrentTestingControl] = useState<string>("");
+
   // Server-Authoritative Ownership Verification State
   const [verificationStatus, setVerificationStatus] = useState<"UNVERIFIED" | "VERIFYING" | "VERIFIED" | "FAILED">("UNVERIFIED");
   const [verificationToken, setVerificationToken] = useState<string>("");
@@ -109,12 +113,16 @@ function ScanLandingContent() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isCheckingServerStatus, setIsCheckingServerStatus] = useState(false);
 
-  // Telemetry & Live Scan Metrics
+  // Telemetry & Discovered Assets Lists
+  const [discoveredHostsList, setDiscoveredHostsList] = useState<any[]>([]);
+  const [discoveredPortsList, setDiscoveredPortsList] = useState<any[]>([]);
+  const [discoveredUrlsList, setDiscoveredUrlsList] = useState<any[]>([]);
+
+  // Metric counts
   const [subdomains, setSubdomains] = useState(0);
   const [liveHosts, setLiveHosts] = useState(0);
   const [crawledUrls, setCrawledUrls] = useState(0);
   const [openPorts, setOpenPorts] = useState(0);
-  const [requestCount, setRequestCount] = useState(0);
   const [vulnCount, setVulnCount] = useState(0);
 
   // Live Assurance Matrix & Stages
@@ -123,32 +131,29 @@ function ScanLandingContent() {
   const [currentStageId, setCurrentStageId] = useState<string>("recon_infra");
   const [isWhatCheckedOpen, setIsWhatCheckedOpen] = useState(false);
 
-  // Findings & Action Advice
+  // Findings & AI Summary
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
-  const [discoveredEndpoints, setDiscoveredEndpoints] = useState<ScanEndpoint[]>([]);
-  const [actionAdvice, setActionAdvice] = useState<ActionAdvice[]>([]);
-  const [rawActionAdvice, setRawActionAdvice] = useState<string>("");
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
 
   // Live Activity Stream (bounded 8 items)
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
 
-  // States lưu phiên & xác nhận ghi đè
+  // States lưu phiên & modal
   const [isSavingSession, setIsSavingSession] = useState(false);
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
   const [showRescanModal, setShowRescanModal] = useState(false);
 
-  // 1. Elapsed timer
+  // 1. Elapsed timer: stops immediately when scan completes
   useEffect(() => {
     let timer: any;
-    if (isScanning && startedAtTime) {
+    if (isScanning && startedAtTime && scanStatus === "RUNNING") {
       timer = setInterval(() => {
         setElapsedSeconds(Math.floor((Date.now() - startedAtTime.getTime()) / 1000));
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [isScanning, startedAtTime]);
+  }, [isScanning, startedAtTime, scanStatus]);
 
   const addActivity = (message: string, type: ActivityEvent["type"] = "info") => {
     const now = new Date();
@@ -159,8 +164,21 @@ function ScanLandingContent() {
     ]);
   };
 
-  // 2. Hydrate Project or Target from URL
+  // 2. Hydrate Active Scan from SessionStorage or Project URL on Mount
   useEffect(() => {
+    // Check session storage active job pointer for resilience across page refresh / navigation
+    if (typeof window !== "undefined") {
+      const activeJob = sessionStorage.getItem("adq_active_job_id");
+      const activeTarget = sessionStorage.getItem("adq_active_target");
+      if (activeJob && !jobId) {
+        setJobId(activeJob);
+        if (activeTarget) setTarget(activeTarget);
+        setIsScanning(true);
+        setScanStatus("RUNNING");
+        setStartedAtTime(new Date());
+      }
+    }
+
     if (!projectId) return;
     let cancelled = false;
 
@@ -197,6 +215,7 @@ function ScanLandingContent() {
               setStartedAtTime(new Date());
             } else if (detail.status === "COMPLETED") {
               setScanStatus("COMPLETED");
+              setIsScanning(false);
             }
           }
         }
@@ -204,12 +223,6 @@ function ScanLandingContent() {
         const findings = summary.findings || {};
         if (Array.isArray(findings.vulnerabilities) && findings.vulnerabilities.length > 0) {
           setVulnerabilities(findings.vulnerabilities);
-        }
-        if (Array.isArray(findings.actionAdvice) && findings.actionAdvice.length > 0) {
-          setActionAdvice(findings.actionAdvice);
-        }
-        if (findings.rawActionAdvice) {
-          setRawActionAdvice(findings.rawActionAdvice);
         }
         if (summary.ai_summary) {
           setAiSummary(summary.ai_summary);
@@ -331,8 +344,8 @@ function ScanLandingContent() {
 
     const hasExistingData =
       vulnerabilities.length > 0 ||
-      actionAdvice.length > 0 ||
-      subdomains > 0;
+      subdomains > 0 ||
+      scanStatus === "COMPLETED";
 
     const isSuppressed =
       typeof window !== "undefined" &&
@@ -363,7 +376,9 @@ function ScanLandingContent() {
     if (isScanning || !target.trim()) return;
 
     setScanError(null);
-    setDiscoveredEndpoints([]);
+    setDiscoveredHostsList([]);
+    setDiscoveredPortsList([]);
+    setDiscoveredUrlsList([]);
     setVulnerabilities([]);
     setActivityFeed([]);
     setIsScanning(true);
@@ -371,6 +386,7 @@ function ScanLandingContent() {
     setStartedAtTime(new Date());
     setElapsedSeconds(0);
     setCurrentStageId("recon_infra");
+    setCurrentTestingControl("Khởi tạo tiến trình quét hạ tầng...");
 
     addActivity(`Bắt đầu khởi tạo tiến trình quét mục tiêu: ${target.trim()}`, "info");
 
@@ -381,6 +397,11 @@ function ScanLandingContent() {
       }
 
       setJobId(data.job_id);
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("adq_active_job_id", data.job_id);
+        sessionStorage.setItem("adq_active_target", target.trim());
+      }
+
       addActivity(`Job ID: ${data.job_id} đã được đưa vào hàng đợi xử lý SOC Engine.`, "info");
       await persistScanSummary("RUNNING", { jobId: data.job_id });
     } catch (err: any) {
@@ -409,10 +430,16 @@ function ScanLandingContent() {
             if (st === "COMPLETED" || st === "DONE") {
               setIsScanning(false);
               setScanStatus("COMPLETED");
-              addActivity("Tiến trình quét hoàn tất thành công.", "success");
+              if (typeof window !== "undefined") {
+                sessionStorage.removeItem("adq_active_job_id");
+              }
+              addActivity("Tiến trình quét hoàn tất thành công. 19/19 kiểm soát đã đạt trạng thái chung cuộc.", "success");
             } else if (st === "FAILED") {
               setIsScanning(false);
               setScanStatus("FAILED");
+              if (typeof window !== "undefined") {
+                sessionStorage.removeItem("adq_active_job_id");
+              }
               addActivity("Tiến trình quét gặp sự cố gián đoạn.", "error");
             }
           }
@@ -422,6 +449,10 @@ function ScanLandingContent() {
             if (event.assurance_matrix.stages_summary) {
               setStages(event.assurance_matrix.stages_summary);
             }
+          }
+
+          if (event.current_control) {
+            setCurrentTestingControl(event.current_control);
           }
         },
         abortController.signal
@@ -450,11 +481,14 @@ function ScanLandingContent() {
         const ports = liveData.open_ports || job.ports?.open || [];
         const urls = liveData.crawled_urls || job.urls?.combined || [];
 
+        setDiscoveredHostsList(httpLive.length > 0 ? httpLive : allSubs);
+        setDiscoveredPortsList(ports);
+        setDiscoveredUrlsList(urls);
+
         setSubdomains(allSubs.length);
         setLiveHosts(httpLive.length);
         setOpenPorts(ports.length);
         setCrawledUrls(urls.length);
-        setRequestCount(allSubs.length * 8 + ports.length * 4 + urls.length * 2);
 
         const nucleiFindings = liveData.nuclei_findings || job.vulnerabilities?.nuclei || [];
         const nuclei: Vulnerability[] = nucleiFindings.map((f: any, idx: number) => ({
@@ -465,6 +499,9 @@ function ScanLandingContent() {
           cve: f.cve_id,
           description: f.description,
           evidence: f.matched || f.raw,
+          owasp_category: f.owasp_category,
+          cwe_ids: f.cwe_ids,
+          control_id: f.control_id,
         }));
 
         setVulnCount(nuclei.length);
@@ -477,20 +514,8 @@ function ScanLandingContent() {
         if (status === "COMPLETED" || status === "DONE") {
           setIsScanning(false);
           setScanStatus("COMPLETED");
-
-          let parsedAdvice: ActionAdvice[] = [];
-          const rawAdv = safeString(job.recommendations || job.action_advice || job.raw_action_advice);
-          if (rawAdv) {
-            setRawActionAdvice(rawAdv);
-            const lines = rawAdv.split("\n").filter((l: string) => l.trim().startsWith("-"));
-            parsedAdvice = lines.slice(0, 5).map((l: string, idx: number) => ({
-              id: `advice-${idx + 1}`,
-              vulnerabilityId: `vuln-${idx + 1}`,
-              title: `Khuyến nghị #${idx + 1}`,
-              rootCause: l.replace(/^- (Nguyên nhân:\s*)?/, ""),
-              remediation: [l.replace(/^- /, "")],
-            }));
-            setActionAdvice(parsedAdvice);
+          if (typeof window !== "undefined") {
+            sessionStorage.removeItem("adq_active_job_id");
           }
 
           await persistScanSummary("COMPLETED", {
@@ -503,8 +528,6 @@ function ScanLandingContent() {
             medium: nuclei.filter((v) => v.severity === "MEDIUM").length,
             totalVulns: nuclei.length,
             vulnerabilities: nuclei,
-            actionAdvice: parsedAdvice,
-            rawActionAdvice: rawAdv,
             ai_summary: job.ai_summary,
           });
         }
@@ -547,8 +570,6 @@ function ScanLandingContent() {
         summary,
         findings: {
           vulnerabilities: overrides?.vulnerabilities ?? vulnerabilities,
-          actionAdvice: overrides?.actionAdvice ?? actionAdvice,
-          rawActionAdvice: overrides?.rawActionAdvice ?? rawActionAdvice,
         },
         lastScanAt: new Date().toISOString(),
       });
@@ -589,8 +610,10 @@ function ScanLandingContent() {
 
   return (
     <DashboardShell area="dashboard">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 space-y-5 font-sans">
-        {/* PRE-SCAN / TARGET INPUT & VERIFICATION PANEL */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 space-y-6 font-sans">
+        {/* ============================================================ */}
+        {/* PRE-SCAN / TARGET INPUT & PERSISTENT VERIFICATION PANEL     */}
+        {/* ============================================================ */}
         <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#1C1C1C]">
             <div>
@@ -615,7 +638,7 @@ function ScanLandingContent() {
             </div>
           </div>
 
-          {/* Target Input Form */}
+          {/* 1. Target Input & Start Scan Form */}
           <div className="flex flex-col sm:flex-row gap-2.5">
             <div className="relative flex-1">
               <Input
@@ -649,7 +672,7 @@ function ScanLandingContent() {
             </Button>
           </div>
 
-          {/* Ownership Verification Card */}
+          {/* 2. Persistent Ownership Verification Status */}
           {target.trim() && (
             <OwnershipVerificationCard
               target={target}
@@ -679,20 +702,22 @@ function ScanLandingContent() {
           )}
         </div>
 
-        {/* SCAN RUNNING & RESULTS SECTION */}
+        {/* ============================================================ */}
+        {/* RUNNING / COMPLETED SCAN MISSION CONTROL (STRICT HIERARCHY)  */}
+        {/* ============================================================ */}
         {(jobId || isScanning || scanStatus !== "IDLE" || vulnerabilities.length > 0) && (
-          <div className="space-y-4">
-            {/* 1. TOP COMPACT SCAN HEADER */}
+          <div className="space-y-6">
+            {/* 1. TOP COMPACT SCAN HEADER (CLEAR SCANNING / COMPLETE STATE) */}
             <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-[#141414] border border-[#242424] flex items-center justify-center shrink-0">
-                  <Globe className="h-4 w-4 text-white" />
+                <div className="h-10 w-10 rounded-lg bg-[#141414] border border-[#242424] flex items-center justify-center shrink-0">
+                  <Globe className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white font-mono">{target}</span>
+                  <div className="flex items-center gap-2 font-mono">
+                    <span className="text-sm sm:text-base font-bold text-white">{target}</span>
                     <span
-                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
                         scanStatus === "COMPLETED"
                           ? "border-[#22C55E]/40 bg-[#22C55E]/10 text-[#22C55E]"
                           : scanStatus === "FAILED"
@@ -700,13 +725,13 @@ function ScanLandingContent() {
                           : "border-white/40 bg-white/10 text-white animate-pulse"
                       }`}
                     >
-                      {scanStatus}
+                      {scanStatus === "COMPLETED" ? "SCAN COMPLETE ✓" : scanStatus === "FAILED" ? "SCAN FAILED ✗" : "SCANNING ●"}
                     </span>
                   </div>
                   <div className="text-[11px] text-[#888888] font-mono mt-0.5 flex items-center gap-2">
-                    <span>Job: {jobId}</span>
+                    <span>Job ID: {jobId}</span>
                     <span>&bull;</span>
-                    <span>Thời gian: {formatElapsed(elapsedSeconds)}</span>
+                    <span>{scanStatus === "COMPLETED" ? `Thời lượng: ${formatElapsed(elapsedSeconds)}` : `Đang chạy: ${formatElapsed(elapsedSeconds)}`}</span>
                   </div>
                 </div>
               </div>
@@ -737,16 +762,38 @@ function ScanLandingContent() {
               </div>
             </div>
 
-            {/* 2. TOP STAGE RUNNER (REQUIRED AT TOP) */}
+            {/* 2. SCAN STEP RUNNER — MUST BE AT TOP */}
             <TopStageRunner stages={stages} currentStageId={currentStageId} isScanning={isScanning} />
 
-            {/* 3. LIVE METRICS ROW */}
+            {/* 3. OVERALL CONTROL PROGRESS & CURRENT CONTROL INDICATOR */}
+            <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 space-y-2.5 font-mono">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                <span className="text-[#888888]">
+                  Tiến độ kiểm soát an ninh: <strong className="text-white">{completedControlsCount} / {totalControlsCount}</strong> controls hoàn thành
+                </span>
+                <span className="text-[11px] text-[#A3A3A3]">
+                  {scanStatus === "COMPLETED"
+                    ? "✓ Tất cả kiểm soát đã đạt trạng thái chung cuộc"
+                    : currentTestingControl || "Đang thực thi các kiểm soát an ninh..."}
+                </span>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-[#1C1C1C] overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    scanStatus === "COMPLETED" ? "bg-[#22C55E]" : "bg-white"
+                  }`}
+                  style={{ width: `${Math.min(100, Math.round((completedControlsCount / totalControlsCount) * 100))}%` }}
+                />
+              </div>
+            </div>
+
+            {/* 4. LIVE METRICS ROW */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
               {[
                 { label: "Subdomains", val: subdomains },
                 { label: "Live Hosts", val: liveHosts },
                 { label: "Crawled URLs", val: crawledUrls },
-                { label: "Controls Progress", val: `${completedControlsCount} / ${totalControlsCount}` },
+                { label: "Controls Done", val: `${completedControlsCount} / ${totalControlsCount}` },
                 { label: "Findings", val: vulnCount, highlight: vulnCount > 0 },
               ].map((m, idx) => (
                 <div key={idx} className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-3 text-center">
@@ -762,7 +809,15 @@ function ScanLandingContent() {
               ))}
             </div>
 
-            {/* 4. LIVE SECURITY CONTROLS / ASSURANCE MATRIX */}
+            {/* 5. DISCOVERED ASSETS (REQUIRED BEFORE ASSURANCE MATRIX) */}
+            <DiscoveredAssets
+              hosts={discoveredHostsList}
+              ports={discoveredPortsList}
+              urls={discoveredUrlsList}
+              defaultTarget={target}
+            />
+
+            {/* 6. LIVE ASSURANCE MATRIX (19 CONTROLS) */}
             <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-[#1C1C1C]">
                 <div>
@@ -778,16 +833,16 @@ function ScanLandingContent() {
                   size="sm"
                   variant="outline"
                   onClick={() => setIsWhatCheckedOpen(true)}
-                  className="h-7 text-[11px] font-mono border-[#242424] bg-[#141414] text-[#A3A3A3] hover:text-white rounded"
+                  className="h-7 text-[11px] font-mono border-[#242424] bg-[#141414] text-[#A3A3A3] hover:text-white rounded cursor-pointer"
                 >
                   Quy Trình Kiểm Tra
                 </Button>
               </div>
 
-              <AssuranceMatrix controls={controlsList} />
+              <AssuranceMatrix controls={controlsList} targetDomain={target} />
             </div>
 
-            {/* 5. LIVE ACTIVITY FEED */}
+            {/* 7. LIVE ACTIVITY FEED */}
             {activityFeed.length > 0 && (
               <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 space-y-2.5">
                 <div className="flex items-center justify-between pb-2 border-b border-[#1C1C1C]">
@@ -801,7 +856,7 @@ function ScanLandingContent() {
                   {activityFeed.map((act) => (
                     <div
                       key={act.id}
-                      className="flex items-start gap-2.5 py-1 px-2 rounded bg-[#050505] border border-[#141414]"
+                      className="flex items-start gap-2.5 py-1 px-2.5 rounded bg-[#050505] border border-[#141414]"
                     >
                       <span className="text-[10px] text-[#666666] shrink-0 mt-0.5">{act.time}</span>
                       <span
@@ -823,37 +878,59 @@ function ScanLandingContent() {
               </div>
             )}
 
-            {/* 6. FINDINGS LIST */}
-            {vulnerabilities.length > 0 && (
-              <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-[#1C1C1C]">
-                  <h4 className="text-xs sm:text-sm font-bold text-white font-mono uppercase flex items-center gap-2">
-                    <ShieldAlert className="h-4 w-4 text-[#EF4444]" />
-                    Phát Hiện Vi Phạm An Ninh ({vulnerabilities.length})
-                  </h4>
+            {/* 8. CONFIRMED FINDINGS */}
+            <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-[#1C1C1C]">
+                <h4 className="text-xs sm:text-sm font-bold text-white font-mono uppercase flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-[#EF4444]" />
+                  Phát Hiện Vi Phạm An Ninh ({vulnerabilities.length})
+                </h4>
+              </div>
+
+              {vulnerabilities.length === 0 ? (
+                <div className="p-4 rounded-lg bg-[#050505] border border-[#1C1C1C] space-y-1.5 font-mono text-xs">
+                  <div className="text-[#22C55E] font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Không phát hiện vi phạm bảo mật đã xác nhận (No confirmed findings).
+                  </div>
+                  <p className="text-[11px] text-[#888888] font-sans">
+                    Lưu ý: Kết quả này không đồng nghĩa mục tiêu an toàn 100%. Kết quả chỉ phản ánh các kiểm soát kỹ thuật và phạm vi tài sản đã thực thi trong phiên rà quét này.
+                  </p>
                 </div>
+              ) : (
                 <div className="space-y-2">
                   {vulnerabilities.map((v) => (
                     <div
                       key={v.id}
-                      className="rounded-lg border border-[#EF4444]/30 bg-[#050505] p-3 text-xs space-y-1"
+                      className="rounded-lg border border-[#EF4444]/30 bg-[#050505] p-3 text-xs space-y-1.5 font-mono"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-white font-mono">{v.title}</span>
-                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]">
+                        <span className="font-bold text-white">{v.title}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded border border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]">
                           {v.severity}
                         </span>
                       </div>
-                      <div className="text-[11px] text-[#888888] font-mono truncate">{v.endpoint}</div>
-                      {v.description && <p className="text-[11px] text-[#A3A3A3] mt-1">{v.description}</p>}
+                      <div className="text-[11px] text-[#888888] truncate">{v.endpoint}</div>
+                      {v.description && <p className="text-[11px] text-[#A3A3A3] font-sans">{v.description}</p>}
+                      {v.evidence && (
+                        <div className="pt-1 text-[10px] text-[#666666] truncate">
+                          Bằng chứng: {v.evidence}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* 7. CONSOLIDATED AI RISK ASSESSMENT (SINGLE AI PRESENTATION) */}
-            <AiAnalysisCard userTier={userTier} aiSummary={aiSummary} target={target} isScanning={isScanning} />
+            {/* 9. CONSOLIDATED AI RISK ASSESSMENT */}
+            <AiAnalysisCard
+              userTier={userTier}
+              aiSummary={aiSummary}
+              target={target}
+              isScanning={isScanning}
+              findingsCount={vulnerabilities.length}
+            />
           </div>
         )}
 

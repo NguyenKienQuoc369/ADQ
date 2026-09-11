@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Sparkles, Lock, ArrowRight, ShieldAlert } from "lucide-react";
+import React, { useState } from "react";
+import { Sparkles, Lock, ArrowRight, RefreshCw, ShieldAlert, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { MarkdownRenderer } from "@/components/ui/markdown-renderer";
@@ -11,9 +11,20 @@ interface AiAnalysisCardProps {
   aiSummary?: string | null;
   target?: string;
   isScanning?: boolean;
+  findingsCount?: number;
+  onRetry?: () => void;
+  isRetrying?: boolean;
 }
 
-export function AiAnalysisCard({ userTier, aiSummary, target, isScanning }: AiAnalysisCardProps) {
+export function AiAnalysisCard({
+  userTier,
+  aiSummary,
+  target = "",
+  isScanning = false,
+  findingsCount = 0,
+  onRetry,
+  isRetrying = false,
+}: AiAnalysisCardProps) {
   const router = useRouter();
   const isFree = userTier === "FREE";
 
@@ -33,10 +44,23 @@ export function AiAnalysisCard({ userTier, aiSummary, target, isScanning }: AiAn
               </span>
             </h3>
             <p className="text-[11px] text-[#888888]">
-              Đánh giá rủi ro an ninh, xâu chuỗi kịch bản khai thác PoC và đề xuất khắc phục theo ưu tiên
+              Đánh giá rủi ro an ninh tổng quan, phân tích ngữ cảnh tấn công và các hạn chế phạm vi rà quét
             </p>
           </div>
         </div>
+
+        {onRetry && !isScanning && !isFree && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRetry}
+            disabled={isRetrying}
+            className="h-7 px-2.5 text-xs font-mono border-[#242424] bg-[#141414] text-[#A3A3A3] hover:text-white rounded cursor-pointer"
+          >
+            <RefreshCw className={`h-3 w-3 mr-1.5 ${isRetrying ? "animate-spin" : ""}`} />
+            {isRetrying ? "Đang xử lý..." : "Tạo Lại Đánh Giá"}
+          </Button>
+        )}
       </div>
 
       {/* Content Area */}
@@ -45,13 +69,13 @@ export function AiAnalysisCard({ userTier, aiSummary, target, isScanning }: AiAn
           <>
             <div className="space-y-2 select-none filter blur-[4px] opacity-25 pointer-events-none text-xs text-[#888888]">
               <p>
-                <strong>Phân tích an ninh mục tiêu:</strong> Hệ thống tự động phát hiện các điểm rủi ro an ninh mạng, cấu hình Header thiếu chặt chẽ và chính sách CSP cần tối ưu hóa.
+                <strong>Đánh giá rủi ro an ninh:</strong> Hệ thống đã hoàn tất đánh giá các chỉ số an toàn và ghi nhận phạm vi kiểm thử kỹ thuật.
               </p>
               <p>
-                <strong>Kịch bản tấn công tiềm tàng:</strong> Kẻ tấn công có thể lợi dụng sai sót cấu hình để truy vấn thông tin nhạy cảm.
+                <strong>Kịch bản phơi nhiễm tiềm tàng:</strong> Các chỉ dấu quan sát được phân tích trong tương quan an ninh tổng thể.
               </p>
               <p>
-                <strong>Khuyến nghị khắc phục:</strong> Thiết lập chính sách bảo mật máy chủ và cập nhật bản vá bảo mật chuẩn công nghiệp.
+                <strong>Phạm vi & Giới hạn:</strong> Đánh giá phản ánh các kiểm soát đã thực thi trên mục tiêu.
               </p>
             </div>
 
@@ -59,11 +83,11 @@ export function AiAnalysisCard({ userTier, aiSummary, target, isScanning }: AiAn
               <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#242424] bg-[#141414] text-white mb-2">
                 <Lock className="h-4 w-4" />
               </div>
-              <h4 className="text-xs font-semibold text-white tracking-wide">
-                Báo Cáo Phân Tích Chuyên Sâu Của AI Bị Khóa
+              <h4 className="text-xs font-semibold text-white tracking-wide font-mono">
+                BÁO CÁO PHÂN TÍCH RỦI RO AI BỊ KHÓA
               </h4>
               <p className="text-[11px] text-[#888888] max-w-sm mt-1 mb-3">
-                Gói Dùng Thử Miễn Phí không bao gồm phân tích AI chuyên sâu. Nâng cấp lên gói <strong>PRO</strong> để tự động nhận đánh giá lỗ hổng & sinh mã vá.
+                Gói Dùng Thử Miễn Phí không bao gồm phân tích AI chuyên sâu. Nâng cấp lên gói <strong>PRO</strong> để nhận đánh giá rủi ro an ninh chi tiết từ AI Engine.
               </p>
               <Button
                 onClick={() => router.push("/dashboard/billing")}
@@ -75,7 +99,7 @@ export function AiAnalysisCard({ userTier, aiSummary, target, isScanning }: AiAn
             </div>
           </>
         ) : isScanning && !aiSummary ? (
-          <div className="flex items-center gap-3 p-4 text-xs text-[#888888] bg-[#050505] rounded-lg border border-[#1C1C1C]">
+          <div className="flex items-center gap-3 p-4 text-xs text-[#888888] bg-[#050505] rounded-lg border border-[#1C1C1C] font-mono">
             <Sparkles className="w-4 h-4 text-white animate-spin shrink-0" />
             <span>Đang thu thập và tổng hợp dữ liệu rà quét để kích hoạt AI Risk Assessment...</span>
           </div>
@@ -83,13 +107,26 @@ export function AiAnalysisCard({ userTier, aiSummary, target, isScanning }: AiAn
           <div className="text-xs text-[#F5F5F5] leading-relaxed">
             {aiSummary ? (
               <MarkdownRenderer content={aiSummary} />
+            ) : findingsCount === 0 ? (
+              <div className="space-y-2 p-3.5 rounded-lg bg-[#050505] border border-[#1C1C1C]">
+                <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#22C55E]">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Tổng Quan Rủi Ro Quan Sát Được: THẤP (LOW)</span>
+                </div>
+                <p className="text-xs text-[#A3A3A3] font-sans">
+                  Không ghi nhận phát hiện vi phạm bảo mật nào trong toàn bộ 19 kiểm soát kỹ thuật thuộc phạm vi quét đã thực thi.
+                </p>
+                <p className="text-[11px] text-[#666666] font-mono">
+                  Lưu ý: Kết quả này phản ánh các kiểm soát và phạm vi đã kích hoạt trong phiên quét, không bảo đảm tuyệt đối rằng hệ thống không tồn tại các bề mặt tấn công chưa được kiểm tra.
+                </p>
+              </div>
             ) : (
               <div className="space-y-1.5 p-3 rounded-lg bg-[#050505] border border-[#1C1C1C]">
-                <p className="text-[#A3A3A3]">
+                <p className="text-[#A3A3A3] font-mono text-xs">
                   Chưa có báo cáo phân tích AI cho phiên quét này.
                 </p>
                 <p className="text-[11px] text-[#666666]">
-                  Kết quả rà quét kỹ thuật đã được lưu đầy đủ. Phân tích AI sẽ xuất hiện khi AI Engine được kích hoạt và tạo báo cáo thành công.
+                  Kết quả rà quét kỹ thuật đã được lưu đầy đủ. Nhấn &quot;Tạo Lại Đánh Giá&quot; để gửi yêu cầu phân tích rủi ro tới AI Engine.
                 </p>
               </div>
             )}

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { EvaluatedSecurityControl, ControlStatus, Severity } from "@/lib/api";
+import { EvaluatedSecurityControl, ControlStatus } from "@/lib/api";
 import { 
   CheckCircle2, 
   XCircle, 
@@ -9,17 +9,18 @@ import {
   MinusCircle, 
   ChevronDown, 
   ChevronRight, 
-  Copy, 
-  Check, 
-  Code, 
-  ExternalLink,
   ShieldCheck,
-  Loader2
+  Loader2,
+  FileText,
+  Search,
+  Layers,
+  Info
 } from "lucide-react";
 
 interface AssuranceMatrixProps {
   controls: EvaluatedSecurityControl[];
   onInspectFinding?: (finding: any) => void;
+  targetDomain?: string;
 }
 
 const SEVERITY_BADGES: Record<string, { label: string; class: string }> = {
@@ -30,23 +31,16 @@ const SEVERITY_BADGES: Record<string, { label: string; class: string }> = {
   INFO: { label: "INFO", class: "border-[#333333] bg-[#141414] text-[#888888]" },
 };
 
-export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixProps) {
+export function AssuranceMatrix({ controls, onInspectFinding, targetDomain = "" }: AssuranceMatrixProps) {
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [filterStage, setFilterStage] = useState<string>("ALL");
   const [expandedControlId, setExpandedControlId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const filteredControls = controls.filter((ctrl) => {
     if (filterStatus !== "ALL" && ctrl.status !== filterStatus) return false;
     if (filterStage !== "ALL" && ctrl.stage_id !== filterStage) return false;
     return true;
   });
-
-  const handleCopy = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
 
   const getStatusBadge = (status: ControlStatus | string) => {
     switch (status) {
@@ -100,7 +94,7 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
       {/* Filters Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#242424] bg-[#0A0A0A] p-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-semibold text-[#888888] mr-1">Trạng thái:</span>
+          <span className="text-xs font-semibold text-[#888888] mr-1 font-mono">Trạng thái:</span>
           {["ALL", "FAIL", "PASS", "INCONCLUSIVE", "NOT_TESTED"].map((st) => (
             <button
               key={st}
@@ -117,7 +111,7 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-[#888888]">Giai đoạn:</span>
+          <span className="text-xs font-semibold text-[#888888] font-mono">Giai đoạn:</span>
           <select
             value={filterStage}
             onChange={(e) => setFilterStage(e.target.value)}
@@ -132,7 +126,7 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
         </div>
       </div>
 
-      {/* Controls List */}
+      {/* Controls List (Target Collapsed Height ~96-104px) */}
       <div className="space-y-2">
         {filteredControls.map((control) => {
           const isExpanded = expandedControlId === control.id;
@@ -150,13 +144,13 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
                   ? "border-[#EF4444]/30 bg-[#0A0A0A] hover:border-[#EF4444]/50"
                   : isPass
                   ? "border-[#242424] bg-[#0A0A0A] hover:border-[#333333]"
-                  : "border-[#1C1C1C] bg-[#080808] opacity-80"
+                  : "border-[#1C1C1C] bg-[#080808] opacity-85"
               }`}
             >
               {/* Header Row */}
               <div
                 onClick={() => setExpandedControlId(isExpanded ? null : control.id)}
-                className="p-3.5 sm:p-4 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 select-none"
+                className="p-3.5 sm:p-4 min-h-[96px] cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 select-none"
               >
                 <div className="flex items-start gap-3 min-w-0 flex-1">
                   <div className="mt-1 text-[#666666] shrink-0">
@@ -172,7 +166,7 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
                         {control.code}
                       </span>
                       <span className="text-[11px] text-[#666666]">[{control.id}]</span>
-                      <span className={`w-[68px] text-center text-[10px] font-semibold px-1.5 py-0.5 rounded border ${sevMeta.class}`}>
+                      <span className={`w-[72px] text-center text-[10px] font-semibold px-1.5 py-0.5 rounded border ${sevMeta.class}`}>
                         {sevMeta.label}
                       </span>
                       <span className="text-[10px] text-[#888888] bg-[#141414] px-2 py-0.5 rounded border border-[#242424]">
@@ -199,77 +193,81 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
                 </div>
               </div>
 
-              {/* Expanded Detail Panel */}
+              {/* Expanded Detail Panel — Strict Evidence Scope Only */}
               {isExpanded && (
-                <div className="px-4 pb-4 pt-2 border-t border-[#242424] space-y-3 bg-[#050505]">
-                  <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 text-xs text-[#A3A3A3] leading-relaxed">
-                    <span className="font-bold text-white">Đánh giá kiểm soát: </span>
-                    {control.reason}
+                <div className="px-4 pb-4 pt-2 border-t border-[#242424] space-y-3.5 bg-[#050505]">
+                  {/* 1. ASSESSMENT */}
+                  <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 text-xs leading-relaxed space-y-1">
+                    <div className="text-[10px] font-mono uppercase font-bold text-[#888888] flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                      Đánh Giá Kiểm Soát (Assessment)
+                    </div>
+                    <p className="text-[#A3A3A3] font-sans">
+                      {control.reason || (
+                        control.status === "PASS"
+                          ? "Trình kiểm thử đã hoàn thành đầy đủ quy trình kiểm tra và không phát hiện vi phạm nào trong phạm vi rà quét được kích hoạt."
+                          : control.status === "FAIL"
+                          ? "Bằng chứng kỹ thuật xác nhận phát hiện vi phạm quy chuẩn an toàn tương ứng."
+                          : control.status === "INCONCLUSIVE"
+                          ? "Trình kiểm thử đã thực thi nhưng dữ liệu phản hồi từ mục tiêu không đủ để đưa ra kết luận đạt/không đạt tin cậy."
+                          : "Kiểm soát này chưa được kích hoạt do thiếu điều kiện tiền đề hoặc cấu hình xác thực bổ sung."
+                      )}
+                    </p>
                   </div>
 
+                  {/* 2. WHAT WAS TESTED & 3. OBSERVED EVIDENCE */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    {/* WHAT WAS TESTED */}
                     <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 space-y-1.5">
-                      <div className="text-[#666666] font-mono text-[10px] uppercase font-semibold">
-                        Chi Tiết Kỹ Thuật
+                      <div className="text-[#666666] font-mono text-[10px] uppercase font-bold flex items-center gap-1.5">
+                        <Search className="w-3 h-3 text-white" />
+                        Phạm Vi Đã Kiểm Tra (What Was Tested)
                       </div>
-                      <div className="space-y-1 text-[#A3A3A3]">
-                        <div><strong className="text-[#F5F5F5]">OWASP:</strong> {control.owasp_category || "N/A"}</div>
-                        <div><strong className="text-[#F5F5F5]">CWE:</strong> {control.cwe_ids?.join(", ") || "N/A"}</div>
-                        <div><strong className="text-[#F5F5F5]">Gói tối thiểu:</strong> {control.minimum_tier}</div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 space-y-1.5">
-                      <div className="text-[#666666] font-mono text-[10px] uppercase font-semibold">
-                        Hướng Dẫn Khắc Phục
-                      </div>
-                      <p className="text-[#A3A3A3] leading-relaxed">
-                        {control.remediation_guide || "Tuân thủ các hướng dẫn an toàn tiêu chuẩn và rà soát cấu hình liên quan."}
+                      <p className="text-[#A3A3A3] font-sans leading-relaxed">
+                        {control.description_vi || control.description || "Rà soát cấu hình, phản hồi HTTP và kiểm tra vector tấn công tương ứng trên toàn bộ các tài sản và endpoint đã khám phá."}
                       </p>
                     </div>
+
+                    {/* OBSERVED EVIDENCE */}
+                    <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 space-y-1.5">
+                      <div className="text-[#666666] font-mono text-[10px] uppercase font-bold flex items-center gap-1.5">
+                        <FileText className="w-3 h-3 text-white" />
+                        Bằng Chứng Quan Sát (Observed Evidence)
+                      </div>
+                      <div className="text-[#A3A3A3] font-mono text-[11px] leading-relaxed">
+                        {control.evidence ? (
+                          <div className="truncate">{String(control.evidence)}</div>
+                        ) : control.status === "PASS" ? (
+                          <span>Mục tiêu: {targetDomain || "target"} — Không ghi nhận phản hồi bất thường hoặc dấu hiệu khai thác thành công.</span>
+                        ) : (
+                          <span>Ghi nhận từ pipeline thực thi: {control.findings_count} chỉ dấu quan sát được.</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
-                  {control.remediation_code_snippet && (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[11px] font-mono text-[#888888]">
-                        <span className="flex items-center gap-1.5">
-                          <Code className="w-3.5 h-3.5 text-white" />
-                          Mã Khắc Phục Mẫu:
-                        </span>
-                        <button
-                          onClick={() => handleCopy(control.id, control.remediation_code_snippet!)}
-                          className="flex items-center gap-1 text-[10px] text-[#A3A3A3] hover:text-white transition cursor-pointer"
-                        >
-                          {copiedId === control.id ? <Check className="w-3 h-3 text-[#22C55E]" /> : <Copy className="w-3 h-3" />}
-                          Sao chép mã
-                        </button>
-                      </div>
-                      <pre className="rounded-lg border border-[#242424] bg-[#000000] p-3 font-mono text-xs text-[#22C55E] overflow-x-auto select-all">
-                        <code>{control.remediation_code_snippet}</code>
-                      </pre>
-                    </div>
-                  )}
-
+                  {/* 4. AFFECTED ASSETS & FINDINGS LIST */}
                   {control.findings && control.findings.length > 0 && (
-                    <div className="space-y-2 pt-2 border-t border-[#1C1C1C]">
-                      <div className="text-xs font-bold text-[#EF4444] font-mono">
-                        Bằng Chứng Vi Phạm Phát Hiện Được ({control.findings.length}):
+                    <div className="rounded-lg bg-[#0A0A0A] border border-[#EF4444]/30 p-3 space-y-2">
+                      <div className="text-[10px] font-mono font-bold uppercase text-[#EF4444] flex items-center gap-1.5">
+                        <Layers className="w-3 h-3" />
+                        Tài Sản Ảnh Hưởng & Chi Tiết Vi Phạm ({control.findings.length})
                       </div>
                       <div className="space-y-1.5">
                         {control.findings.map((f: any, fIdx: number) => (
                           <div
                             key={fIdx}
-                            className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/5 p-2.5 text-xs text-[#A3A3A3] flex items-center justify-between gap-2"
+                            className="rounded border border-[#EF4444]/20 bg-[#050505] p-2 text-xs text-[#A3A3A3] flex items-center justify-between gap-2"
                           >
-                            <span className="font-mono text-white truncate">
+                            <span className="font-mono text-white truncate text-[11px]">
                               {f.endpoint || f.matched || f.title || "Phát hiện lỗ hổng"}
                             </span>
                             {onInspectFinding && (
                               <button
                                 onClick={() => onInspectFinding(f)}
-                                className="text-[11px] text-[#EF4444] hover:underline font-mono shrink-0 cursor-pointer"
+                                className="text-[10px] text-[#EF4444] hover:underline font-mono shrink-0 cursor-pointer"
                               >
-                                Xem chi tiết &rarr;
+                                Xem &rarr;
                               </button>
                             )}
                           </div>
@@ -277,6 +275,31 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
                       </div>
                     </div>
                   )}
+
+                  {/* 5. TECHNICAL REFERENCES & 6. TECHNICAL METADATA */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 space-y-1.5">
+                      <div className="text-[#666666] font-mono text-[10px] uppercase font-bold">
+                        Tham Chiếu Kỹ Thuật (Technical References)
+                      </div>
+                      <div className="space-y-1 text-[#A3A3A3] font-mono text-[11px]">
+                        <div><strong className="text-white">OWASP:</strong> {control.owasp_category || "N/A"}</div>
+                        <div><strong className="text-white">CWE:</strong> {control.cwe_ids?.join(", ") || "N/A"}</div>
+                        <div><strong className="text-white">Detector ID:</strong> {control.id}</div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 space-y-1.5">
+                      <div className="text-[#666666] font-mono text-[10px] uppercase font-bold">
+                        Siêu Dữ Liệu Kỹ Thuật (Technical Metadata)
+                      </div>
+                      <div className="space-y-1 text-[#A3A3A3] font-mono text-[11px]">
+                        <div><strong className="text-white">Giai đoạn:</strong> {control.stage_name} ({control.stage_id})</div>
+                        <div><strong className="text-white">Gói tối thiểu:</strong> {control.minimum_tier}</div>
+                        <div><strong className="text-white">Thời điểm kiểm tra:</strong> {control.tested_at ? new Date(control.tested_at * 1000).toLocaleTimeString() : "N/A"}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -63,6 +63,11 @@ export function TopStageRunner({ stages = [], currentStageId, isScanning }: TopS
             badgeClass = "border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308]";
           }
 
+          const completedCount = stage
+            ? stage.pass_count + stage.fail_count + stage.inconclusive_count + stage.not_tested_count
+            : 0;
+          const totalControls = stage?.total_controls || 0;
+
           return (
             <div
               key={def.id}
@@ -99,10 +104,15 @@ export function TopStageRunner({ stages = [], currentStageId, isScanning }: TopS
                 </div>
               </div>
 
-              {stage && (
+              {stage && totalControls > 0 && (
                 <div className="mt-2.5 pt-1.5 border-t border-[#1C1C1C] flex items-center justify-between text-[10px] font-mono text-[#888888]">
-                  <span>{stage.pass_count} Pass / {stage.fail_count} Fail</span>
-                  <span>{stage.total_controls} Controls</span>
+                  <span>
+                    {stage.pass_count > 0 && <span className="text-[#22C55E] mr-1">{stage.pass_count}P</span>}
+                    {stage.fail_count > 0 && <span className="text-[#EF4444] mr-1">{stage.fail_count}F</span>}
+                    {stage.inconclusive_count > 0 && <span className="text-[#EAB308] mr-1">{stage.inconclusive_count}I</span>}
+                    {stage.not_tested_count > 0 && <span className="text-[#666666] mr-1">{stage.not_tested_count}N</span>}
+                  </span>
+                  <span className="text-white font-semibold">{completedCount} / {totalControls}</span>
                 </div>
               )}
             </div>
