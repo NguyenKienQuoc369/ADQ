@@ -6,12 +6,13 @@ declare global {
 
 export function getPrismaClient(): PrismaClient {
   if (!global.prisma) {
-    if (!process.env.DATABASE_URL) {
-      throw new Error(
-        "DATABASE_URL chưa được cấu hình cho Prisma. Hãy set DATABASE_URL trong biến môi trường.",
-      );
-    }
+    const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/adq_db";
     global.prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: dbUrl,
+        },
+      },
       log: ["error"],
     });
   }
