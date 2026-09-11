@@ -34,17 +34,33 @@ export function getDailyLimitForPackage(packageTier: AppPackageTier) {
   return 2;
 }
 
-export function toUserRecord(row: any) {
+export function toUserRecord(row: any, authUser?: SupabaseUser | null) {
+  const isPlanExpired = row.planExpiresAt
+    ? new Date(row.planExpiresAt).getTime() <= Date.now()
+    : false;
+  const effectiveTier: AppPackageTier = isPlanExpired
+    ? "FREE"
+    : normalisePackageTier(row.packageTier);
+
+  const avatar =
+    (authUser?.user_metadata ?? {})["avatar_url"] ||
+    (authUser?.user_metadata ?? {})["picture"] ||
+    (authUser?.user_metadata ?? {})["avatar"] ||
+    (authUser?.user_metadata ?? {})["avatarUrl"] ||
+    (row.avatar as string | undefined) ||
+    undefined;
+
   return {
-    id: String(row.id),
+    id: row.authUserId ? String(row.authUserId) : String(row.id),
+    dbId: String(row.id),
     authUserId: row.authUserId ? String(row.authUserId) : null,
     name: row.name ?? row.email?.split("@")[0] ?? "Người dùng",
     email: String(row.email ?? ""),
-    avatar: undefined,
+    avatar,
     role: normaliseRole(row.role),
-    packageTier: normalisePackageTier(row.packageTier),
+    packageTier: effectiveTier,
     status: normaliseStatus(row.status),
-    dailyLimit: Number(row.dailyLimit ?? getDailyLimitForPackage(normalisePackageTier(row.packageTier))),
+    dailyLimit: Number(row.dailyLimit ?? getDailyLimitForPackage(effectiveTier)),
     scansToday: Number(row.scansToday ?? 0),
     telegramConnected: Boolean(row.telegramConnected),
     planExpiresAt: row.planExpiresAt ? new Date(row.planExpiresAt).toISOString() : null,
@@ -213,8 +229,12 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
       (authUser.app_metadata as Record<string, unknown> | undefined)?.role,
   );
 
+  const isExistingExpired = existing?.planExpiresAt
+    ? new Date(existing.planExpiresAt).getTime() <= Date.now()
+    : false;
+
   const existingTier = existing
-    ? normalisePackageTier(existing.packageTier)
+    ? (isExistingExpired ? "FREE" : normalisePackageTier(existing.packageTier))
     : "FREE";
 
   const fallbackTier = fallback?.packageTier
@@ -236,12 +256,22 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
       : null;
 
   const status = normaliseStatus(fallback?.status ?? existing?.status ?? "ACTIVE");
+
+  // Name resolution priority:
+  // 1. Explicit fallback parameter (e.g. from update request)
+  // 2. Auth user metadata (latest name updated in Supabase profile)
+  // 3. Previously saved database name
+  // 4. Email local-part
+  // 5. Default "Người dùng"
+  const metadataName =
+    (authUser.user_metadata?.name as string | undefined)?.trim() ||
+    (authUser.user_metadata?.full_name as string | undefined)?.trim();
+
   const name =
-    (fallback?.name as string | undefined) ??
-    existing?.name ??
-    (authUser.user_metadata?.name as string | undefined) ??
-    (authUser.user_metadata?.full_name as string | undefined) ??
-    authUser.email?.split("@")[0] ??
+    (fallback?.name as string | undefined)?.trim() ||
+    metadataName ||
+    existing?.name ||
+    authUser.email?.split("@")[0] ||
     "Người dùng";
 
   if (existing) {
@@ -264,7 +294,7 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
         scansToday: Number(fallback?.scansToday ?? existing.scansToday ?? 0),
         telegramConnected: Boolean(fallback?.telegramConnected ?? existing.telegramConnected ?? false),
         oauthProvider: authProvider,
-        planExpiresAt: fallback?.planExpiresAt !== undefined ? (fallback.planExpiresAt as Date | null) : existing.planExpiresAt,
+        planExpiresAt: fallback?.planExpiresAt !== undefined ? (fallback.planExpiresAt as Date | null) : (isExistingExpired ? null : existing.planExpiresAt),
         lastLoginAt: authUser.last_sign_in_at ? new Date(authUser.last_sign_in_at) : existing.lastLoginAt ?? new Date(),
       },
     });
@@ -305,6 +335,7 @@ export async function syncSupabaseMetadataForAdminUser(input: {
   role: AppRole;
   packageTier: AppPackageTier;
   status?: AppStatus;
+  planExpiresAt?: string | null;
   password?: string;
 }) {
   try {
@@ -315,16 +346,18 @@ export async function syncSupabaseMetadataForAdminUser(input: {
     await admin.auth.admin.updateUserById(input.authUserId, {
       user_metadata: {
         ...(existing.data.user.user_metadata ?? {}),
-        ...(input.name ? { name: input.name } : {}),
+        ...(input.name ? { name: input.name, full_name: input.name } : {}),
         role: input.role,
         packageTier: input.packageTier,
         status: input.status ?? "ACTIVE",
+        planExpiresAt: input.planExpiresAt ?? null,
       },
       app_metadata: {
         ...(existing.data.user.app_metadata ?? {}),
         role: input.role,
         packageTier: input.packageTier,
         status: input.status ?? "ACTIVE",
+        planExpiresAt: input.planExpiresAt ?? null,
       },
     });
   } catch (err) {}

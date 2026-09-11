@@ -72,9 +72,7 @@ export async function GET(request: Request) {
     });
 
     const appUser = {
-      ...toUserRecord(row),
-      id: dataUser.id,
-      avatar: (dataUser.user_metadata ?? {})["avatar_url"] || dataUser.user_metadata?.["picture"] || undefined,
+      ...toUserRecord(row, dataUser),
       lastLoginAt: dataUser.last_sign_in_at ?? row.lastLoginAt ?? new Date().toISOString(),
     };
 

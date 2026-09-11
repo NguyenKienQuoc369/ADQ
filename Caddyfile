@@ -1,5 +1,41 @@
 adq.io.vn {
-    handle /api/* {
+    handle /api/health {
+        reverse_proxy api-server:8000
+    }
+    handle /api/scans* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/scan/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/verification/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/stress/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/apk-audit/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/maintenance/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/copilot/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/c2/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/ctem/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/graph/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/grid/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/oast/* {
         reverse_proxy api-server:8000
     }
     handle {
@@ -16,7 +52,43 @@ api.adq.io.vn {
 }
 
 :80 {
-    handle /api/* {
+    handle /api/health {
+        reverse_proxy api-server:8000
+    }
+    handle /api/scans* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/scan/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/verification/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/stress/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/apk-audit/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/maintenance/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/copilot/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/c2/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/ctem/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/graph/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/grid/* {
+        reverse_proxy api-server:8000
+    }
+    handle /api/oast/* {
         reverse_proxy api-server:8000
     }
     handle {

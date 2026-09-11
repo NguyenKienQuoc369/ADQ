@@ -26,6 +26,7 @@ import {
 import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { UserAvatar, getCanonicalDisplayName, getCanonicalPackageTier } from "@/components/ui/user-avatar";
 import { cn, maskEmail } from "@/lib/utils";
 
 type ShellArea = "dashboard" | "admin";
@@ -90,9 +91,8 @@ function DashboardShellContent({
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const avatarUrl = user?.avatar || (user as any)?.avatar_url || null;
-  const userDisplayName = user?.name || (user?.email ? maskEmail(user.email).split("@")[0] : "User");
-  const userInitial = (user?.name || user?.email || "U").slice(0, 1).toUpperCase();
+  const userDisplayName = getCanonicalDisplayName(user);
+  const canonicalTier = getCanonicalPackageTier(user);
 
   const isProjectWorkspace = PROJECT_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
@@ -129,7 +129,7 @@ function DashboardShellContent({
               </span>
             </div>
             <p className="text-[10px] font-mono text-neutral-400">
-              {user?.packageTier || "Hobby"} Plan
+              {canonicalTier} Plan
             </p>
           </div>
         </Link>
@@ -187,17 +187,7 @@ function DashboardShellContent({
             className="flex items-center gap-2 overflow-hidden flex-1 group hover:opacity-90 transition cursor-pointer"
             title="Đi tới Cài đặt tài khoản"
           >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-[11px] font-bold text-neutral-200 overflow-hidden border border-neutral-700">
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={userDisplayName}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                userInitial
-              )}
-            </div>
+            <UserAvatar user={user} displayName={userDisplayName} size="sm" />
             <div className="truncate">
               <p className="text-xs font-medium text-white truncate group-hover:text-cyan-400 transition">
                 {userDisplayName}
@@ -259,18 +249,10 @@ function DashboardShellContent({
           <ThemeToggle />
           <Link
             href="/settings"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-[11px] font-bold text-neutral-200 overflow-hidden border border-neutral-700 hover:ring-1 hover:ring-white transition"
+            className="rounded-full hover:ring-1 hover:ring-white transition"
             title="Cài đặt tài khoản"
           >
-            {avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt={userDisplayName}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              userInitial
-            )}
+            <UserAvatar user={user} displayName={userDisplayName} size="sm" />
           </Link>
           <button
             type="button"

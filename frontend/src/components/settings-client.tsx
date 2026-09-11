@@ -25,6 +25,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { maskEmail, resizeImageToBase64 } from "@/lib/utils";
+import {
+  UserAvatar,
+  getCanonicalDisplayName,
+  getCanonicalAvatarUrl,
+  getCanonicalPackageTier,
+} from "@/components/ui/user-avatar";
 
 export function SettingsClient() {
   const { user, updateUser, logout } = useAuth();
@@ -56,10 +62,10 @@ export function SettingsClient() {
   useEffect(() => {
     if (user) {
       setProfile({
-        name: user.name || "",
+        name: getCanonicalDisplayName(user),
         email: user.email || "",
         phone: (user as any).phone || "",
-        avatarUrl: user.avatar || (user as any).avatar_url || "",
+        avatarUrl: getCanonicalAvatarUrl(user) || "",
       });
     }
   }, [user]);
@@ -86,7 +92,6 @@ export function SettingsClient() {
     setProfileStatus(null);
 
     try {
-      // Nén ảnh nhỏ gọn (256x256 WebP) để lưu nhanh và đồng bộ tức thì
       // Nén ảnh nhỏ gọn (256x256 WebP/JPEG) để lưu nhanh và đồng bộ tức thì
       const base64Url = await resizeImageToBase64(file, 256, 0.85);
       const supabase = createSupabaseBrowserClient();
@@ -103,7 +108,6 @@ export function SettingsClient() {
       updateUser({ avatar: base64Url, ...({ avatar_url: base64Url } as any) });
       setProfileStatus({ type: "success", msg: "Cập nhật ảnh đại diện thành công!" });
     } catch (err: any) {
-      setProfileStatus({ type: "error", msg: err.message || "Không thể tải lên ảnh đại diện." });
       setProfileStatus({ type: "error", msg: err?.message || "Không thể tải lên ảnh đại diện." });
     } finally {
       setAvatarUploading(false);
@@ -121,25 +125,29 @@ export function SettingsClient() {
     setProfileStatus(null);
 
     try {
+      const trimmedName = profile.name.trim();
+      const trimmedPhone = profile.phone.trim();
       const supabase = createSupabaseBrowserClient();
       const { error } = await supabase.auth.updateUser({
         data: {
-          name: profile.name.trim(),
-          full_name: profile.name.trim(),
-          phone: profile.phone.trim(),
+          name: trimmedName,
+          full_name: trimmedName,
+          phone: trimmedPhone,
         },
       });
 
       if (error) throw error;
 
       updateUser({
-        name: profile.name.trim(),
-        ...({ phone: profile.phone.trim() } as any),
+        name: trimmedName,
+        ...({ phone: trimmedPhone } as any),
       });
+
+      // Background sync with API
+      fetch("/api/account", { method: "GET" }).catch(() => {});
 
       setProfileStatus({ type: "success", msg: "Cập nhật thông tin hồ sơ thành công!" });
     } catch (err: any) {
-      setProfileStatus({ type: "error", msg: err.message || "Lỗi cập nhật hồ sơ." });
       setProfileStatus({ type: "error", msg: err?.message || "Lỗi cập nhật hồ sơ." });
     } finally {
       setProfileLoading(false);
@@ -201,7 +209,6 @@ export function SettingsClient() {
       setPassStatus({ type: "success", msg: "Đổi mật khẩu thành công! Hãy ghi nhớ mật khẩu mới của bạn." });
       setPasswords({ currentPassword: "", newPassword: "", confirmPassword: "" });
     } catch (err: any) {
-      setPassStatus({ type: "error", msg: err.message || "Không thể cập nhật mật khẩu." });
       setPassStatus({ type: "error", msg: err?.message || "Không thể cập nhật mật khẩu." });
       setPasswords({ currentPassword: "", newPassword: "", confirmPassword: "" });
     } finally {
@@ -209,9 +216,10 @@ export function SettingsClient() {
     }
   };
 
+  const canonicalTier = getCanonicalPackageTier(user);
   const accountSummary: { label: string; value: string; tone: "success" | "default" | "muted" }[] = [
     { label: "Trạng thái", value: user?.status ?? "ACTIVE", tone: "success" },
-    { label: "Gói cước", value: user?.packageTier?.replace("_", " ") ?? "FREE", tone: "default" },
+    { label: "Gói cước", value: canonicalTier.replace("_", " "), tone: "default" },
     { label: "Xác thực", value: user?.oauthProvider === "google" ? "Google OAuth" : "Email & Password", tone: "muted" },
   ];
 
@@ -249,18 +257,20 @@ export function SettingsClient() {
               {/* Phần Avatar */}
               <div className="mb-6 flex flex-col sm:flex-row items-center gap-5 rounded-lg border border-[#222222] bg-[#0a0a0a] p-4">
                 <div className="relative group">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full overflow-hidden bg-neutral-800 text-white border border-[#333333] text-xl font-bold">
-                    {profile.avatarUrl ? (
-                      <img src={profile.avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
-                    ) : (
-                      (profile.name || user?.name || "U").slice(0, 1).toUpperCase()
-                    )}
-                  </div>
+                  <UserAvatar
+                    user={{
+                      name: profile.name || user?.name,
+                      email: profile.email || user?.email,
+                      avatar: profile.avatarUrl || user?.avatar,
+                    }}
+                    size="lg"
+                    className="h-16 w-16 text-xl border border-[#333333]"
+                  />
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={avatarUploading}
-                    className="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-white hover:bg-neutral-200 text-black shadow cursor-pointer transition active:scale-95"
+                    className="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-white hover:bg-neutral-200 text-black shadow cursor-pointer transition active:scale-95 z-10"
                     title="Thay đổi ảnh đại diện"
                   >
                     {avatarUploading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5 font-bold" />}
@@ -275,7 +285,9 @@ export function SettingsClient() {
                 </div>
 
                 <div className="min-w-0 flex-1 text-center sm:text-left space-y-1">
-                  <p className="text-sm font-semibold text-white truncate">{profile.name || user?.name || "Người dùng"}</p>
+                  <p className="text-sm font-semibold text-white truncate">
+                    {profile.name || getCanonicalDisplayName(user)}
+                  </p>
                   <p className="text-xs font-mono text-neutral-400 truncate">{maskEmail(user?.email || profile.email)}</p>
                   <p className="text-[11px] text-neutral-500">Hỗ trợ JPG, PNG, WEBP (Tối đa 2MB).</p>
                 </div>

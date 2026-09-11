@@ -100,6 +100,7 @@ export async function POST(request: Request) {
           role: updatedUser.role === "ADMIN" ? "ADMIN" : "USER",
           packageTier,
           status: updatedUser.status === "LOCKED" ? "LOCKED" : "ACTIVE",
+          planExpiresAt: planExpiresAt ? planExpiresAt.toISOString() : null,
         });
       }
     } catch (metadataError) {
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       message: "Kích hoạt gói thành công.",
-      user: toUserRecord(updatedUser),
+      user: toUserRecord(updatedUser, authUser),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message ?? "Không thể kích hoạt mã nâng cấp." }, { status: 500 });

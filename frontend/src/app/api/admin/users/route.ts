@@ -130,7 +130,7 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json({
-      users: rows.map(toUserRecord),
+      users: rows.map((u) => toUserRecord(u)),
 
       pagination: {
         page,
