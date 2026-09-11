@@ -15,8 +15,9 @@ import {
   getCopilotConversations,
   getCopilotConversation,
   deleteCopilotConversation,
-  getScanJobStatus,
+  getScanJob,
   getStressJob,
+  ScanJobDetails,
   StressJobState,
 } from "@/lib/api";
 import {
@@ -87,7 +88,7 @@ function CopilotContent() {
   // Context Data State
   const [activeScanId, setActiveScanId] = useState<string | null>(paramJobId || null);
   const [activeStressId, setActiveStressId] = useState<string | null>(paramStressId || null);
-  const [scanContextData, setScanContextData] = useState<any | null>(null);
+  const [scanContextData, setScanContextData] = useState<ScanJobDetails | null>(null);
   const [stressContextData, setStressContextData] = useState<StressJobState | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -123,7 +124,7 @@ function CopilotContent() {
     let isMounted = true;
     const loadScan = async () => {
       try {
-        const data = await getScanJobStatus(activeScanId);
+        const data = await getScanJob(activeScanId);
         if (isMounted && data) {
           setScanContextData(data);
         }
@@ -615,11 +616,11 @@ function CopilotContent() {
                         Xem <ExternalLink className="h-2.5 w-2.5" />
                       </button>
                     </div>
-                    <p className="font-mono text-[11px] text-neutral-400 truncate">{scanContextData.target || scanContextData.targetDomain}</p>
+                    <p className="font-mono text-[11px] text-neutral-400 truncate">{scanContextData.targetDomain}</p>
                     <div className="text-[11px] text-neutral-400 space-y-0.5">
                       <div>Status: <span className="text-white font-mono">{scanContextData.status}</span></div>
-                      <div>Lỗ hổng: <span className="text-white font-mono">{scanContextData.vulnerabilities?.length || scanContextData.findings?.length || 0}</span></div>
-                      <div>Hosts: <span className="text-white font-mono">{scanContextData.liveHosts?.length || scanContextData.hosts?.length || 0}</span></div>
+                      <div>Lỗ hổng: <span className="text-white font-mono">{scanContextData.vulnerabilities?.length || 0}</span></div>
+                      <div>Hosts: <span className="text-white font-mono">{scanContextData.liveHosts?.length || 0}</span></div>
                     </div>
                   </div>
                 ) : (

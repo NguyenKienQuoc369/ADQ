@@ -29,7 +29,7 @@ import {
   stopStressJob,
   getStressHistory,
   streamStressJob,
-  getTargetVerificationStatus,
+  getVerificationStatus,
   StressJobState,
 } from "@/lib/api";
 
@@ -101,9 +101,9 @@ function StressTestContent() {
       }
       setIsVerifyingTarget(true);
       try {
-        const res = await getTargetVerificationStatus(cleaned);
+        const res = await getVerificationStatus(cleaned);
         if (active) {
-          setIsTargetVerified(Boolean(res?.verified));
+          setIsTargetVerified(Boolean(res?.verified || res?.is_verified));
         }
       } catch {
         if (active) setIsTargetVerified(false);

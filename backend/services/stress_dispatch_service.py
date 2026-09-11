@@ -1,7 +1,7 @@
 import time
 import json
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import HTTPException, status
 
 try:
@@ -123,12 +123,9 @@ class StressDispatchService:
                     ex=max(180, dur_sec + 180),
                 )
                 # Append to user's history list
-                try:
-                    hist_key = f"{STRESS_HISTORY_KEY_PREFIX}{user_id}"
-                    redis_client.lpush(hist_key, job_id)
-                    redis_client.ltrim(hist_key, 0, 49)
-                except Exception:
-                    pass
+                hist_key = f"{STRESS_HISTORY_KEY_PREFIX}{user_id}"
+                redis_client.lpush(hist_key, job_id)
+                redis_client.ltrim(hist_key, 0, 49)
 
             # Step 7: Build internal execution payload (Allowed to have execution secrets)
             execution_payload = {
