@@ -229,22 +229,81 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
       (authUser.app_metadata as Record<string, unknown> | undefined)?.role,
   );
 
+  // 1. Kiểm tra expiry của existing admin_user
   const isExistingExpired = existing?.planExpiresAt
     ? new Date(existing.planExpiresAt).getTime() <= Date.now()
     : false;
 
-  const existingTier = existing
+  const existingTier: AppPackageTier = existing
     ? (isExistingExpired ? "FREE" : normalisePackageTier(existing.packageTier))
     : "FREE";
 
-  const fallbackTier = fallback?.packageTier
-    ? normalisePackageTier(fallback.packageTier)
-    : null;
+  // 2. Tra cứu lịch sử redeem code bền vững từ bảng redeem_code_redemptions
+  const activeRedemption = await prisma.redeemCodeRedemption.findFirst({
+    where: {
+      OR: [
+        { userAuthId: authUser.id },
+        { userEmail: email },
+      ],
+    },
+    include: { redeemCode: true },
+    orderBy: { createdAt: "desc" },
+  });
 
-  // admin_users là nguồn sự thật duy nhất về package.
-  // Metadata Supabase không được phép tự nâng cấp DB.
-  const packageTier: AppPackageTier =
-    fallbackTier ?? (existing ? existingTier : "FREE");
+  let redemptionTier: AppPackageTier = "FREE";
+  let redemptionExpiresAt: Date | null = null;
+
+  if (activeRedemption?.redeemCode) {
+    const rawTier = normalisePackageTier(activeRedemption.redeemCode.packageTier);
+    if (rawTier === "PRO" || rawTier === "PRO_MAX") {
+      const durationDays = activeRedemption.redeemCode.durationDays;
+      if (durationDays) {
+        redemptionExpiresAt = new Date(
+          new Date(activeRedemption.createdAt).getTime() + durationDays * 86400000
+        );
+      }
+      const isRedemptionExpired = redemptionExpiresAt
+        ? redemptionExpiresAt.getTime() <= Date.now()
+        : false;
+
+      if (!isRedemptionExpired) {
+        redemptionTier = rawTier;
+      }
+    }
+  }
+
+  // 3. Quyết định canonical packageTier và planExpiresAt:
+  // - Nếu có fallbackTier từ explicit admin update -> dùng fallbackTier
+  // - Nếu DB hoặc Redemption có PRO_MAX -> giữ PRO_MAX
+  // - Nếu DB hoặc Redemption có PRO -> giữ PRO
+  // - Ngược lại: FREE
+  let packageTier: AppPackageTier = "FREE";
+  let planExpiresAt: Date | null = null;
+
+  if (fallback?.packageTier) {
+    packageTier = normalisePackageTier(fallback.packageTier);
+    planExpiresAt = fallback?.planExpiresAt !== undefined
+      ? (fallback.planExpiresAt as Date | null)
+      : (existing?.planExpiresAt ?? redemptionExpiresAt);
+  } else if (existingTier === "PRO_MAX" || redemptionTier === "PRO_MAX") {
+    packageTier = "PRO_MAX";
+    planExpiresAt = existing?.planExpiresAt && !isExistingExpired
+      ? existing.planExpiresAt
+      : redemptionExpiresAt;
+  } else if (existingTier === "PRO" || redemptionTier === "PRO") {
+    packageTier = "PRO";
+    planExpiresAt = existing?.planExpiresAt && !isExistingExpired
+      ? existing.planExpiresAt
+      : redemptionExpiresAt;
+  } else {
+    packageTier = "FREE";
+    planExpiresAt = null;
+  }
+
+  if (planExpiresAt && planExpiresAt.getTime() <= Date.now()) {
+    packageTier = "FREE";
+    planExpiresAt = null;
+  }
 
   const authProvider =
     String(
@@ -257,12 +316,6 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
 
   const status = normaliseStatus(fallback?.status ?? existing?.status ?? "ACTIVE");
 
-  // Name resolution priority:
-  // 1. Explicit fallback parameter (e.g. from update request)
-  // 2. Auth user metadata (latest name updated in Supabase profile)
-  // 3. Previously saved database name
-  // 4. Email local-part
-  // 5. Default "Người dùng"
   const metadataName =
     (authUser.user_metadata?.name as string | undefined)?.trim() ||
     (authUser.user_metadata?.full_name as string | undefined)?.trim();
@@ -274,8 +327,10 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
     authUser.email?.split("@")[0] ||
     "Người dùng";
 
+  let savedRecord;
+
   if (existing) {
-    return prisma.adminUser.update({
+    savedRecord = await prisma.adminUser.update({
       where: { id: existing.id },
       data: {
         authUserId: authUser.id,
@@ -284,41 +339,59 @@ export async function syncAdminUserFromAuthUser(authUser: SupabaseUser, fallback
         role,
         packageTier,
         status,
-
-        // Daily limit luôn đi theo package rule.
         dailyLimit: Number(
           fallback?.dailyLimit ??
           getDailyLimitForPackage(packageTier)
         ),
-
         scansToday: Number(fallback?.scansToday ?? existing.scansToday ?? 0),
         telegramConnected: Boolean(fallback?.telegramConnected ?? existing.telegramConnected ?? false),
         oauthProvider: authProvider,
-        planExpiresAt: fallback?.planExpiresAt !== undefined ? (fallback.planExpiresAt as Date | null) : (isExistingExpired ? null : existing.planExpiresAt),
+        planExpiresAt,
         lastLoginAt: authUser.last_sign_in_at ? new Date(authUser.last_sign_in_at) : existing.lastLoginAt ?? new Date(),
+      },
+    });
+  } else {
+    savedRecord = await prisma.adminUser.create({
+      data: {
+        authUserId: authUser.id,
+        email,
+        name,
+        role,
+        packageTier,
+        status,
+        dailyLimit: Number(
+          fallback?.dailyLimit ??
+          getDailyLimitForPackage(packageTier)
+        ),
+        scansToday: Number(fallback?.scansToday ?? 0),
+        telegramConnected: Boolean(fallback?.telegramConnected ?? false),
+        oauthProvider: authProvider,
+        planExpiresAt,
+        lastLoginAt: authUser.last_sign_in_at ? new Date(authUser.last_sign_in_at) : new Date(),
       },
     });
   }
 
-  return prisma.adminUser.create({
-    data: {
+  // Best-effort async synchronization to Supabase Auth metadata
+  if (
+    authUser.id &&
+    (
+      (authUser.app_metadata as any)?.packageTier !== packageTier ||
+      authUser.user_metadata?.packageTier !== packageTier ||
+      (authUser.app_metadata as any)?.planExpiresAt !== (planExpiresAt ? planExpiresAt.toISOString() : null)
+    )
+  ) {
+    syncSupabaseMetadataForAdminUser({
       authUserId: authUser.id,
-      email,
       name,
       role,
       packageTier,
       status,
-      dailyLimit: Number(
-        fallback?.dailyLimit ??
-        getDailyLimitForPackage(packageTier)
-      ),
-      scansToday: Number(fallback?.scansToday ?? 0),
-      telegramConnected: Boolean(fallback?.telegramConnected ?? false),
-      oauthProvider: authProvider,
-      planExpiresAt: (fallback?.planExpiresAt as Date | null | undefined) ?? null,
-      lastLoginAt: authUser.last_sign_in_at ? new Date(authUser.last_sign_in_at) : new Date(),
-    },
-  });
+      planExpiresAt: planExpiresAt ? planExpiresAt.toISOString() : null,
+    }).catch(() => {});
+  }
+
+  return savedRecord;
 }
 
 export async function syncAllAuthUsersIntoAdminUsers() {
