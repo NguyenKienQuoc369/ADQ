@@ -272,19 +272,13 @@ export interface SystemStats {
   runningScans: number;
 }
 
+import { isFastApiBackendRoute } from "./route-classifier";
+export { isFastApiBackendRoute };
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   let url = path;
   if (!/^(https?:)?\/\//.test(path)) {
-    // Các route do Backend FastAPI xử lý
-    const isBackendRoute =
-      path.startsWith("/api/scan") ||
-      path.startsWith("/api/copilot") ||
-      path.startsWith("/api/stress") ||
-      path.startsWith("/api/c2") ||
-      path.startsWith("/api/oast") ||
-      path.startsWith("/api/apk-audit");
-
-    if (isBackendRoute) {
+    if (isFastApiBackendRoute(path)) {
       const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "https://api.adq.io.vn").replace(/\/$/, "");
       url = `${backendUrl}${path.startsWith("/") ? "" : "/"}${path}`;
     } else {

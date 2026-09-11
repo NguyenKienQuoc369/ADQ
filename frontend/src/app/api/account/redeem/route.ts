@@ -62,6 +62,36 @@ export async function POST(request: Request) {
         rc.code.replace(/_/g, "-").toUpperCase() === code.replace(/_/g, "-").toUpperCase()
     );
     if (!redeemCode) {
+      // Recovery fallback: Kiểm tra nếu tài khoản này đã có lịch sử kích hoạt gói hợp lệ trước đó
+      const existingUserRedemption = await prisma.redeemCodeRedemption.findFirst({
+        where: {
+          OR: [
+            { userAuthId },
+            { userEmail },
+          ],
+        },
+        include: {
+          redeemCode: true,
+        },
+      });
+
+      if (existingUserRedemption && currentRecord.packageTier !== "FREE") {
+        const packageTier = normalisePackageTier(
+          existingUserRedemption.redeemCode?.packageTier || currentRecord.packageTier
+        );
+        console.log(`trace=${traceId} route=redeem auth=yes status=200 result=RECOVERED_DURABLE tier=${packageTier}`);
+        return NextResponse.json(
+          {
+            ok: true,
+            recovered: true,
+            alreadyActive: true,
+            message: "Gói này đã được kích hoạt trên tài khoản của bạn.",
+            user: toUserRecord(currentRecord, authUser),
+          },
+          { headers: traceHeaders }
+        );
+      }
+
       console.log(`trace=${traceId} route=redeem auth=yes status=404 result=INVALID_CODE`);
       return NextResponse.json(
         { error: "Mã kích hoạt không tồn tại trên hệ thống.", code: "INVALID_CODE" },
