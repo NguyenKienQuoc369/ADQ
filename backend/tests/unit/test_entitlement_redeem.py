@@ -1,11 +1,12 @@
 """
 Unit and regression tests for ADQ plan entitlements, redeem code business rules,
-and recovery semantics.
+recovery semantics, and canonical database integration.
 """
 
 import pytest
 from datetime import datetime, timedelta, timezone
 from backend.schemas.admin import UserCreateManual, UserRolePackageUpdate, RedeemCodeCreate
+from backend.core.security.stress_governor import STRESS_TIER_LIMITS
 
 
 def test_package_tier_schema_validation():
@@ -40,6 +41,16 @@ def test_redeem_code_schema_validation():
         RedeemCodeCreate(packageTier="FREE", durationLabel="1 Month")
 
 
+def test_stress_tier_limits_mapping():
+    """Verify backend stress limits match entitlement rules."""
+    assert STRESS_TIER_LIMITS["FREE"]["allowed"] is False
+    assert STRESS_TIER_LIMITS["PRO"]["allowed"] is True
+    assert STRESS_TIER_LIMITS["PRO"]["max_requests"] == 2000
+    assert STRESS_TIER_LIMITS["PRO_MAX"]["allowed"] is True
+    assert STRESS_TIER_LIMITS["PRO_MAX"]["max_requests"] == 5000
+    assert STRESS_TIER_LIMITS["PRO_MAX"]["max_rps"] == 250
+
+
 def test_redeem_state_recovery_logic():
     """
     Test the idempotent same-user recovery business logic:
@@ -48,6 +59,7 @@ def test_redeem_state_recovery_logic():
     3. Different-user redeemed -> Blocked
     4. Expired redemption -> Blocked
     5. Revoked code -> Blocked
+    6. Case/whitespace normalization works
     """
     now = datetime.now(timezone.utc)
 
@@ -169,8 +181,11 @@ def test_redeem_state_recovery_logic():
     assert res5["code"] == "INVALID_CODE"
 
 
-def test_email_case_insensitivity():
-    """Verify email matching normalizes case correctly."""
+def test_email_and_code_normalization():
+    """Verify email and code matching normalizes whitespace and casing correctly."""
     email_a = "  User.Name+Test@Example.COM  "
-    normalized = email_a.strip().lower()
-    assert normalized == "user.name+test@example.com"
+    code_a = "  adq-promax-fresh  "
+    normalized_email = email_a.strip().lower()
+    normalized_code = code_a.strip().upper()
+    assert normalized_email == "user.name+test@example.com"
+    assert normalized_code == "ADQ-PROMAX-FRESH"

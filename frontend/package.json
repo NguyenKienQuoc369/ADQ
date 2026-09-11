@@ -8,7 +8,8 @@
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",
-    "email-worker": "node scripts/email-worker.js"
+    "email-worker": "node scripts/email-worker.js",
+    "seed:redeem": "node scripts/seed-redeem-codes.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
