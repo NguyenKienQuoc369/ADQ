@@ -11,56 +11,126 @@ import {
 } from "@/lib/admin";
 import { getPrismaClient } from "@/lib/prisma";
 
-
-
 export async function POST(request: Request) {
   try {
     const authUser = await getAuthenticatedUserFromRequest(request);
     if (!authUser) {
-      return NextResponse.json({ error: "UNAUTHORIZED: Vui lòng đăng nhập lại." }, { status: 401 });
+      return NextResponse.json(
+        { error: "UNAUTHORIZED: Vui lòng đăng nhập lại.", code: "UNAUTHORIZED" },
+        { status: 401 }
+      );
     }
 
-    const payload = await request.json();
+    const payload = await request.json().catch(() => ({}));
     const code = String(payload?.code ?? "").trim().toUpperCase();
-    if (code.length < 3) {
-      return NextResponse.json({ error: "Mã kích hoạt không hợp lệ." }, { status: 400 });
+    if (!code || code.length < 3) {
+      return NextResponse.json(
+        { error: "Vui lòng nhập mã kích hoạt hợp lệ.", code: "INVALID_CODE" },
+        { status: 400 }
+      );
     }
 
     const prisma = getPrismaClient();
     const currentRecord = await syncAdminUserFromAuthUser(authUser);
+    const userEmail = String(authUser.email ?? currentRecord.email ?? "").trim().toLowerCase();
+    const userAuthId = authUser.id;
 
-    // MÃ TỪ DATABASE
+    // 1. Tra cứu mã trong Database
     const redeemCode = await prisma.redeemCode.findUnique({ where: { code } });
     if (!redeemCode) {
-      return NextResponse.json({ error: "Mã kích hoạt không tồn tại trên hệ thống." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Mã kích hoạt không tồn tại trên hệ thống.", code: "INVALID_CODE" },
+        { status: 404 }
+      );
     }
 
-    if (redeemCode.status === "USED" || redeemCode.usedCount >= redeemCode.maxUses) {
-      return NextResponse.json({ error: "Mã kích hoạt đã được sử dụng hết số lượt." }, { status: 400 });
+    if (redeemCode.status === "REVOKED") {
+      return NextResponse.json(
+        { error: "Mã kích hoạt này đã bị vô hiệu hóa.", code: "REVOKED" },
+        { status: 400 }
+      );
     }
 
-    const userEmail = String(authUser.email ?? "").trim().toLowerCase();
-    const existedRedemption = await prisma.redeemCodeRedemption.findUnique({
+    const packageTier = normalisePackageTier(redeemCode.packageTier);
+
+    // 2. IDEMPOTENT SAME-USER RECOVERY:
+    // Kiểm tra xem chính tài khoản này đã từng kích hoạt mã này trước đây chưa
+    const existedRedemption = await prisma.redeemCodeRedemption.findFirst({
       where: {
-        redeemCodeId_userEmail: {
-          redeemCodeId: redeemCode.id,
-          userEmail,
-        },
+        redeemCodeId: redeemCode.id,
+        OR: [
+          { userAuthId },
+          { userEmail },
+        ],
       },
     });
 
     if (existedRedemption) {
-      return NextResponse.json({ error: "Tài khoản này đã dùng mã này rồi." }, { status: 409 });
+      // Tính hạn dùng từ lần kích hoạt trước đó
+      const durationDays = redeemCode.durationDays;
+      let computedExpiry: Date | null = null;
+      if (durationDays) {
+        computedExpiry = new Date(
+          new Date(existedRedemption.createdAt).getTime() + durationDays * 86400000
+        );
+      }
+
+      const isExpired = computedExpiry ? computedExpiry.getTime() <= Date.now() : false;
+      if (isExpired) {
+        return NextResponse.json(
+          { error: "Gói kích hoạt từ mã này đã hết hạn sử dụng.", code: "EXPIRED_CODE" },
+          { status: 400 }
+        );
+      }
+
+      // Khôi phục và đồng bộ lại quyền lợi PRO/PRO_MAX bền vững cho tài khoản
+      const updatedUser = await prisma.adminUser.update({
+        where: { id: currentRecord.id },
+        data: {
+          authUserId: userAuthId,
+          email: userEmail,
+          packageTier,
+          dailyLimit: getDailyLimitForPackage(packageTier),
+          planExpiresAt: computedExpiry,
+          status: currentRecord.status === "LOCKED" ? "LOCKED" : "ACTIVE",
+        },
+      });
+
+      // Đồng bộ Supabase metadata
+      syncSupabaseMetadataForAdminUser({
+        authUserId: userAuthId,
+        name: updatedUser.name,
+        role: updatedUser.role === "ADMIN" ? "ADMIN" : "USER",
+        packageTier,
+        status: updatedUser.status === "LOCKED" ? "LOCKED" : "ACTIVE",
+        planExpiresAt: computedExpiry ? computedExpiry.toISOString() : null,
+      }).catch(() => {});
+
+      return NextResponse.json({
+        ok: true,
+        recovered: true,
+        message: "Gói này đã được kích hoạt trên tài khoản của bạn.",
+        user: toUserRecord(updatedUser, authUser),
+      });
     }
 
-    const packageTier = normalisePackageTier(redeemCode.packageTier);
+    // 3. Kiểm tra số lượt sử dụng đối với tài khoản khác
+    if (redeemCode.status === "USED" || redeemCode.usedCount >= redeemCode.maxUses) {
+      return NextResponse.json(
+        { error: "Mã kích hoạt đã được sử dụng hết số lượt.", code: "ALREADY_USED" },
+        { status: 400 }
+      );
+    }
+
+    // 4. Thực hiện kích hoạt mới trong Atomic Transaction
     const planExpiresAt = computePlanExpiry(redeemCode.durationDays, new Date());
 
     const [updatedUser] = await prisma.$transaction([
       prisma.adminUser.update({
         where: { id: currentRecord.id },
         data: {
-          authUserId: authUser.id,
+          authUserId: userAuthId,
+          email: userEmail,
           packageTier,
           dailyLimit: getDailyLimitForPackage(packageTier),
           planExpiresAt,
@@ -70,7 +140,7 @@ export async function POST(request: Request) {
       prisma.redeemCodeRedemption.create({
         data: {
           redeemCodeId: redeemCode.id,
-          userAuthId: authUser.id,
+          userAuthId,
           userEmail,
         },
       }),
@@ -84,9 +154,7 @@ export async function POST(request: Request) {
       }),
     ]);
 
-    // Redeem đã commit trong database ở phía trên.
-    // Đồng bộ Supabase metadata chỉ là best-effort:
-    // lỗi metadata không được biến một redeem thành công thành HTTP 500.
+    // 5. Best-effort async synchronization sang Supabase Auth metadata
     try {
       const resolvedAuthUser = await resolveSupabaseAuthUser({
         authUserId: updatedUser.authUserId,
@@ -116,6 +184,9 @@ export async function POST(request: Request) {
       user: toUserRecord(updatedUser, authUser),
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message ?? "Không thể kích hoạt mã nâng cấp." }, { status: 500 });
+    return NextResponse.json(
+      { error: error?.message ?? "Không thể kích hoạt mã nâng cấp.", code: "SERVER_ERROR" },
+      { status: 500 }
+    );
   }
 }
