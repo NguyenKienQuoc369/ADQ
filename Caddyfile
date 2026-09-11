@@ -2,10 +2,10 @@ adq.io.vn {
     handle /api/health {
         reverse_proxy api-server:8000
     }
-    handle /api/scans* {
+    handle /api/scan/* {
         reverse_proxy api-server:8000
     }
-    handle /api/scan/* {
+    handle /api/scan {
         reverse_proxy api-server:8000
     }
     handle /api/verification/* {
@@ -55,10 +55,10 @@ api.adq.io.vn {
     handle /api/health {
         reverse_proxy api-server:8000
     }
-    handle /api/scans* {
+    handle /api/scan/* {
         reverse_proxy api-server:8000
     }
-    handle /api/scan/* {
+    handle /api/scan {
         reverse_proxy api-server:8000
     }
     handle /api/verification/* {
