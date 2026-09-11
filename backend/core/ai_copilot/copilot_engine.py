@@ -776,3 +776,148 @@ CẤU TRÚC ĐẦU RA BẮT BUỘC (Sử dụng đúng các tiêu đề Markdown
 
         return result_payload
 
+    # =========================================================================
+    # CONTEXT-AWARE INTERACTIVE COPILOT ASSISTANT
+    # =========================================================================
+
+    def build_scan_summary_context(self, scan_job: Dict[str, Any]) -> Dict[str, Any]:
+        """Extracts sanitized structured summary from a Scan job."""
+        if not scan_job:
+            return {}
+        target = scan_job.get("target") or scan_job.get("request", {}).get("target") or "target"
+        job_id = scan_job.get("id") or scan_job.get("job_id") or "scan"
+        live_data = scan_job.get("live_data") or {}
+        raw_findings = live_data.get("nuclei_findings") or scan_job.get("vulnerabilities", {}).get("nuclei") or []
+        assurance = scan_job.get("assurance_matrix") or {}
+        controls = assurance.get("controls") or []
+
+        findings_summary = [
+            {
+                "title": f.get("title") or f.get("template_id"),
+                "severity": f.get("severity"),
+                "endpoint": f.get("matched") or f.get("url") or f.get("endpoint"),
+                "cwe": f.get("cwe_id") or f.get("cwe_ids"),
+            }
+            for f in raw_findings[:10]
+        ]
+
+        failed_controls = [
+            {
+                "title": c.get("title_vi") or c.get("title"),
+                "status": c.get("status"),
+                "severity": c.get("severity_if_failed"),
+                "reason": c.get("reason"),
+            }
+            for c in controls if c.get("status") in ("FAIL", "INCONCLUSIVE")
+        ]
+
+        ctx = {
+            "type": "SCAN_CONTEXT",
+            "job_id": job_id,
+            "target": target,
+            "status": scan_job.get("status", "COMPLETED"),
+            "total_findings": len(raw_findings),
+            "findings": findings_summary,
+            "failed_controls": failed_controls,
+            "open_ports": live_data.get("open_ports") or scan_job.get("ports", {}).get("open") or [],
+            "crawled_urls_count": len(live_data.get("crawled_urls") or scan_job.get("urls", {}).get("combined") or []),
+        }
+        return self.masker.mask_dict_or_list(ctx)
+
+    def build_stress_summary_context(self, stress_job: Dict[str, Any]) -> Dict[str, Any]:
+        """Extracts sanitized structured summary from a Stress Test job."""
+        if not stress_job:
+            return {}
+        metrics = stress_job.get("metrics") or {}
+        ctx = {
+            "type": "STRESS_TEST_CONTEXT",
+            "job_id": stress_job.get("job_id"),
+            "target": stress_job.get("target_url"),
+            "status": stress_job.get("status"),
+            "duration_sec": stress_job.get("duration_sec"),
+            "target_rps": stress_job.get("target_rps"),
+            "target_requests": stress_job.get("target_requests"),
+            "metrics": {
+                "total_requests": metrics.get("total_requests", 0),
+                "rps": metrics.get("rps", 0.0),
+                "avg_latency": metrics.get("avg_latency", "0ms"),
+                "p50_latency": metrics.get("p50_latency", "0ms"),
+                "p95_latency": metrics.get("p95_latency", "0ms"),
+                "p99_latency": metrics.get("p99_latency", "0ms"),
+                "error_rate": metrics.get("error_rate", 0.0),
+                "timeouts": metrics.get("timeouts", 0),
+                "status_200": metrics.get("status_200", 0),
+                "status_403": metrics.get("status_403_waf_blocked", 0),
+                "status_429": metrics.get("status_429_rate_limited", 0),
+                "status_500": metrics.get("status_500_crashed", 0),
+                "other_status": metrics.get("other_status", 0),
+            },
+            "events_sample": [e.get("message") for e in (stress_job.get("events") or [])[-5:]],
+            "verdict": stress_job.get("verdict", "ỔN ĐỊNH"),
+        }
+        return self.masker.mask_dict_or_list(ctx)
+
+    def generate_copilot_response(
+        self,
+        prompt: str,
+        scan_context: Optional[Dict[str, Any]] = None,
+        stress_context: Optional[Dict[str, Any]] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generates context-grounded interactive response from ADQ Security Copilot.
+        Separates user prompt, system instructions, and ADQ telemetry context.
+        """
+        masked_prompt = self.masker.mask_text(prompt)
+
+        context_blocks = []
+        if scan_context:
+            context_blocks.append(f"### DỮ LIỆU SCAN ĐÃ XÁC THỰC:\n{json.dumps(scan_context, ensure_ascii=False, indent=2)}")
+        if stress_context:
+            context_blocks.append(f"### DỮ LIỆU STRESS TEST ĐÃ XÁC THỰC:\n{json.dumps(stress_context, ensure_ascii=False, indent=2)}")
+
+        context_text = "\n\n".join(context_blocks) if context_blocks else "Không có ngữ cảnh scan/stress bổ sung."
+
+        history_text = ""
+        if history:
+            turns = []
+            for h in history[-6:]:
+                role = "User" if h.get("role") == "user" else "Copilot"
+                content = self.masker.mask_text(h.get("content") or h.get("text") or "")
+                turns.append(f"{role}: {content}")
+            history_text = "### LỊCH SỬ HỘI THOẠI GẦN NHẤT:\n" + "\n".join(turns)
+
+        full_prompt = f"""Bạn là ADQ Security Copilot - Trợ lý Trí tuệ Nhân tạo An ninh của Nền tảng ADQ.
+Nhiệm vụ của bạn là giải đáp câu hỏi của người dùng, phân tích kết quả bảo mật / hiệu năng, và hướng dẫn giải pháp kỹ thuật chính xác.
+
+NGỮ CẢNH DỮ LIỆU KỸ THUẬT (ĐÃ ĐƯỢC LÀM SẠCH VÀ BẢO VỆ):
+{context_text}
+
+{history_text}
+
+CÂU HỎI / YÊU CẦU CỦA NGƯỜI DÙNG:
+{masked_prompt}
+
+QUY TẮC BẮT BUỘC:
+1. DANH TÍNH: Bạn là ADQ Security Copilot. Tuyệt đối không nhắc đến bất kỳ bên thứ ba hay nhà phát triển AI nào khác.
+2. CHỐNG ẢO GIÁC: Chỉ khẳng định các số liệu (RPS, latency, port, URL, lỗ hổng) có trong ngữ cảnh. Nếu không có dữ liệu, hãy nói rõ: 'ADQ chưa có đủ dữ liệu để kết luận.'
+3. PHÂN ĐỊNH RÕ RÀNG: Phân biệt rõ giữa 'Bằng chứng ADQ ghi nhận' (facts) và 'Giả thuyết / Phân tích nguy cơ' (hypotheses).
+4. KHẮC PHỤC LỖ HỔNG (REMEDIATION): Khi người dùng hỏi về cách khắc phục, hãy cung cấp hướng dẫn rõ ràng và đoạn mã vá (code block / diff) hoặc cấu hình nếu phù hợp.
+5. NGÔN NGỮ: Tiếng Việt tự nhiên, gãy gọn, bảo toàn các thuật ngữ kỹ thuật tiếng Anh phổ biến (Scan, Stress Test, URL, API, endpoint, port, service, request, response, latency, p95, p99, RPS, WAF, CORS, IDOR, SQL Injection, XSS, token, header, cookie).
+
+HÃY TRẢ LỜI NGAY:
+"""
+
+        system_instruction = (
+            "Bạn là ADQ Security Copilot - Trợ lý An ninh Thông tin và Tối ưu Hiệu năng của ADQ Platform. "
+            "Bạn đưa ra câu trả lời trực diện, chính xác dựa trên bằng chứng kỹ thuật và giải thích dễ hiểu."
+        )
+
+        res = self._call_gemini_api(full_prompt, system_instruction=system_instruction, enable_tools=False)
+        return {
+            "status": res.get("status", "SUCCESS"),
+            "text": res.get("text") or "Copilot đã ghi nhận yêu cầu của bạn.",
+            "model": res.get("model", "ADQ Security Copilot Engine"),
+        }
+
+

@@ -548,11 +548,32 @@ export async function getScanEndpoints(
   );
 }
 
-export async function copilotChat(prompt: string): Promise<{ copilot_response: string }> {
-  return requestJson<{ copilot_response: string }>("/api/copilot/chat", {
+export async function copilotChat(
+  input: string | { prompt: string; conv_id?: string; scan_job_id?: string; stress_job_id?: string }
+): Promise<{ ok?: boolean; copilot_response: string; conv_id?: string; model?: string }> {
+  const bodyPayload = typeof input === "string" ? { prompt: input } : input;
+  return requestJson<{ ok?: boolean; copilot_response: string; conv_id?: string; model?: string }>("/api/copilot/chat", {
     method: "POST",
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify(bodyPayload),
   });
+}
+
+export async function getCopilotConversations(): Promise<{
+  ok: boolean;
+  conversations: Array<{ id: string; title: string; scan_job_id?: string; stress_job_id?: string; updated_at: number }>;
+}> {
+  return requestJson("/api/copilot/conversations", { method: "GET" });
+}
+
+export async function getCopilotConversation(convId: string): Promise<{
+  ok: boolean;
+  conversation: { id: string; title: string; messages: Array<{ id: string; role: "user" | "copilot"; text: string; timestamp: number }> };
+}> {
+  return requestJson(`/api/copilot/conversations/${encodeURIComponent(convId)}`, { method: "GET" });
+}
+
+export async function deleteCopilotConversation(convId: string): Promise<{ ok: boolean }> {
+  return requestJson(`/api/copilot/conversations/${encodeURIComponent(convId)}`, { method: "DELETE" });
 }
 
 export async function copilotAnalyze(jobId: string): Promise<{ job_id: string; analysis: string }> {
@@ -946,7 +967,9 @@ export interface StressJobState {
   duration_sec?: number;
   target_rps?: number;
   waf_type?: string;
-  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED" | string;
+  phase?: string;
+  verdict?: string;
   progress?: number;
   metrics?: {
     total_requests?: number;
@@ -958,13 +981,21 @@ export interface StressJobState {
     status_500_crashed?: number;
     other_status?: number;
     rps?: number;
+    avg_latency?: string;
+    p50_latency?: string;
     p95_latency?: string;
+    p99_latency?: string;
+    error_rate?: number;
+    timeouts?: number;
+    [key: string]: any;
   };
+  events?: Array<{ time: string; message: string }>;
   created_at?: number;
   started_at?: number | null;
   finished_at?: number | null;
   error_safe?: string | null;
   done?: boolean;
+  is_done?: boolean;
 }
 
 export async function createStressJob(payload: {
@@ -992,6 +1023,18 @@ export async function createStressJob(payload: {
 
 export async function getStressJob(jobId: string): Promise<StressJobState> {
   return requestJson<StressJobState>(`/api/stress/${encodeURIComponent(jobId)}`, {
+    method: "GET",
+  });
+}
+
+export async function stopStressJob(jobId: string): Promise<{ ok: boolean; job_id: string; status: string; message: string }> {
+  return requestJson(`/api/stress/${encodeURIComponent(jobId)}/stop`, {
+    method: "POST",
+  });
+}
+
+export async function getStressHistory(): Promise<{ ok: boolean; history: StressJobState[] }> {
+  return requestJson("/api/stress/history", {
     method: "GET",
   });
 }

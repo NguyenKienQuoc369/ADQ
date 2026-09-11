@@ -261,11 +261,145 @@ class ScanService:
         try:
             from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
             copilot = ADQSecurityCopilot()
-            raw_res = copilot._call_gemini_api(req.prompt)
+            raw_res = copilot.generate_copilot_response(req.prompt)
             text = raw_res.get("text") if isinstance(raw_res, dict) else str(raw_res)
-            return {"copilot_response": text}
+            return {"copilot_response": text, "model": raw_res.get("model")}
         except Exception:
             return {"copilot_response": "Copilot ghi nhận yêu cầu của bạn."}
+
+    @staticmethod
+    def copilot_chat_interactive(
+        user_id: str,
+        prompt: str,
+        conv_id: Optional[str] = None,
+        scan_job_id: Optional[str] = None,
+        stress_job_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Interactive context-aware Copilot chat with conversation persistence in Redis.
+        """
+        try:
+            from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
+            copilot = ADQSecurityCopilot()
+
+            scan_ctx = None
+            if scan_job_id:
+                scan_job = ScanService.get_job_status(scan_job_id)
+                if scan_job:
+                    scan_ctx = copilot.build_scan_summary_context(scan_job)
+
+            stress_ctx = None
+            if stress_job_id:
+                try:
+                    from backend.services.stress_dispatch_service import StressDispatchService
+                except ImportError:
+                    from services.stress_dispatch_service import StressDispatchService
+                stress_job = StressDispatchService.get_stress_job_state(stress_job_id)
+                if stress_job:
+                    stress_ctx = copilot.build_stress_summary_context(stress_job)
+
+            # Load recent message history
+            active_conv_id = conv_id or f"conv_{uuid.uuid4().hex[:12]}"
+            history = []
+            if redis_client and conv_id:
+                try:
+                    raw_msgs = redis_client.lrange(f"copilot_msgs:{user_id}:{active_conv_id}", -10, -1)
+                    for m in raw_msgs:
+                        history.append(json.loads(m))
+                except Exception:
+                    pass
+
+            ai_res = copilot.generate_copilot_response(
+                prompt=prompt,
+                scan_context=scan_ctx,
+                stress_context=stress_ctx,
+                history=history,
+            )
+
+            text_output = ai_res.get("text") or "Copilot đã xử lý yêu cầu nhưng không có phản hồi văn bản."
+
+            # Save user message & assistant message to Redis
+            if redis_client:
+                now_ts = time.time()
+                user_msg = {"id": f"msg_{uuid.uuid4().hex[:8]}", "role": "user", "text": prompt, "timestamp": now_ts}
+                asst_msg = {"id": f"msg_{uuid.uuid4().hex[:8]}", "role": "copilot", "text": text_output, "timestamp": now_ts + 0.1}
+
+                msg_key = f"copilot_msgs:{user_id}:{active_conv_id}"
+                redis_client.rpush(msg_key, json.dumps(user_msg, ensure_ascii=False), json.dumps(asst_msg, ensure_ascii=False))
+                redis_client.expire(msg_key, 604800)  # 7 days
+
+                # Update conversation list
+                conv_meta = {
+                    "id": active_conv_id,
+                    "title": prompt[:40] + ("..." if len(prompt) > 40 else ""),
+                    "scan_job_id": scan_job_id,
+                    "stress_job_id": stress_job_id,
+                    "updated_at": now_ts,
+                }
+                convs_key = f"copilot_convs:{user_id}"
+                # Update or prepend in list
+                existing = redis_client.get(f"copilot_conv_meta:{user_id}:{active_conv_id}")
+                if not existing:
+                    redis_client.lpush(convs_key, active_conv_id)
+                    redis_client.ltrim(convs_key, 0, 49)
+                redis_client.set(f"copilot_conv_meta:{user_id}:{active_conv_id}", json.dumps(conv_meta), ex=604800)
+
+            return {
+                "ok": True,
+                "conv_id": active_conv_id,
+                "copilot_response": text_output,
+                "model": ai_res.get("model", "ADQ Security Copilot"),
+                "status": ai_res.get("status", "SUCCESS"),
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "conv_id": conv_id or "conv_err",
+                "copilot_response": f"Lỗi kết nối Copilot: {str(exc)}",
+                "status": "ERROR",
+            }
+
+    @staticmethod
+    def list_copilot_conversations(user_id: str) -> List[Dict[str, Any]]:
+        if not redis_client or not user_id:
+            return []
+        try:
+            conv_ids = redis_client.lrange(f"copilot_convs:{user_id}", 0, 29) or []
+            convs = []
+            for cid in conv_ids:
+                raw_meta = redis_client.get(f"copilot_conv_meta:{user_id}:{cid}")
+                if raw_meta:
+                    convs.append(json.loads(raw_meta))
+                else:
+                    convs.append({"id": cid, "title": "Hội thoại mới", "updated_at": time.time()})
+            return convs
+        except Exception:
+            return []
+
+    @staticmethod
+    def get_copilot_conversation(user_id: str, conv_id: str) -> Dict[str, Any]:
+        if not redis_client or not user_id or not conv_id:
+            return {"id": conv_id, "messages": []}
+        try:
+            raw_meta = redis_client.get(f"copilot_conv_meta:{user_id}:{conv_id}")
+            meta = json.loads(raw_meta) if raw_meta else {"id": conv_id, "title": "Hội thoại"}
+            raw_msgs = redis_client.lrange(f"copilot_msgs:{user_id}:{conv_id}", 0, -1) or []
+            messages = [json.loads(m) for m in raw_msgs]
+            return {**meta, "messages": messages}
+        except Exception:
+            return {"id": conv_id, "messages": []}
+
+    @staticmethod
+    def delete_copilot_conversation(user_id: str, conv_id: str) -> bool:
+        if not redis_client or not user_id or not conv_id:
+            return False
+        try:
+            redis_client.delete(f"copilot_msgs:{user_id}:{conv_id}")
+            redis_client.delete(f"copilot_conv_meta:{user_id}:{conv_id}")
+            redis_client.lrem(f"copilot_convs:{user_id}", 0, conv_id)
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def copilot_analyze(job_id: str) -> Dict[str, Any]:

@@ -14,6 +14,9 @@ class ScanResponse(BaseModel):
 
 class CopilotChatRequest(BaseModel):
     prompt: str
+    conv_id: Optional[str] = None
+    scan_job_id: Optional[str] = None
+    stress_job_id: Optional[str] = None
 
 class CopilotAnalyzeRequest(BaseModel):
     job_id: str

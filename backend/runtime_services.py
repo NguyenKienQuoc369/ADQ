@@ -1049,6 +1049,15 @@ def execute_stress_job(
 
         orchestrator = StressOrchestrator()
         last_metrics = None
+        last_phase = "RAMP UP"
+
+        def is_cancelled():
+            if redis_client:
+                try:
+                    return bool(redis_client.get(f"stress_stop:{job_id}"))
+                except Exception:
+                    pass
+            return False
 
         for chunk in orchestrator.stream_stress_test(
             target_url=origin,
@@ -1059,11 +1068,18 @@ def execute_stress_job(
             waf_type=waf_type,
             custom_headers=custom_headers,
             custom_cookies=custom_cookies,
+            stop_checker=is_cancelled,
         ):
+            if is_cancelled():
+                break
+
             if chunk.get("ok"):
                 cur_metrics = chunk.get("metrics") or {}
                 last_metrics = cur_metrics
+                phase = chunk.get("phase") or "STEADY LOAD"
+                last_phase = phase
                 public_state["metrics"] = cur_metrics
+                public_state["phase"] = phase
                 tot = cur_metrics.get("total_requests", 0)
                 prog = min(100, int(tot / max(1, total_reqs) * 100))
                 public_state["progress"] = prog
@@ -1072,25 +1088,45 @@ def execute_stress_job(
                     redis_client.publish(event_channel, json.dumps({
                         "job_id": job_id,
                         "status": "RUNNING",
+                        "phase": phase,
                         "progress": prog,
                         "metrics": cur_metrics,
                         "timestamp": time.time(),
                     }))
 
+        # If user cancelled during the run
+        if is_cancelled():
+            print(f"[{worker_id}] Stress job {job_id} CANCELLED by user.", flush=True)
+            return
+
         # Step 4: Mark COMPLETED and publish terminal event
         finished_at = time.time()
         public_state["status"] = "COMPLETED"
+        public_state["phase"] = "COMPLETE"
         public_state["progress"] = 100
         public_state["finished_at"] = finished_at
         if last_metrics:
             public_state["metrics"] = last_metrics
+            
+            # Evaluate stability verdict
+            err_rate = last_metrics.get("error_rate", 0.0)
+            if err_rate == 0.0:
+                verdict = "ỔN ĐỊNH"
+            elif err_rate < 5.0:
+                verdict = "CÓ DẤU HIỆU GIẢM HIỆU NĂNG"
+            else:
+                verdict = "KHÔNG ỔN ĐỊNH"
+            public_state["verdict"] = verdict
+
         if redis_client:
             redis_client.set(state_key, json.dumps(public_state), ex=86400)
             redis_client.publish(event_channel, json.dumps({
                 "job_id": job_id,
                 "status": "COMPLETED",
+                "phase": "COMPLETE",
                 "progress": 100,
                 "metrics": public_state.get("metrics", {}),
+                "verdict": public_state.get("verdict", "ỔN ĐỊNH"),
                 "done": True,
                 "is_done": True,
                 "timestamp": finished_at,

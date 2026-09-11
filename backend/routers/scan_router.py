@@ -310,9 +310,40 @@ def copilot_chat(req: CopilotChatRequest, user: Dict[str, Any] = Depends(get_cur
             status_code=status.HTTP_403_FORBIDDEN,
             detail="TIER_LOCKED: Tính năng tương tác trực tiếp với Agentic AI Copilot chỉ dành riêng cho gói PRO MAX."
         )
-        
-    res = ScanService.copilot_chat(req)
-    return {"ok": True, **res}
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    res = ScanService.copilot_chat_interactive(
+        user_id=user_id,
+        prompt=req.prompt,
+        conv_id=req.conv_id,
+        scan_job_id=req.scan_job_id,
+        stress_job_id=req.stress_job_id,
+    )
+    return res
+
+@router.get("/copilot/conversations")
+def list_copilot_conversations(user: Dict[str, Any] = Depends(get_current_user)):
+    tier = get_user_tier(user)
+    if tier != "PRO_MAX":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="TIER_LOCKED: Yêu cầu gói PRO MAX.")
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    return {"ok": True, "conversations": ScanService.list_copilot_conversations(user_id)}
+
+@router.get("/copilot/conversations/{conv_id}")
+def get_copilot_conversation(conv_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    tier = get_user_tier(user)
+    if tier != "PRO_MAX":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="TIER_LOCKED: Yêu cầu gói PRO MAX.")
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    return {"ok": True, "conversation": ScanService.get_copilot_conversation(user_id, conv_id)}
+
+@router.delete("/copilot/conversations/{conv_id}")
+def delete_copilot_conversation(conv_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    tier = get_user_tier(user)
+    if tier != "PRO_MAX":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="TIER_LOCKED: Yêu cầu gói PRO MAX.")
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    success = ScanService.delete_copilot_conversation(user_id, conv_id)
+    return {"ok": success}
 
 @router.post("/copilot/analyze")
 def copilot_analyze(
@@ -440,6 +471,21 @@ def get_stress_job_snapshot(job_id: str, user: Dict[str, Any] = Depends(get_curr
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền truy cập tiến trình này.")
 
     return state
+
+
+@router.post("/stress/{job_id}/stop")
+def stop_stress_job(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Gracefully stops an active or queued stress job."""
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    return StressDispatchService.stop_stress_job(job_id, user_id)
+
+
+@router.get("/stress/user/history")
+@router.get("/stress/history")
+def get_stress_history(user: Dict[str, Any] = Depends(get_current_user)):
+    """Retrieves list of past stress test runs for authenticated user."""
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    return {"ok": True, "history": StressDispatchService.get_user_stress_history(user_id)}
 
 
 import asyncio

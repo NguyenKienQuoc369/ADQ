@@ -392,17 +392,23 @@ class StressOrchestrator:
                             metrics["status_429_rate_limited"] += 1
                         elif code >= 500:
                             metrics["status_500_crashed"] += 1
+                        elif code == 0:
+                            metrics["timeouts"] = metrics.get("timeouts", 0) + 1
                         else:
                             metrics["other_status"] += 1
 
         concurrency = min(50, max(5, int(target_rps * 0.3)))
         start_time = time.time()
         end_time = start_time + duration_sec
+        stop_checker = kwargs.get("stop_checker")
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=concurrency)
         futures = [executor.submit(worker_batch) for _ in range(concurrency)]
 
         try:
             while True:
+                if stop_checker and stop_checker():
+                    break
+
                 done_workers = sum(1 for f in futures if f.done())
                 is_finished = (done_workers == len(futures)) or (time.time() >= end_time + 0.5) or (metrics["total_requests"] >= total_reqs)
 
@@ -410,15 +416,34 @@ class StressOrchestrator:
                     now_elapsed = max(0.1, time.time() - start_time)
                     current_metrics = dict(metrics)
                     current_metrics["rps"] = round(current_metrics["total_requests"] / now_elapsed, 1)
+                    
+                    tot = current_metrics["total_requests"]
+                    err_count = current_metrics["status_500_crashed"] + current_metrics.get("timeouts", 0)
+                    current_metrics["error_rate"] = round((err_count / max(1, tot)) * 100, 1)
+
                     if latencies:
                         sorted_lat = sorted(latencies)
-                        p95_idx = int(len(sorted_lat) * 0.95)
-                        current_metrics["p95_latency"] = f"{sorted_lat[min(p95_idx, len(sorted_lat)-1)]}ms"
+                        n = len(sorted_lat)
+                        current_metrics["avg_latency"] = f"{int(sum(sorted_lat) / n)}ms"
+                        current_metrics["p50_latency"] = f"{sorted_lat[min(int(n * 0.5), n - 1)]}ms"
+                        current_metrics["p95_latency"] = f"{sorted_lat[min(int(n * 0.95), n - 1)]}ms"
+                        current_metrics["p99_latency"] = f"{sorted_lat[min(int(n * 0.99), n - 1)]}ms"
                     else:
+                        current_metrics["avg_latency"] = "0ms"
+                        current_metrics["p50_latency"] = "0ms"
                         current_metrics["p95_latency"] = "0ms"
+                        current_metrics["p99_latency"] = "0ms"
 
                     new_logs = sample_logs[logged_count:]
                     logged_count = len(sample_logs)
+
+                    ratio = min(1.0, now_elapsed / max(0.1, duration_sec))
+                    if ratio < 0.15:
+                        phase = "RAMP UP"
+                    elif ratio < 0.85:
+                        phase = "STEADY LOAD"
+                    else:
+                        phase = "COOLDOWN"
 
                 if is_finished:
                     break
@@ -428,24 +453,35 @@ class StressOrchestrator:
                     "done": False,
                     "is_done": False,
                     "status": "RUNNING",
+                    "phase": phase,
                     "metrics": current_metrics,
                     "sample_logs": new_logs,
                 }
                 time.sleep(0.3)
 
-            concurrent.futures.wait(futures, timeout=2.0)
+            concurrent.futures.wait(futures, timeout=1.5)
             executor.shutdown(wait=False)
 
             elapsed = max(0.1, time.time() - start_time)
             with lock:
                 final_metrics = dict(metrics)
                 final_metrics["rps"] = round(final_metrics["total_requests"] / elapsed, 1)
+                tot = final_metrics["total_requests"]
+                err_count = final_metrics["status_500_crashed"] + final_metrics.get("timeouts", 0)
+                final_metrics["error_rate"] = round((err_count / max(1, tot)) * 100, 1)
+
                 if latencies:
-                    latencies.sort()
-                    p95_idx = int(len(latencies) * 0.95)
-                    final_metrics["p95_latency"] = f"{latencies[min(p95_idx, len(latencies)-1)]}ms"
+                    sorted_lat = sorted(latencies)
+                    n = len(sorted_lat)
+                    final_metrics["avg_latency"] = f"{int(sum(sorted_lat) / n)}ms"
+                    final_metrics["p50_latency"] = f"{sorted_lat[min(int(n * 0.5), n - 1)]}ms"
+                    final_metrics["p95_latency"] = f"{sorted_lat[min(int(n * 0.95), n - 1)]}ms"
+                    final_metrics["p99_latency"] = f"{sorted_lat[min(int(n * 0.99), n - 1)]}ms"
                 else:
+                    final_metrics["avg_latency"] = "0ms"
+                    final_metrics["p50_latency"] = "0ms"
                     final_metrics["p95_latency"] = "0ms"
+                    final_metrics["p99_latency"] = "0ms"
 
                 remaining_logs = sample_logs[logged_count:]
 
@@ -454,6 +490,7 @@ class StressOrchestrator:
                 "done": True,
                 "is_done": True,
                 "status": "COMPLETED",
+                "phase": "COMPLETE",
                 "metrics": final_metrics,
                 "sample_logs": remaining_logs,
                 "message": f"Hoàn tất stress test: {final_metrics['total_requests']} requests trong {round(elapsed, 1)}s.",
@@ -466,5 +503,6 @@ class StressOrchestrator:
                 "done": True,
                 "is_done": True,
                 "status": "FAILED",
-                "error": "Stress test execution failed.",
+                "phase": "COMPLETE",
+                "error": f"Stress test execution failed: {str(exc)}",
             }

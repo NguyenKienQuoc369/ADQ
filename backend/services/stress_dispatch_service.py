@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 try:
     from backend.schemas.scan import StressRequest
     from backend.services.scan_service import ScanService, redis_client
-    from backend.routers.scan_router import get_user_tier
+    from backend.routers.scan_router import get_user_tier, enforce_stress_quota
     from backend.core.security.ssrf_guard import resolve_and_validate_target
     from backend.core.security.stress_governor import (
         validate_stress_runtime_limits,
@@ -17,7 +17,7 @@ try:
 except ImportError:
     from schemas.scan import StressRequest
     from services.scan_service import ScanService, redis_client
-    from routers.scan_router import get_user_tier
+    from routers.scan_router import get_user_tier, enforce_stress_quota
     from core.security.ssrf_guard import resolve_and_validate_target
     from core.security.stress_governor import (
         validate_stress_runtime_limits,
@@ -27,6 +27,8 @@ except ImportError:
 
 STRESS_QUEUE_NAME = "scan_queue:stress_test"
 STRESS_JOB_KEY_PREFIX = "stress_job:"
+STRESS_HISTORY_KEY_PREFIX = "stress_history:"
+STRESS_STOP_KEY_PREFIX = "stress_stop:"
 TERMINAL_STATE_TTL = 86400  # 24 hours
 
 class StressDispatchService:
@@ -38,6 +40,14 @@ class StressDispatchService:
         """
         tier = get_user_tier(user)
         user_id = str(user.get("id") or user.get("sub") or "anonymous")
+
+        # Gate 0: Enforce daily quota
+        try:
+            enforce_stress_quota(user)
+        except HTTPException:
+            raise
+        except Exception:
+            pass
 
         # Gate 1: SSRF Target Validation
         origin, _ = resolve_and_validate_target(req.target_url)
@@ -79,6 +89,7 @@ class StressDispatchService:
                 "target_rps": target_rps,
                 "waf_type": req.waf_type or "standard",
                 "status": "QUEUED",
+                "phase": "PREPARE",
                 "progress": 0,
                 "metrics": {
                     "total_requests": 0,
@@ -90,8 +101,16 @@ class StressDispatchService:
                     "status_500_crashed": 0,
                     "other_status": 0,
                     "rps": 0.0,
+                    "p50_latency": "0ms",
                     "p95_latency": "0ms",
+                    "p99_latency": "0ms",
+                    "avg_latency": "0ms",
+                    "error_rate": 0.0,
+                    "timeouts": 0,
                 },
+                "events": [
+                    {"time": time.strftime("%H:%M:%S"), "message": "Phiên kiểm thử tải đã được khởi tạo và xếp hàng."}
+                ],
                 "created_at": time.time(),
                 "started_at": None,
                 "finished_at": None,
@@ -103,6 +122,13 @@ class StressDispatchService:
                     json.dumps(public_state),
                     ex=max(180, dur_sec + 180),
                 )
+                # Append to user's history list
+                try:
+                    hist_key = f"{STRESS_HISTORY_KEY_PREFIX}{user_id}"
+                    redis_client.lpush(hist_key, job_id)
+                    redis_client.ltrim(hist_key, 0, 49)
+                except Exception:
+                    pass
 
             # Step 7: Build internal execution payload (Allowed to have execution secrets)
             execution_payload = {
@@ -158,4 +184,79 @@ class StressDispatchService:
         except Exception:
             pass
         return None
+
+    @staticmethod
+    def stop_stress_job(job_id: str, user_id: str) -> Dict[str, Any]:
+        """Gracefully stops a running or queued stress job and releases governor locks."""
+        state = StressDispatchService.get_stress_job_state(job_id)
+        if not state:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tiến trình kiểm thử tải.")
+
+        if str(state.get("user_id")) != str(user_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền dừng tiến trình này.")
+
+        if state.get("status") in ("COMPLETED", "FAILED", "CANCELLED"):
+            return {"ok": True, "job_id": job_id, "status": state.get("status"), "message": "Tiến trình đã kết thúc trước đó."}
+
+        # Set stop flag in Redis for worker polling
+        if redis_client:
+            try:
+                redis_client.set(f"{STRESS_STOP_KEY_PREFIX}{job_id}", "1", ex=300)
+            except Exception:
+                pass
+
+        finished_at = time.time()
+        state["status"] = "CANCELLED"
+        state["phase"] = "COMPLETE"
+        state["finished_at"] = finished_at
+        state["error_safe"] = "Tiến trình kiểm thử đã dừng theo yêu cầu của người dùng."
+
+        events = state.get("events") or []
+        events.append({"time": time.strftime("%H:%M:%S"), "message": "Người dùng yêu cầu Dừng kiểm thử tải."})
+        state["events"] = events
+
+        if redis_client:
+            try:
+                redis_client.set(f"{STRESS_JOB_KEY_PREFIX}{job_id}", json.dumps(state), ex=86400)
+                event_channel = f"stress_events:{job_id}"
+                redis_client.publish(event_channel, json.dumps({
+                    "job_id": job_id,
+                    "status": "CANCELLED",
+                    "phase": "COMPLETE",
+                    "progress": state.get("progress", 0),
+                    "metrics": state.get("metrics", {}),
+                    "events": events,
+                    "done": True,
+                    "is_done": True,
+                    "timestamp": finished_at,
+                    "message": "Kiểm thử đã dừng bởi người dùng.",
+                }))
+            except Exception:
+                pass
+
+        # Release governor slot
+        try:
+            StressSlotGovernor.release_by_job(redis_client, user_id, job_id)
+        except Exception:
+            pass
+
+        return {"ok": True, "job_id": job_id, "status": "CANCELLED", "message": "Đã dừng tiến trình kiểm thử tải thành công."}
+
+    @staticmethod
+    def get_user_stress_history(user_id: str) -> List[Dict[str, Any]]:
+        """Returns the list of historical stress test job snapshots for the user."""
+        if not redis_client or not user_id:
+            return []
+        try:
+            hist_key = f"{STRESS_HISTORY_KEY_PREFIX}{user_id}"
+            job_ids = redis_client.lrange(hist_key, 0, 29) or []
+            history = []
+            for jid in job_ids:
+                st = StressDispatchService.get_stress_job_state(jid)
+                if st:
+                    history.append(st)
+            return history
+        except Exception:
+            return []
+
 

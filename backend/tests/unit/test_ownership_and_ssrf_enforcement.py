@@ -44,6 +44,33 @@ class FakeRedis:
     def rpush(self, queue, val):
         return 1
 
+    def lpush(self, key, *values):
+        if key not in self.store or not isinstance(self.store[key], list):
+            self.store[key] = []
+        for v in values:
+            self.store[key].insert(0, v)
+        return len(self.store[key])
+
+    def ltrim(self, key, start, end):
+        if key in self.store and isinstance(self.store[key], list):
+            self.store[key] = self.store[key][start:end + 1]
+        return True
+
+    def lrange(self, key, start, end):
+        if key in self.store and isinstance(self.store[key], list):
+            if end == -1:
+                return self.store[key][start:]
+            return self.store[key][start:end + 1]
+        return []
+
+    def lrem(self, key, count, value):
+        if key in self.store and isinstance(self.store[key], list):
+            self.store[key] = [x for x in self.store[key] if x != value]
+        return True
+
+    def publish(self, channel, message):
+        return 1
+
 
 @pytest.fixture(autouse=True)
 def override_auth_and_redis():
