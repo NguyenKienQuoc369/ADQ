@@ -35,6 +35,7 @@ import { StageTimeline } from "@/components/scan/stage-timeline";
 import { CoverageSummary } from "@/components/scan/coverage-summary";
 import { AssuranceMatrix } from "@/components/scan/assurance-matrix";
 import { WhatADQCheckedModal } from "@/components/scan/what-adq-checked-modal";
+import { OwnershipVerificationCard } from "@/components/scan/ownership-verification-card";
 import {
   getProjectById,
   saveProjectDetail,
@@ -181,6 +182,7 @@ function ScanLandingContent() {
   const [verificationStatus, setVerificationStatus] = useState<"UNVERIFIED" | "VERIFYING" | "VERIFIED" | "FAILED">("UNVERIFIED");
   const [verificationToken, setVerificationToken] = useState<string>("");
   const [metaTagString, setMetaTagString] = useState<string>("");
+  const [verificationExpiresIn, setVerificationExpiresIn] = useState<number>(3600);
   const [verificationMessage, setVerificationMessage] = useState<string>("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [isCopiedMeta, setIsCopiedMeta] = useState(false);
@@ -684,12 +686,15 @@ function ScanLandingContent() {
       if (res.ok) {
         setVerificationToken(res.verification_token);
         setMetaTagString(res.meta_tag);
+        if (res.expires_in) {
+          setVerificationExpiresIn(res.expires_in);
+        }
         if (res.verified) {
           setVerificationStatus("VERIFIED");
           setVerificationMessage("Mục tiêu đã được xác minh quyền sở hữu thành công.");
         } else {
           setVerificationStatus("UNVERIFIED");
-          setVerificationMessage("Vui lòng chèn thẻ <meta> vào thẻ <head> của trang chủ website và bấm Xác Minh.");
+          setVerificationMessage("");
         }
       }
     } catch (err: any) {
@@ -701,7 +706,7 @@ function ScanLandingContent() {
   const handleCheckVerification = async () => {
     if (!target.trim()) return;
     setIsVerifying(true);
-    setVerificationMessage("Đang kết nối an toàn đến trang chủ mục tiêu để kiểm tra thẻ Meta Tag...");
+    setVerificationMessage("");
     try {
       const res = await checkTargetVerification(target.trim());
       if (res.ok && res.verified) {
@@ -717,6 +722,14 @@ function ScanLandingContent() {
     } finally {
       setIsVerifying(false);
     }
+  };
+
+  const handleResetVerification = () => {
+    setVerificationStatus("UNVERIFIED");
+    setVerificationToken("");
+    setMetaTagString("");
+    setVerificationMessage("");
+    setShowVerificationBox(true);
   };
 
   const copyMetaTag = () => {
@@ -982,66 +995,20 @@ function ScanLandingContent() {
             </Button>
           </div>
 
-          {/* Verification Challenge Box */}
+          {/* Verification Challenge Card */}
           {showVerificationBox && (
-            <div className="border border-[#222222] bg-[#0a0a0a] rounded-lg p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5 font-mono">
-                  <ShieldCheck className="h-3.5 w-3.5 text-white" /> Xác minh quyền sở hữu mục tiêu (Meta Tag)
-                </p>
-                {verificationStatus === "VERIFIED" ? (
-                  <span className="text-[10px] font-mono border border-emerald-700 bg-emerald-950 text-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> ĐÃ XÁC MINH
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-mono border border-amber-700 bg-amber-950 text-amber-300 px-2.5 py-0.5 rounded-full">
-                    CẦN XÁC MINH
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-neutral-400 leading-relaxed">
-                Để ngăn chặn quét trái phép, bạn cần chèn thẻ meta sau vào thẻ <code className="text-white bg-neutral-900 px-1 py-0.5 rounded">&lt;head&gt;</code> của trang chủ website trước khi thực hiện quét:
-              </p>
-              {metaTagString ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-[#000000] border border-[#333333] rounded-md p-2 font-mono text-[11px] text-emerald-300 overflow-x-auto select-all">
-                      {metaTagString}
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={copyMetaTag}
-                      className="h-8 text-xs border-[#333333] bg-[#111111] hover:bg-neutral-800 text-white rounded-md shrink-0"
-                    >
-                      <Copy className="h-3.5 w-3.5 mr-1" />
-                      {isCopiedMeta ? "Đã chép" : "Sao chép"}
-                    </Button>
-                  </div>
-                  {verificationMessage && (
-                    <p className={`text-xs font-mono ${verificationStatus === "VERIFIED" ? "text-emerald-400" : "text-rose-400"}`}>
-                      {verificationMessage}
-                    </p>
-                  )}
-                  <div className="flex gap-2 pt-1">
-                    <Button
-                      size="sm"
-                      onClick={handleCheckVerification}
-                      disabled={isVerifying}
-                      className="h-8 text-xs bg-white text-black hover:bg-neutral-200 font-medium rounded-md px-4"
-                    >
-                      {isVerifying ? (
-                        <>
-                          <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Đang kiểm tra...
-                        </>
-                      ) : (
-                        "Xác Minh Ngay"
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <OwnershipVerificationCard
+              target={target}
+              verificationToken={verificationToken}
+              metaTagString={metaTagString}
+              verificationStatus={verificationStatus}
+              verificationMessage={verificationMessage}
+              isVerifying={isVerifying}
+              expiresIn={verificationExpiresIn}
+              onFetchToken={() => handleFetchVerificationToken()}
+              onCheckVerification={handleCheckVerification}
+              onResetVerification={handleResetVerification}
+            />
           )}
 
           {scanError && (
