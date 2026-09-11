@@ -14,42 +14,30 @@ import {
   LogOut,
   Menu,
   X,
-  Shield,
-  Zap,
-  Smartphone,
-  Bot,
-  ArrowLeft,
   FileText,
-  ChevronRight,
+  ShieldCheck,
+  Zap,
+  Bot,
+  Crown,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
-import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { UserAvatar, getCanonicalDisplayName, getCanonicalPackageTier } from "@/components/ui/user-avatar";
 import { cn, maskEmail } from "@/lib/utils";
 
 type ShellArea = "dashboard" | "admin";
 
-const workspaceNavGroups = [
+const globalNavGroups = [
   {
-    title: "TỔNG QUAN",
+    title: "KHÔNG GIAN LÀM VIỆC",
     links: [
       { href: "/dashboard", label: "Dự án & Targets", icon: Folder },
       { href: "/reports", label: "Lịch sử & Báo cáo", icon: FileText },
     ],
   },
   {
-    title: "CÔNG CỤ BẢO MẬT",
-    links: [
-      { href: "/scan", label: "Rà quét DAST", icon: Shield },
-      { href: "/stress-test", label: "Kiểm thử tải L7", icon: Zap },
-      { href: "/apk-audit", label: "Kiểm toán APK", icon: Smartphone },
-      { href: "/copilot", label: "Trợ lý AI Copilot", icon: Bot },
-    ],
-  },
-  {
-    title: "HỆ THỐNG",
+    title: "TÀI KHOẢN & HỆ THỐNG",
     links: [
       { href: "/dashboard/billing", label: "Gói dịch vụ", icon: CreditCard },
       { href: "/settings", label: "Cài đặt tài khoản", icon: Settings },
@@ -69,12 +57,10 @@ const adminNavGroups = [
   {
     title: "ĐIỀU HƯỚNG",
     links: [
-      { href: "/dashboard", label: "Vào Dashboard chính", icon: ArrowLeft },
+      { href: "/dashboard", label: "Vào Dashboard chính", icon: Folder },
     ],
   },
 ];
-
-const PROJECT_ROUTES = ["/scan", "/stress-test", "/apk-audit", "/copilot"];
 
 function DashboardShellContent({
   area,
@@ -84,28 +70,20 @@ function DashboardShellContent({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const projectId = searchParams?.get("projectId") || null;
-
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const userDisplayName = getCanonicalDisplayName(user);
   const canonicalTier = getCanonicalPackageTier(user);
 
-  const isProjectWorkspace = PROJECT_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`)
-  );
-
   const navGroups = useMemo(
-    () => (area === "admin" ? adminNavGroups : workspaceNavGroups),
+    () => (area === "admin" ? adminNavGroups : globalNavGroups),
     [area]
   );
 
   // Content for sidebar navigation
   const sidebarNavContent = (
-    <div className="flex h-full flex-col justify-between p-4">
+    <div className="flex h-full flex-col justify-between p-4 bg-[#000000]">
       <div className="space-y-6">
         {/* Brand & Logo Header */}
         <Link
@@ -129,12 +107,12 @@ function DashboardShellContent({
               </span>
             </div>
             <p className="text-[10px] font-mono text-neutral-400">
-              {canonicalTier} Plan
+              {canonicalTier.replace("_", " ")} Plan
             </p>
           </div>
         </Link>
 
-        {/* Navigation Sections */}
+        {/* Global Navigation Sections */}
         <div className="space-y-5">
           {navGroups.map((group) => (
             <div key={group.title} className="space-y-1">
@@ -148,21 +126,15 @@ function DashboardShellContent({
                     pathname === item.href ||
                     (item.href !== "/dashboard" && pathname.startsWith(item.href));
 
-                  // Preserve projectId query parameter when navigating between tools
-                  const href =
-                    projectId && PROJECT_ROUTES.includes(item.href)
-                      ? `${item.href}?projectId=${projectId}`
-                      : item.href;
-
                   return (
                     <Link
                       key={item.href}
-                      href={href}
+                      href={item.href}
                       onClick={() => setMobileOpen(false)}
                       className={cn(
-                        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-xs font-medium transition select-none",
+                        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-xs font-medium transition select-none cursor-pointer",
                         active
-                          ? "active-sidebar-link bg-white text-black font-semibold shadow-sm"
+                          ? "bg-white text-black font-semibold shadow-sm"
                           : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"
                       )}
                     >
@@ -177,8 +149,51 @@ function DashboardShellContent({
         </div>
       </div>
 
-      {/* Sidebar Footer: User profile, Theme Toggle & Logout */}
-      <div className="border-t border-[#222222] pt-3 space-y-2">
+      {/* Sidebar Footer: Compact Plan / Quota Card & User profile */}
+      <div className="border-t border-[#222222] pt-3 space-y-3">
+        {/* Compact Plan / Quota Card */}
+        {area !== "admin" && (
+          <div className="rounded-md border border-[#222222] bg-[#0a0a0a] p-3 text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-white flex items-center gap-1.5">
+                <Crown className="h-3.5 w-3.5 text-neutral-300" />
+                <span>{canonicalTier.replace("_", " ")}</span>
+              </span>
+              <Link
+                href="/dashboard/billing"
+                className="text-[10px] text-neutral-400 hover:text-white transition underline"
+              >
+                Chi tiết
+              </Link>
+            </div>
+
+            <div className="space-y-1 text-[11px] text-neutral-400 font-mono">
+              <div className="flex items-center justify-between">
+                <span>Stress Test:</span>
+                <span className="text-neutral-200">
+                  {canonicalTier === "PRO_MAX"
+                    ? "10 / ngày"
+                    : canonicalTier === "PRO"
+                    ? "1 / ngày"
+                    : "Đã khóa"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Scan:</span>
+                <span className="text-neutral-200">
+                  {canonicalTier === "FREE" ? "1 lượt" : "Không giới hạn"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Copilot:</span>
+                <span className="text-neutral-200">
+                  {canonicalTier === "PRO_MAX" ? "Có sẵn" : "Gói PRO MAX"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* User Card */}
         <div className="flex items-center justify-between px-2 py-1.5 rounded-md bg-[#0a0a0a] border border-[#222222]">
           <Link
@@ -189,7 +204,7 @@ function DashboardShellContent({
           >
             <UserAvatar user={user} displayName={userDisplayName} size="sm" />
             <div className="truncate">
-              <p className="text-xs font-medium text-white truncate group-hover:text-cyan-400 transition">
+              <p className="text-xs font-medium text-white truncate group-hover:text-neutral-300 transition">
                 {userDisplayName}
               </p>
               <p className="text-[10px] font-mono text-neutral-400 truncate">
@@ -218,7 +233,7 @@ function DashboardShellContent({
   return (
     <div className="min-h-screen bg-[#000000] text-[#ededed] font-sans selection:bg-white selection:text-black">
       {/* Desktop Left Sidebar */}
-      <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 z-30 border-r border-[#222222] bg-[#000000]">
+      <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 z-30 border-r border-[#222222] bg-[#000000]">
         {sidebarNavContent}
       </aside>
 
@@ -277,79 +292,9 @@ function DashboardShellContent({
         </div>
       )}
 
-      {/* Main Content Viewport */}
-      <div className="md:pl-64 flex flex-col min-h-screen">
-        {/* Project Sub-header if inside a project tool */}
-        {isProjectWorkspace && (
-          <div className="tool-sticky-header sticky top-0 z-20 border-b border-[#222222] bg-[#000000]/85 backdrop-blur-md px-4 sm:px-8 py-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push("/dashboard")}
-                className="tool-back-btn h-7 px-2 text-xs text-neutral-400 hover:text-white hover:bg-neutral-900 rounded-md flex items-center gap-1 cursor-pointer mr-1"
-              >
-                <ArrowLeft className="h-3 w-3" />
-                <span>Dự án</span>
-              </Button>
-
-              <div className="tool-switcher-bar flex items-center gap-1 bg-[#0a0a0a] p-0.5 rounded-md border border-[#222222]">
-                <Link
-                  href={projectId ? `/scan?projectId=${projectId}` : "/scan"}
-                  className={cn(
-                    "h-7 px-2.5 text-xs font-medium rounded-md flex items-center gap-1.5 transition select-none cursor-pointer",
-                    pathname === "/scan" || pathname.startsWith("/scan/")
-                      ? "active-tool-tab font-semibold shadow-sm"
-                      : "text-neutral-400 hover:text-white"
-                  )}
-                >
-                  <Shield className="h-3 w-3" /> <span>Quét DAST</span>
-                </Link>
-                <Link
-                  href={projectId ? `/stress-test?projectId=${projectId}` : "/stress-test"}
-                  className={cn(
-                    "h-7 px-2.5 text-xs font-medium rounded-md flex items-center gap-1.5 transition select-none cursor-pointer",
-                    pathname === "/stress-test" || pathname.startsWith("/stress-test/")
-                      ? "active-tool-tab font-semibold shadow-sm"
-                      : "text-neutral-400 hover:text-white"
-                  )}
-                >
-                  <Zap className="h-3 w-3" /> <span>Stress Test</span>
-                </Link>
-                <Link
-                  href={projectId ? `/apk-audit?projectId=${projectId}` : "/apk-audit"}
-                  className={cn(
-                    "h-7 px-2.5 text-xs font-medium rounded-md flex items-center gap-1.5 transition select-none cursor-pointer",
-                    pathname === "/apk-audit" || pathname.startsWith("/apk-audit/")
-                      ? "active-tool-tab font-semibold shadow-sm"
-                      : "text-neutral-400 hover:text-white"
-                  )}
-                >
-                  <Smartphone className="h-3 w-3" /> <span>APK Audit</span>
-                </Link>
-                <Link
-                  href={projectId ? `/copilot?projectId=${projectId}` : "/copilot"}
-                  className={cn(
-                    "h-7 px-2.5 text-xs font-medium rounded-md flex items-center gap-1.5 transition select-none cursor-pointer",
-                    pathname === "/copilot" || pathname.startsWith("/copilot/")
-                      ? "active-tool-tab font-semibold shadow-sm"
-                      : "text-neutral-400 hover:text-white"
-                  )}
-                >
-                  <Bot className="h-3 w-3" /> <span>AI Copilot</span>
-                </Link>
-              </div>
-            </div>
-
-            {projectId && (
-              <div className="hidden lg:flex items-center text-[11px] font-mono text-neutral-500">
-                Target: <span className="text-neutral-300 ml-1 truncate max-w-[200px]">{projectId}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 md:p-8">
+      {/* Main Content Viewport - Full Width Space for Tools */}
+      <div className="md:pl-60 flex flex-col min-h-screen">
+        <main className="flex-1 w-full p-4 sm:p-6 md:p-8">
           {children}
         </main>
       </div>

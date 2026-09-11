@@ -45,16 +45,17 @@ export function BillingClient() {
     try {
       const res = await redeemCode(values.code.trim().toUpperCase());
       updateUser(res.user);
+      const tierLabel = (res.user.packageTier || "PRO").replace("_", " ");
       setMessage({
         type: "success",
-        text: res.message || `Kích hoạt thành công! Gói cước của bạn là ${res.user.packageTier.replace("_", " ")}.`,
+        text: res.message || `Kích hoạt ${tierLabel} thành công.`,
       });
       form.reset();
     } catch (err: any) {
-      let errorText = err?.message || "Mã kích hoạt không hợp lệ.";
+      let errorText = err?.message || "Mã kích hoạt không tồn tại hoặc không hợp lệ.";
       const code = err?.code;
       if (code === "INVALID_CODE") {
-        errorText = "Mã kích hoạt không tồn tại trên hệ thống.";
+        errorText = "Mã kích hoạt không tồn tại hoặc không hợp lệ.";
       } else if (code === "EXPIRED_CODE") {
         errorText = "Mã kích hoạt đã hết hạn sử dụng.";
       } else if (code === "REVOKED") {

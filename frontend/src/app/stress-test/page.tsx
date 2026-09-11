@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useState, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { ProjectWorkspaceShell } from "@/components/project-workspace-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,7 @@ import {
   getStressHistory,
   streamStressJob,
   getVerificationStatus,
+  getProjectById,
   StressJobState,
 } from "@/lib/api";
 
@@ -57,6 +58,7 @@ function StressTestContent() {
   const searchParams = useSearchParams();
   const initialJobId = searchParams?.get("jobId");
   const initialTarget = searchParams?.get("target") || "";
+  const projectId = searchParams?.get("projectId") || null;
 
   const { user } = useAuth();
   const userTier = user?.packageTier || "FREE";
@@ -68,6 +70,19 @@ function StressTestContent() {
   const [endpointPath, setEndpointPath] = useState("/");
   const [durationSec, setDurationSec] = useState<number>(userTier === "PRO_MAX" ? 30 : 15);
   const [targetRps, setTargetRps] = useState<number>(userTier === "PRO_MAX" ? 100 : 50);
+
+  // Hydrate target from project if not set in query
+  useEffect(() => {
+    if (!projectId || initialTarget) return;
+    getProjectById(projectId)
+      .then((proj) => {
+        const rawTarget = proj?.projectDetail?.summary?.domain || proj?.domain || "";
+        if (rawTarget) {
+          setTargetUrl(cleanBaseUrl(rawTarget));
+        }
+      })
+      .catch(() => {});
+  }, [projectId, initialTarget]);
 
   // Target Verification State
   const [isVerifyingTarget, setIsVerifyingTarget] = useState(false);
@@ -103,7 +118,7 @@ function StressTestContent() {
       try {
         const res = await getVerificationStatus(cleaned);
         if (active) {
-          setIsTargetVerified(Boolean(res?.verified || res?.is_verified));
+          setIsTargetVerified(Boolean(res?.verified));
         }
       } catch {
         if (active) setIsTargetVerified(false);
@@ -292,7 +307,11 @@ function StressTestContent() {
   const stabilityVerdict = jobState?.verdict || (isCompleted ? (Number(metrics.error_rate) === 0 ? "ỔN ĐỊNH" : Number(metrics.error_rate) < 5 ? "CÓ DẤU HIỆU GIẢM HIỆU NĂNG" : "KHÔNG ỔN ĐỊNH") : null);
 
   return (
-    <DashboardShell area="dashboard">
+    <ProjectWorkspaceShell
+      activeTab="stress"
+      targetUrlOverride={cleanBaseUrl(targetUrl)}
+      isVerifiedOverride={isTargetVerified === true}
+    >
       <div className="mx-auto max-w-6xl space-y-6 text-[#F5F5F5]">
         {/* Top Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#242424] pb-4">
@@ -885,7 +904,7 @@ function StressTestContent() {
           </div>
         )}
       </div>
-    </DashboardShell>
+    </ProjectWorkspaceShell>
   );
 }
 

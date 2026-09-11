@@ -2,7 +2,7 @@
 
 import React, { Suspense, useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { ProjectWorkspaceShell } from "@/components/project-workspace-shell";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getEntitlements } from "@/lib/entitlements";
 import { Badge } from "@/components/ui/badge";
@@ -327,7 +327,7 @@ function CopilotContent() {
   // Non-PRO_MAX Locked Screen
   if (!isAllowedCopilot) {
     return (
-      <DashboardShell area="dashboard">
+      <ProjectWorkspaceShell activeTab="copilot">
         <div className="flex min-h-[70vh] items-center justify-center px-4">
           <div className="w-full max-w-xl rounded-lg border border-[#242424] bg-[#0A0A0A] p-8 text-center shadow-xl">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-[#242424] bg-[#050505]">
@@ -361,13 +361,16 @@ function CopilotContent() {
             </div>
           </div>
         </div>
-      </DashboardShell>
+      </ProjectWorkspaceShell>
     );
   }
 
   return (
-    <DashboardShell area="dashboard">
-      <div className="mx-auto max-w-7xl h-[calc(100vh-8.5rem)] flex flex-col font-sans text-[#F5F5F5]">
+    <ProjectWorkspaceShell
+      activeTab="copilot"
+      targetUrlOverride={paramTarget || scanContextData?.targetDomain || stressContextData?.target_url}
+    >
+      <div className="w-full h-[calc(100vh-13rem)] min-h-[600px] flex flex-col font-sans text-[#F5F5F5]">
         {/* Top Header */}
         <div className="flex items-center justify-between border-b border-[#242424] pb-3 shrink-0">
           <div className="flex items-center gap-2">
@@ -661,7 +664,7 @@ function CopilotContent() {
           )}
         </div>
       </div>
-    </DashboardShell>
+    </ProjectWorkspaceShell>
   );
 }
 

@@ -447,6 +447,9 @@ export async function getScanJobStatus(jobId: string): Promise<any> {
   return requestJson<any>(`/api/scan/${encodeURIComponent(jobId)}`);
 }
 
+export const getScanJob = getScanJobStatus;
+export type ScanJobDetails = any;
+
 export async function getScanAssurance(
   jobId: string
 ): Promise<{ ok: boolean; job_id: string; assurance: AssuranceMatrix }> {
@@ -926,6 +929,8 @@ export async function getTargetVerificationStatus(targetUrl: string) {
     body: JSON.stringify({ target_url: targetUrl }),
   });
 }
+
+export const getVerificationStatus = getTargetVerificationStatus;
 
 export async function startTargetVerification(targetUrl: string) {
   return requestJson<{ ok: boolean; target: string; verification_token: string; meta_tag: string; expires_in: number; verified: boolean }>("/api/verification/start", {

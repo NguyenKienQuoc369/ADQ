@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useState, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { ProjectWorkspaceShell } from "@/components/project-workspace-shell";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -620,7 +620,11 @@ function ScanLandingContent() {
   const totalControlsCount = controlsList.length || 19;
 
   return (
-    <DashboardShell area="dashboard">
+    <ProjectWorkspaceShell
+      activeTab="scan"
+      targetUrlOverride={target}
+      isVerifiedOverride={verificationStatus === "VERIFIED"}
+    >
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 space-y-6 font-sans">
         {/* ============================================================ */}
         {/* PRE-SCAN / TARGET INPUT & PERSISTENT VERIFICATION PANEL     */}
@@ -963,7 +967,7 @@ function ScanLandingContent() {
           scopeLimitations={assuranceMatrix?.scope_limitations || []}
         />
       </div>
-    </DashboardShell>
+    </ProjectWorkspaceShell>
   );
 }
 
