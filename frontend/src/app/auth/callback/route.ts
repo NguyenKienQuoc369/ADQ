@@ -7,6 +7,18 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/dashboard";
 
+  // Determine the canonical external origin (avoid internal docker host/localhost)
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+  const host = forwardedHost || request.headers.get("host");
+  const siteOrigin =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (host && !host.includes("localhost") && !host.includes("web-dashboard") && !host.includes("127.0.0.1")
+      ? `${forwardedProto}://${host}`
+      : "https://adq.io.vn");
+
+  const safeNext = next.startsWith("/") ? next : `/${next}`;
+
   if (code) {
     const cookieStore = await cookies();
     const supabase = createServerClient(
@@ -34,7 +46,7 @@ export async function GET(request: Request) {
       // Nếu OAuth được khởi tạo từ luồng REGISTER,
       // callback /onboarding sẽ đánh dấu tài khoản phải
       // hoàn tất onboarding trước khi vào Dashboard.
-      if (next === "/onboarding") {
+      if (safeNext === "/onboarding") {
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -51,9 +63,9 @@ export async function GET(request: Request) {
         }
       }
 
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(`${siteOrigin}${safeNext}`);
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=oauth_failed`);
+  return NextResponse.redirect(`${siteOrigin}/login?error=oauth_failed`);
 }

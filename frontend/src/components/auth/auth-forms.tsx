@@ -95,7 +95,8 @@ function getFriendlyErrorMessage(err: any): string {
 export function LoginForm() {
   const { login, lockMessage } = useAuth();
   const searchParams = useSearchParams();
-  const nextDestination = searchParams?.get("next") || searchParams?.get("redirect") || "/dashboard";
+  const rawNext = searchParams?.get("next") || searchParams?.get("redirect") || "/dashboard";
+  const nextDestination = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

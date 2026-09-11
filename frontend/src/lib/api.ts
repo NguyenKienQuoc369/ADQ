@@ -285,11 +285,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       path.startsWith("/api/apk-audit");
 
     if (isBackendRoute) {
-      const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+      const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "https://api.adq.io.vn").replace(/\/$/, "");
       url = `${backendUrl}${path.startsWith("/") ? "" : "/"}${path}`;
     } else {
       if (typeof window === "undefined") {
-        const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")).replace(/\/$/, "");
+        const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://adq.io.vn")).replace(/\/$/, "");
         url = `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
       } else {
         url = path;
@@ -466,7 +466,7 @@ export async function streamScanJob(
   onData: (chunk: any) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "https://api.adq.io.vn").replace(/\/$/, "");
   const url = `${backendUrl}/api/scan/${encodeURIComponent(jobId)}/stream`;
 
   let authHeader: Record<string, string> = {};
@@ -961,7 +961,7 @@ export async function streamStressJob(
   onData: (chunk: StressJobState) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "https://api.adq.io.vn").replace(/\/$/, "");
   const url = `${backendUrl}/api/stress/${encodeURIComponent(jobId)}/stream`;
 
   let authHeader: Record<string, string> = {};
@@ -1114,7 +1114,7 @@ export async function createApkAuditJob(
   projectId?: string,
   signal?: AbortSignal
 ): Promise<ApkJobStatusResponse> {
-  const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "https://api.adq.io.vn").replace(/\/$/, "");
   const url = `${backendUrl}/api/apk-audit/jobs`;
 
   let authHeader: Record<string, string> = {};
