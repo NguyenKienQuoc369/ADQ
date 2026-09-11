@@ -35,24 +35,23 @@ export async function POST(request: Request) {
     const userEmail = String(authUser.email ?? currentRecord.email ?? "").trim().toLowerCase();
     const userAuthId = authUser.id;
 
-    // 1. Tra cứu mã trong Database với chuẩn hóa linh hoạt (casing, spaces, PROMAX vs PRO_MAX, hyphens)
-    const candidateCodes = Array.from(
-      new Set([
-        code,
-        code.replace(/\s+/g, ""),
-        code.replace(/_/g, ""),
-        code.replace(/-/g, ""),
-        code.replace(/PRO_MAX/g, "PROMAX"),
-        code.replace(/PROMAX/g, "PRO_MAX"),
-        code.replace(/_/g, "-"),
-      ])
-    ).filter((c) => c && c.length >= 3);
+    // 1. Tra cứu mã trong Database với chuẩn hóa linh hoạt toàn diện (casing, spaces, PROMAX vs PRO_MAX, hyphens, alphanumeric canonicalization)
+    const normalizeKey = (s: string) =>
+      s
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .replace(/PRO_MAX/g, "PROMAX");
 
-    const redeemCode = await prisma.redeemCode.findFirst({
-      where: {
-        code: { in: candidateCodes },
-      },
-    });
+    const targetKey = normalizeKey(code);
+
+    const allRedeemCodes = await prisma.redeemCode.findMany();
+    const redeemCode = allRedeemCodes.find(
+      (rc) =>
+        rc.code.trim().toUpperCase() === code ||
+        normalizeKey(rc.code) === targetKey ||
+        rc.code.replace(/_/g, "-").toUpperCase() === code.replace(/_/g, "-").toUpperCase()
+    );
     if (!redeemCode) {
       return NextResponse.json(
         { error: "Mã kích hoạt không tồn tại trên hệ thống.", code: "INVALID_CODE" },
