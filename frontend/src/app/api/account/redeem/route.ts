@@ -12,21 +12,30 @@ import {
 import { getPrismaClient } from "@/lib/prisma";
 
 export async function POST(request: Request) {
+  const traceId = `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const traceHeaders = {
+    "X-ADQ-Trace-Id": traceId,
+    "X-ADQ-Handler": "account-redeem",
+    "X-ADQ-Build": process.env.NEXT_PUBLIC_APP_VERSION || "2.0.0",
+  };
+
   try {
     const authUser = await getAuthenticatedUserFromRequest(request);
     if (!authUser) {
+      console.log(`trace=${traceId} route=redeem auth=no status=401 result=UNAUTHORIZED`);
       return NextResponse.json(
         { error: "UNAUTHORIZED: Vui lòng đăng nhập lại.", code: "UNAUTHORIZED" },
-        { status: 401 }
+        { status: 401, headers: traceHeaders }
       );
     }
 
     const payload = await request.json().catch(() => ({}));
     const code = String(payload?.code ?? "").trim().toUpperCase();
     if (!code || code.length < 3) {
+      console.log(`trace=${traceId} route=redeem auth=yes status=400 result=INVALID_PAYLOAD`);
       return NextResponse.json(
         { error: "Vui lòng nhập mã kích hoạt hợp lệ.", code: "INVALID_CODE" },
-        { status: 400 }
+        { status: 400, headers: traceHeaders }
       );
     }
 
@@ -53,16 +62,18 @@ export async function POST(request: Request) {
         rc.code.replace(/_/g, "-").toUpperCase() === code.replace(/_/g, "-").toUpperCase()
     );
     if (!redeemCode) {
+      console.log(`trace=${traceId} route=redeem auth=yes status=404 result=INVALID_CODE`);
       return NextResponse.json(
         { error: "Mã kích hoạt không tồn tại trên hệ thống.", code: "INVALID_CODE" },
-        { status: 404 }
+        { status: 404, headers: traceHeaders }
       );
     }
 
     if (redeemCode.status === "REVOKED") {
+      console.log(`trace=${traceId} route=redeem auth=yes status=400 result=REVOKED`);
       return NextResponse.json(
         { error: "Mã kích hoạt này đã bị vô hiệu hóa.", code: "REVOKED" },
-        { status: 400 }
+        { status: 400, headers: traceHeaders }
       );
     }
 
@@ -92,9 +103,10 @@ export async function POST(request: Request) {
 
       const isExpired = computedExpiry ? computedExpiry.getTime() <= Date.now() : false;
       if (isExpired) {
+        console.log(`trace=${traceId} route=redeem auth=yes status=400 result=EXPIRED_CODE`);
         return NextResponse.json(
           { error: "Gói kích hoạt từ mã này đã hết hạn sử dụng.", code: "EXPIRED_CODE" },
-          { status: 400 }
+          { status: 400, headers: traceHeaders }
         );
       }
 
@@ -121,19 +133,25 @@ export async function POST(request: Request) {
         planExpiresAt: computedExpiry ? computedExpiry.toISOString() : null,
       }).catch(() => {});
 
-      return NextResponse.json({
-        ok: true,
-        recovered: true,
-        message: "Gói này đã được kích hoạt trên tài khoản của bạn.",
-        user: toUserRecord(updatedUser, authUser),
-      });
+      console.log(`trace=${traceId} route=redeem auth=yes status=200 result=RECOVERED tier=${packageTier}`);
+      return NextResponse.json(
+        {
+          ok: true,
+          recovered: true,
+          alreadyActive: true,
+          message: "Gói này đã được kích hoạt trên tài khoản của bạn.",
+          user: toUserRecord(updatedUser, authUser),
+        },
+        { headers: traceHeaders }
+      );
     }
 
     // 3. Kiểm tra số lượt sử dụng đối với tài khoản khác
     if (redeemCode.status === "USED" || redeemCode.usedCount >= redeemCode.maxUses) {
+      console.log(`trace=${traceId} route=redeem auth=yes status=400 result=ALREADY_USED`);
       return NextResponse.json(
         { error: "Mã kích hoạt đã được sử dụng hết số lượt.", code: "ALREADY_USED" },
-        { status: 400 }
+        { status: 400, headers: traceHeaders }
       );
     }
 
@@ -186,22 +204,27 @@ export async function POST(request: Request) {
           planExpiresAt: planExpiresAt ? planExpiresAt.toISOString() : null,
         });
       }
-    } catch (metadataError) {
-      console.error(
-        "[redeem] Package activated but Supabase metadata sync failed:",
-        metadataError
-      );
+    } catch (metaErr) {
+      console.error("[redeem] Package activated but Supabase metadata sync failed:", metaErr);
     }
 
-    return NextResponse.json({
-      ok: true,
-      message: "Kích hoạt gói thành công.",
-      user: toUserRecord(updatedUser, authUser),
-    });
-  } catch (error: any) {
+    console.log(`trace=${traceId} route=redeem auth=yes status=200 result=ACTIVATED tier=${packageTier}`);
     return NextResponse.json(
-      { error: error?.message ?? "Không thể kích hoạt mã nâng cấp.", code: "SERVER_ERROR" },
-      { status: 500 }
+      {
+        ok: true,
+        message: "Kích hoạt gói thành công.",
+        user: toUserRecord(updatedUser, authUser),
+      },
+      { headers: traceHeaders }
+    );
+  } catch (error: any) {
+    console.error(`trace=${traceId} route=redeem auth=error status=500 result=SERVER_ERROR`, error?.message);
+    return NextResponse.json(
+      {
+        error: error?.message ?? "Không thể kích hoạt mã nâng cấp.",
+        code: "SERVER_ERROR",
+      },
+      { status: 500, headers: traceHeaders }
     );
   }
 }

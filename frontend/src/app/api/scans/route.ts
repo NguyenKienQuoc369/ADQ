@@ -10,9 +10,17 @@ function normalizeDomain(input: string) {
 }
 
 export async function GET(request: Request) {
+  const traceId = `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const traceHeaders = {
+    "X-ADQ-Trace-Id": traceId,
+    "X-ADQ-Handler": "scans-list",
+    "X-ADQ-Build": process.env.NEXT_PUBLIC_APP_VERSION || "2.0.0",
+  };
+
   const authUser = await getAuthenticatedUserFromRequest(request);
   if (!authUser) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    console.log(`trace=${traceId} route=scans auth=no status=401 result=UNAUTHORIZED`);
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401, headers: traceHeaders });
   }
 
   const prisma = getPrismaClient();
@@ -25,9 +33,11 @@ export async function GET(request: Request) {
     },
   });
 
-  return NextResponse.json({
-    ok: true,
-    scans: jobs.map((job) => ({
+  console.log(`trace=${traceId} route=scans auth=yes db_count=${jobs.length} returned=${jobs.length} status=200`);
+  return NextResponse.json(
+    {
+      ok: true,
+      scans: jobs.map((job) => ({
       id: job.scanId,
       target: job.targetDomain,
       status: job.status,
@@ -60,13 +70,22 @@ export async function GET(request: Request) {
       autoThrottle: true,
       telegram: { enabled: false },
     })),
-  });
+  },
+  { headers: traceHeaders });
 }
 
 export async function POST(req: Request) {
+  const traceId = `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const traceHeaders = {
+    "X-ADQ-Trace-Id": traceId,
+    "X-ADQ-Handler": "scans-create",
+    "X-ADQ-Build": process.env.NEXT_PUBLIC_APP_VERSION || "2.0.0",
+  };
+
   const authUser = await getAuthenticatedUserFromRequest(req);
   if (!authUser) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    console.log(`trace=${traceId} route=scans_create auth=no status=401 result=UNAUTHORIZED`);
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401, headers: traceHeaders });
   }
 
   const prisma = getPrismaClient();
@@ -76,7 +95,7 @@ export async function POST(req: Request) {
   const priorityScore = typeof body?.priority === "number" ? body.priority : 10;
 
   if (!target) {
-    return NextResponse.json({ ok: false, error: "Vui lòng nhập domain/website hợp lệ." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Vui lòng nhập domain/website hợp lệ." }, { status: 400, headers: traceHeaders });
   }
 
   // 1. Lấy thông tin tài khoản người dùng từ DB
@@ -104,7 +123,7 @@ export async function POST(req: Request) {
           error: "Tài khoản Dùng Thử Miễn Phí đã sử dụng hết 2 lượt quét vĩnh viễn. Vui lòng nâng cấp lên gói PRO hoặc PRO MAX để quét không giới hạn.",
           code: "FREE_TIER_LIMIT_REACHED",
         },
-        { status: 403 }
+        { status: 403, headers: traceHeaders }
       );
     }
   }
@@ -133,7 +152,6 @@ export async function POST(req: Request) {
     where: { id: userRecord.id },
     data: {
       scansToday: { increment: 1 },
-      
     },
   });
 
@@ -181,13 +199,17 @@ export async function POST(req: Request) {
     console.error("[scan] Backend dispatch failed:", backendError);
   }
 
-  return NextResponse.json({
-    ok: true,
-    scan: {
-      id: scanJob.scanId,
-      target: scanJob.targetDomain,
-      status: scanJob.status,
-      startedAt: scanJob.startedAt?.toISOString() ?? scanJob.createdAt.toISOString(),
+  console.log(`trace=${traceId} route=scans_create auth=yes scan_id=${scanJob.scanId} target=${scanJob.targetDomain} status=200`);
+  return NextResponse.json(
+    {
+      ok: true,
+      scan: {
+        id: scanJob.scanId,
+        target: scanJob.targetDomain,
+        status: scanJob.status,
+        startedAt: scanJob.startedAt?.toISOString() ?? scanJob.createdAt.toISOString(),
+      },
     },
-  });
+    { headers: traceHeaders }
+  );
 }
