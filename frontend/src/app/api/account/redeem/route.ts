@@ -35,8 +35,24 @@ export async function POST(request: Request) {
     const userEmail = String(authUser.email ?? currentRecord.email ?? "").trim().toLowerCase();
     const userAuthId = authUser.id;
 
-    // 1. Tra cứu mã trong Database
-    const redeemCode = await prisma.redeemCode.findUnique({ where: { code } });
+    // 1. Tra cứu mã trong Database với chuẩn hóa linh hoạt (casing, spaces, PROMAX vs PRO_MAX, hyphens)
+    const candidateCodes = Array.from(
+      new Set([
+        code,
+        code.replace(/\s+/g, ""),
+        code.replace(/_/g, ""),
+        code.replace(/-/g, ""),
+        code.replace(/PRO_MAX/g, "PROMAX"),
+        code.replace(/PROMAX/g, "PRO_MAX"),
+        code.replace(/_/g, "-"),
+      ])
+    ).filter((c) => c && c.length >= 3);
+
+    const redeemCode = await prisma.redeemCode.findFirst({
+      where: {
+        code: { in: candidateCodes },
+      },
+    });
     if (!redeemCode) {
       return NextResponse.json(
         { error: "Mã kích hoạt không tồn tại trên hệ thống.", code: "INVALID_CODE" },

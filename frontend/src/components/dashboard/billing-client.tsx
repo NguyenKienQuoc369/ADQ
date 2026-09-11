@@ -43,17 +43,30 @@ export function BillingClient() {
     setSubmitting(true);
     setMessage(null);
     try {
-      const nextUser = await redeemCode(values.code.trim().toUpperCase());
-      updateUser(nextUser);
+      const res = await redeemCode(values.code.trim().toUpperCase());
+      updateUser(res.user);
       setMessage({
         type: "success",
-        text: `Kích hoạt thành công! Tài khoản của bạn đã được nâng cấp lên gói ${nextUser.packageTier.replace("_", " ")}.`,
+        text: res.message || `Kích hoạt thành công! Gói cước của bạn là ${res.user.packageTier.replace("_", " ")}.`,
       });
       form.reset();
-    } catch (err) {
+    } catch (err: any) {
+      let errorText = err?.message || "Mã kích hoạt không hợp lệ.";
+      const code = err?.code;
+      if (code === "INVALID_CODE") {
+        errorText = "Mã kích hoạt không tồn tại trên hệ thống.";
+      } else if (code === "EXPIRED_CODE") {
+        errorText = "Mã kích hoạt đã hết hạn sử dụng.";
+      } else if (code === "REVOKED") {
+        errorText = "Mã kích hoạt này đã bị vô hiệu hóa.";
+      } else if (code === "ALREADY_USED") {
+        errorText = "Mã kích hoạt đã được sử dụng hết số lượt.";
+      } else if (code === "UNAUTHORIZED") {
+        errorText = "Vui lòng đăng nhập lại để thực hiện kích hoạt.";
+      }
       setMessage({
         type: "error",
-        text: err instanceof Error ? err.message : "Mã kích hoạt không hợp lệ hoặc đã được sử dụng.",
+        text: errorText,
       });
     } finally {
       setSubmitting(false);

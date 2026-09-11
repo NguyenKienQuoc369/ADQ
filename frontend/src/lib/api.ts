@@ -704,7 +704,15 @@ export async function getPackagePlans(): Promise<PackagePlan[]> {
   ];
 }
 
-export async function redeemCode(code: string): Promise<User> {
+export interface RedeemResponse {
+  ok: boolean;
+  message?: string;
+  recovered?: boolean;
+  alreadyActive?: boolean;
+  user: User;
+}
+
+export async function redeemCode(code: string): Promise<RedeemResponse> {
   let authHeader: Record<string, string> = {};
   if (typeof window !== "undefined") {
     try {
@@ -725,11 +733,20 @@ export async function redeemCode(code: string): Promise<User> {
     body: JSON.stringify({ code }),
   });
 
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data?.error || "Mã kích hoạt không hợp lệ hoặc đã hết hạn.");
+    const errorMsg = data?.error || (res.status === 404 ? "Mã kích hoạt không tồn tại trên hệ thống." : "Không thể kích hoạt mã lúc này.");
+    const err = new Error(errorMsg) as any;
+    err.code = data?.code || (res.status === 404 ? "INVALID_CODE" : "SERVER_ERROR");
+    throw err;
   }
-  return data.user;
+  return {
+    ok: true,
+    user: data.user,
+    message: data.message || `Kích hoạt thành công gói ${data.user?.packageTier || ""}`,
+    recovered: data.recovered,
+    alreadyActive: data.alreadyActive,
+  };
 }
 
 export async function getSystemStats(): Promise<SystemStats> {
