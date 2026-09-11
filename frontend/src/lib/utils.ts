@@ -29,6 +29,7 @@ export function getSeverityColor(severity: string) {
   }
 }
 
+
 export function getPackageGlow(packageName: string) {
   switch (packageName) {
     case "PRO_MAX":

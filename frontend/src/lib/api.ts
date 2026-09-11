@@ -9,7 +9,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   process.env.NEXT_PUBLIC_API_BASE_URL ??
-  "http://localhost:8000";
+  (typeof window !== "undefined" ? window.location.origin : "");
 
 const APP_VERSION = "2.0.0";
 
@@ -27,6 +27,77 @@ export type AccountStatus = "ACTIVE" | "PENDING" | "LOCKED";
 export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
 export type FlagLikelihood = "HIGH" | "MEDIUM" | "LOW";
 export type ScanTool = "Subfinder" | "DNSX" | "Naabu" | "Katana" | "GAU" | "Nuclei";
+export type ControlStatus = "PASS" | "FAIL" | "NOT_TESTED" | "INCONCLUSIVE";
+
+export interface EvaluatedSecurityControl {
+  id: string;
+  code: string;
+  title: string;
+  title_vi: string;
+  category: string;
+  stage_id: string;
+  stage_name: string;
+  description: string;
+  description_vi: string;
+  severity_if_failed: Severity;
+  owasp_category: string;
+  cwe_ids: string[];
+  minimum_tier: PackageTier;
+  remediation_guide: string;
+  remediation_code_snippet?: string | null;
+  status: ControlStatus;
+  reason: string;
+  findings_count: number;
+  findings: any[];
+  evidence?: any;
+  tested_at?: number;
+}
+
+export interface StageSummary {
+  stage_id: string;
+  name: string;
+  name_vi: string;
+  description: string;
+  state: "COMPLETED" | "IN_PROGRESS" | "FAILED" | "PENDING" | "SKIPPED" | "NOT_TESTED";
+  progress_pct: number;
+  total_controls: number;
+  pass_count: number;
+  fail_count: number;
+  inconclusive_count: number;
+  not_tested_count: number;
+}
+
+export interface CoverageSummary {
+  total_controls: number;
+  tested_controls: number;
+  passed_controls: number;
+  failed_controls: number;
+  inconclusive_controls: number;
+  not_tested_controls: number;
+  coverage_percentage: number;
+  assurance_score: number;
+  honest_coverage_statement: string;
+}
+
+export interface ScopeLimitation {
+  id: string;
+  title: string;
+  title_vi: string;
+  description: string;
+  description_vi: string;
+}
+
+export interface AssuranceMatrix {
+  engine_version: string;
+  evaluated_at: number;
+  scan_status: string;
+  target: string;
+  user_tier: PackageTier;
+  coverage_summary: CoverageSummary;
+  stages_summary: StageSummary[];
+  controls: EvaluatedSecurityControl[];
+  scope_limitations: ScopeLimitation[];
+}
 
 export interface User {
   id: string;
@@ -382,6 +453,81 @@ export async function getScanJobStatus(jobId: string): Promise<any> {
   return requestJson<any>(`/api/scan/${encodeURIComponent(jobId)}`);
 }
 
+export async function getScanAssurance(
+  jobId: string
+): Promise<{ ok: boolean; job_id: string; assurance: AssuranceMatrix }> {
+  return requestJson<{ ok: boolean; job_id: string; assurance: AssuranceMatrix }>(
+    `/api/scan/${encodeURIComponent(jobId)}/assurance`
+  );
+}
+
+export async function streamScanJob(
+  jobId: string,
+  onData: (chunk: any) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const backendUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  const url = `${backendUrl}/api/scan/${encodeURIComponent(jobId)}/stream`;
+
+  let authHeader: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        authHeader["Authorization"] = `Bearer ${data.session.access_token}`;
+      }
+    } catch {}
+  }
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "text/event-stream",
+      ...authHeader,
+    },
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    let errorMsg = `Scan stream failed with status ${response.status}`;
+    try {
+      const errJson = await response.json();
+      if (errJson?.detail) errorMsg = errJson.detail;
+    } catch {}
+    throw new Error(errorMsg);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("data: ")) {
+        try {
+          const parsed = JSON.parse(trimmed.slice(6));
+          onData(parsed);
+        } catch {}
+      } else {
+        try {
+          const parsed = JSON.parse(trimmed);
+          onData(parsed);
+        } catch {}
+      }
+    }
+  }
+}
+
 export async function getScanEndpoints(
   jobId: string
 ): Promise<{
@@ -720,18 +866,26 @@ export async function discoverEndpoints(targetUrl: string) {
   });
 }
 
-export async function startStressVerification(targetUrl: string) {
-  return requestJson<{ ok: boolean; target: string; verification_token: string; meta_tag: string; expires_in: number; verified: boolean }>("/api/stress/verification/start", {
+export async function startTargetVerification(targetUrl: string) {
+  return requestJson<{ ok: boolean; target: string; verification_token: string; meta_tag: string; expires_in: number; verified: boolean }>("/api/verification/start", {
     method: "POST",
     body: JSON.stringify({ target_url: targetUrl }),
   });
 }
 
-export async function checkStressVerification(targetUrl: string) {
-  return requestJson<{ ok: boolean; verified: boolean; target: string; message: string; verified_at?: number }>("/api/stress/verification/check", {
+export async function checkTargetVerification(targetUrl: string) {
+  return requestJson<{ ok: boolean; verified: boolean; target: string; message: string; verified_at?: number }>("/api/verification/check", {
     method: "POST",
     body: JSON.stringify({ target_url: targetUrl }),
   });
+}
+
+export async function startStressVerification(targetUrl: string) {
+  return startTargetVerification(targetUrl);
+}
+
+export async function checkStressVerification(targetUrl: string) {
+  return checkTargetVerification(targetUrl);
 }
 
 export async function verifyBypass(payload: { target_url: string; bypass_code: string; waf_type: string }) {

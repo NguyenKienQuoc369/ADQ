@@ -1,0 +1,28 @@
+{
+  "benchmark_suite_version": "2.0.0",
+  "runs_per_target": 3,
+  "targets": {
+    "owasp_juice_shop": {
+      "name": "OWASP Juice Shop",
+      "image": "bkimminich/juice-shop:v17.1.1",
+      "pinned_tag": "v17.1.1",
+      "container_name": "adq_benchmark_juice_shop",
+      "local_port": 3000,
+      "base_url": "http://127.0.0.1:3000",
+      "healthcheck_endpoint": "/rest/admin/application-version",
+      "ground_truth_file": "benchmark/ground_truth/owasp_juice_shop_v17.json",
+      "type": "spa_rest_api"
+    },
+    "dvwa": {
+      "name": "Damn Vulnerable Web Application (DVWA)",
+      "image": "vulnerables/web-dvwa:1.9",
+      "pinned_tag": "1.9",
+      "container_name": "adq_benchmark_dvwa",
+      "local_port": 8081,
+      "base_url": "http://127.0.0.1:8081",
+      "healthcheck_endpoint": "/login.php",
+      "ground_truth_file": "benchmark/ground_truth/dvwa_v1.9.json",
+      "type": "classic_php_monolith"
+    }
+  }
+}

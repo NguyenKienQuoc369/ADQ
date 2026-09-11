@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-09-09T19:59:13.842290+00:00",
+  "target_key": "dvwa",
+  "env_info": {
+    "target": "Damn Vulnerable Web Application (DVWA)",
+    "version": "1.9",
+    "base_url": "http://127.0.0.1:8081",
+    "container_id": "7e443dbed8e4800d91487641bde62133623db4b40bbb423bbc22f0a9dab0872e",
+    "port": 8081
+  },
+  "adq_commit": "a0b3618",
+  "scanner_profile": "PROFILE_A_UNAUTHENTICATED_BLACKBOX"
+}

@@ -401,6 +401,21 @@ def normalize_target(raw_target):
         raise ValueError("Target không hợp lệ. Vui lòng nhập domain hoặc IP (không kèm path).")
     return cleaned
 
+def select_ffuf_target_url(live_file, default_target_url="", raw_target=""):
+    """Xác định canonical base URL cho FFUF từ live_sites.txt hoặc fallback từ raw_target / default_target_url."""
+    if live_file and os.path.exists(live_file):
+        with open(live_file, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                url = line.strip()
+                if url.startswith(("http://", "https://")):
+                    return url.rstrip("/")
+    fallback = (raw_target or default_target_url or "").strip().rstrip("/")
+    if fallback.startswith(("http://", "https://")):
+        return fallback
+    return f"https://{fallback.lstrip('/')}"
+
+build_ffuf_target_url = select_ffuf_target_url
+
 def sanitize_folder_name(target):
     """
     Sanitize folder name từ target domain.
@@ -1341,9 +1356,11 @@ def main():
     log("⏳ [*] Dò tìm thư mục bằng FFuf...", Colors.C)
     ffuf_out = f"{folder}/ffuf_main.txt"
     if os.path.exists(args.wordlist) and tool_available("ffuf"):
+        ffuf_base = select_ffuf_target_url(live_file, default_target_url=f"https://{target}", raw_target=args.target)
+        ffuf_url = f"{ffuf_base}/FUZZ"
         run_command(
             "FFuf",
-            ["ffuf", "-u", f"https://{target}/FUZZ", "-w", args.wordlist, "-mc", "200", "-t", str(args.ffuf_threads), "-v"],
+            ["ffuf", "-u", ffuf_url, "-w", args.wordlist, "-mc", "200", "-t", str(args.ffuf_threads), "-v"],
             ffuf_out,
             timeout=args.timeout,
             retries=args.retries,

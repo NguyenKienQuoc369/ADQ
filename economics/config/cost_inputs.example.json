@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "version": "1.1.0",
+    "description": "Configurable infrastructure, resource, and API cost input template for ADQ unit economics analysis. All unmeasured/environment-specific monetary fields default to null.",
+    "updated_at": "2026-09-11T15:30:00Z"
+  },
+  "currency_and_fx": {
+    "base_currency": "VND",
+    "fx_rate_usd_to_vnd": null
+  },
+  "fixed_infrastructure_monthly_vnd": {
+    "vps_compute_worker": null,
+    "managed_postgresql_db": null,
+    "managed_redis_queue": null,
+    "domain_dns_ssl": null,
+    "static_ip_and_monitoring": null,
+    "storage_and_backups": null
+  },
+  "variable_resource_unit_costs_vnd": {
+    "vps_vcpu_hour": null,
+    "vps_memory_gb_hour": null,
+    "network_egress_per_gb": null,
+    "network_ingress_per_gb": null
+  },
+  "ai_api_token_pricing_vnd": {
+    "ai_provider": "google_gemini",
+    "model_name": "gemini-1.5-flash",
+    "ai_input_cost_per_million_tokens_vnd": null,
+    "ai_output_cost_per_million_tokens_vnd": null
+  },
+  "subscription_model_listed_pricing": {
+    "FREE": {
+      "listed_price_vnd": 0,
+      "billing_cycle": "lifetime",
+      "classification": "SOURCE_CONFIG"
+    },
+    "PRO": {
+      "listed_price_vnd": 199000,
+      "billing_cycle": "monthly",
+      "classification": "SOURCE_CONFIG"
+    },
+    "PRO_MAX": {
+      "listed_price_vnd": 499000,
+      "billing_cycle": "monthly",
+      "classification": "SOURCE_CONFIG"
+    }
+  }
+}

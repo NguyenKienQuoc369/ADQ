@@ -1,0 +1,73 @@
+{
+  "manifest_version": "2.0.0",
+  "target_name": "Damn Vulnerable Web Application (DVWA)",
+  "target_version": "1.9",
+  "profile": "PROFILE_A_UNAUTHENTICATED_BLACKBOX",
+  "base_url": "http://127.0.0.1:8081",
+  "coverage_scope": "Blackbox DAST Profile A (Unauthenticated Reachable)",
+  "entries": [
+    {
+      "id": "DVWA-MISCONFIG-01",
+      "expected": "POSITIVE",
+      "category": "Security Misconfiguration",
+      "endpoint": "/",
+      "parameter": null,
+      "method": "GET",
+      "cwe": "CWE-693",
+      "cve": null,
+      "severity_reference": "LOW",
+      "scope_class": "UNAUTHENTICATED_REACHABLE",
+      "notes": "Missing X-Frame-Options, Content-Security-Policy, and X-Content-Type-Options"
+    },
+    {
+      "id": "DVWA-PORT-01",
+      "expected": "POSITIVE",
+      "category": "Open Service",
+      "host": "127.0.0.1",
+      "port": 8081,
+      "severity_reference": "INFO",
+      "scope_class": "UNAUTHENTICATED_REACHABLE",
+      "notes": "Primary Apache HTTP application listener"
+    },
+    {
+      "id": "DVWA-NEG-01",
+      "expected": "NEGATIVE",
+      "category": "SQL Injection",
+      "endpoint": "/about.php",
+      "parameter": null,
+      "method": "GET",
+      "source_of_ground_truth": "DVWA v1.9 Static Code Analysis (about.php)",
+      "notes": "Negative Control: Static about page does not query database"
+    },
+    {
+      "id": "DVWA-NEG-02",
+      "expected": "NEGATIVE",
+      "category": "Cross-Site Scripting",
+      "endpoint": "/instructions.php",
+      "parameter": null,
+      "method": "GET",
+      "source_of_ground_truth": "DVWA v1.9 Static Code Analysis (instructions.php)",
+      "notes": "Negative Control: Static documentation page has no user reflection"
+    },
+    {
+      "id": "DVWA-NEG-03",
+      "expected": "NEGATIVE",
+      "category": "Exposed Secrets",
+      "endpoint": "/dvwa/images/logo.png",
+      "parameter": null,
+      "resource": "logo.png",
+      "source_of_ground_truth": "DVWA v1.9 Binary Asset Analysis",
+      "notes": "Negative Control: PNG logo image contains no embedded secrets"
+    },
+    {
+      "id": "DVWA-NEG-04",
+      "expected": "NEGATIVE",
+      "category": "Open Service",
+      "host": "127.0.0.1",
+      "port": 5432,
+      "source_of_ground_truth": "Service Architecture: MySQL internal only",
+      "notes": "Negative Control: PostgreSQL port 5432 is not running"
+    }
+  ]
+}
+

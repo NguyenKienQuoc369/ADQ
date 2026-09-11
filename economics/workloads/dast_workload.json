@@ -1,0 +1,44 @@
+{
+  "workload_id": "dast_profile_a_juice_shop",
+  "name": "DAST Security Scan - Profile A (Juice Shop Benchmark Target)",
+  "target": {
+    "image": "bkimminich/juice-shop:v17.1.1",
+    "port": 3000,
+    "environment": "local_docker"
+  },
+  "pipeline_phases": [
+    "phase_1_recon",
+    "phase_2_web_mapping_ffuf",
+    "phase_3_nuclei_vulnerability_scan",
+    "phase_4_active_dast_zap",
+    "phase_5_deep_logic_param_fuzzing",
+    "phase_6_ai_risk_assessment"
+  ],
+  "hypothetical_resource_envelopes": {
+    "classification": "ASSUMPTION",
+    "duration_seconds_range": [30.0, 120.0],
+    "cpu_time_seconds_range": [15.0, 60.0],
+    "peak_rss_mb_range": [250.0, 750.0],
+    "network_egress_mb_range": [5.0, 35.0],
+    "network_ingress_mb_range": [10.0, 60.0],
+    "ai_prompt_tokens_per_scan_range": [1500, 6000],
+    "ai_candidate_tokens_per_scan_range": [300, 1500]
+  },
+  "tier_applicability": {
+    "FREE": {
+      "ai_risk_assessment_enabled": false,
+      "lifetime_limit": 2,
+      "classification": "SOURCE_CONFIG"
+    },
+    "PRO": {
+      "ai_risk_assessment_enabled": true,
+      "lifetime_limit": "UNBOUNDED_BY_PRODUCT_QUOTA",
+      "classification": "SOURCE_CONFIG"
+    },
+    "PRO_MAX": {
+      "ai_risk_assessment_enabled": true,
+      "lifetime_limit": "UNBOUNDED_BY_PRODUCT_QUOTA",
+      "classification": "SOURCE_CONFIG"
+    }
+  }
+}

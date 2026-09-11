@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-09-09T19:31:28.568433+00:00",
+  "target_key": "dvwa",
+  "target_info": {
+    "name": "Damn Vulnerable Web Application (DVWA)",
+    "image": "vulnerables/web-dvwa:1.9",
+    "pinned_tag": "1.9",
+    "container_name": "adq_benchmark_dvwa",
+    "local_port": 8081,
+    "base_url": "http://127.0.0.1:8081",
+    "healthcheck_endpoint": "/login.php",
+    "ground_truth_file": "benchmark/ground_truth/dvwa_v1.9.json",
+    "type": "classic_php_monolith"
+  },
+  "env_info": {
+    "target": "Damn Vulnerable Web Application (DVWA)",
+    "version": "1.9",
+    "base_url": "http://127.0.0.1:8081",
+    "container_id": "47ca62eaf1f7df80aa0353bccc54c3fcfa12f46e0abf99e52ce2cd19c7dd3e07",
+    "port": 8081
+  },
+  "adq_commit": "a0b3618",
+  "scanner_profile": "ADQ_STANDARD_FULL_DAST"
+}

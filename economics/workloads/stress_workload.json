@@ -1,0 +1,42 @@
+{
+  "workload_id": "l7_stress_tiered_profiles",
+  "name": "Layer 7 HTTP Load & Stress Testing Workloads",
+  "profiles": {
+    "PRO": {
+      "tier": "PRO",
+      "target_rps": 100,
+      "duration_seconds": 30,
+      "max_requests": 2000,
+      "daily_quota": 1,
+      "monthly_ceiling_30d_convention": 30,
+      "quota_classification": "SOURCE_CONFIG",
+      "hypothetical_resource_assumptions": {
+        "classification": "ASSUMPTION",
+        "assumed_network_egress_mb": 1.5,
+        "assumed_cpu_time_seconds": 3.0,
+        "assumed_peak_rss_mb": 80.0
+      }
+    },
+    "PRO_MAX": {
+      "tier": "PRO_MAX",
+      "target_rps": 250,
+      "duration_seconds": 60,
+      "max_requests": 5000,
+      "daily_quota": 10,
+      "monthly_ceiling_30d_convention": 300,
+      "quota_classification": "SOURCE_CONFIG",
+      "hypothetical_resource_assumptions": {
+        "classification": "ASSUMPTION",
+        "assumed_network_egress_mb": 4.0,
+        "assumed_cpu_time_seconds": 7.5,
+        "assumed_peak_rss_mb": 120.0
+      }
+    }
+  },
+  "safety_and_enforcement": {
+    "ownership_verification_required": true,
+    "ssrf_private_ip_blocking": true,
+    "concurrency_limit_per_worker": 1,
+    "classification": "SOURCE_CONFIG"
+  }
+}

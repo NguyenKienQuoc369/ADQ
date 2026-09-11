@@ -1,0 +1,12 @@
+Target,Metric,Value
+Damn Vulnerable Web Application (DVWA),total_positive_ground_truth,8
+Damn Vulnerable Web Application (DVWA),total_negative_ground_truth,4
+Damn Vulnerable Web Application (DVWA),true_positives,2
+Damn Vulnerable Web Application (DVWA),false_positives,0
+Damn Vulnerable Web Application (DVWA),false_negatives,6
+Damn Vulnerable Web Application (DVWA),unknown_unscorable,62
+Damn Vulnerable Web Application (DVWA),duplicate_positives,3
+Damn Vulnerable Web Application (DVWA),precision,1.0
+Damn Vulnerable Web Application (DVWA),recall,0.25
+Damn Vulnerable Web Application (DVWA),f1_score,0.4
+Damn Vulnerable Web Application (DVWA),severity_concordance_rate,0.5

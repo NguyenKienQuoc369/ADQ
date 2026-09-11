@@ -1,0 +1,5 @@
+category,unique_count,benchmark_classification,likely_reason_unknown
+nuclei,57,OUTSIDE_GROUND_TRUTH_COVERAGE,Informational/tech-detect/CVE discovery not included in target ground truth manifest
+Security Misconfiguration,26,DUPLICATE_VARIANT,Header and cookie configuration alerts on secondary URLs (e.g. /robots.txt /metrics /login.php)
+ffuf,2,UNSUPPORTED_CATEGORY,Tool execution banners and raw matcher lines outside vulnerability finding schema
+

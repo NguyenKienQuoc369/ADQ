@@ -1,3 +1,25 @@
+adq.io.vn {
+    handle /api/* {
+        reverse_proxy api-server:8000
+    }
+    handle {
+        reverse_proxy web-dashboard:3000
+    }
+}
+
+www.adq.io.vn {
+    redir https://adq.io.vn{uri} permanent
+}
+
 api.adq.io.vn {
     reverse_proxy api-server:8000
+}
+
+:80 {
+    handle /api/* {
+        reverse_proxy api-server:8000
+    }
+    handle {
+        reverse_proxy web-dashboard:3000
+    }
 }

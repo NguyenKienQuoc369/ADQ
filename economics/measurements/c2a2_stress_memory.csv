@@ -1,0 +1,109 @@
+run_id,tier,pid,ppid,command,rss_bytes,rss_mb,is_stress_generator,is_child_of_generator
+c2a2_stress_pro_run_01,PRO,110981,110777,"/home/sisiniki123/ADQ/.venv/bin/python -c 
+import sys, os, time
+sys.path.insert(0, '/home/sisiniki123/ADQ/backend')
+sys.path.insert(0, '/home/sisiniki123/ADQ')
+os.environ['ADQ_ALLOW_PRIVATE_TARGETS'] = '1'
+
+from core.stress_test.stress_orchestrator import StressOrchestrator
+
+orchestrator = StressOrchestrator()
+res = orchestrator.execute_stress_test(
+    target_url='http://127.0.0.1:3004',
+    target_rps=100,
+    duration_sec=30,
+    total_reqs=2000
+)
+print('COMPLETED_REQS:', res.get('metrics', dict()).get('total_requests', 0))
+print('STATUS_200:', res.get('metrics', dict()).get('status_200', 0))
+",11309056,10.79,True,False
+c2a2_stress_pro_run_02,PRO,111143,110777,"/home/sisiniki123/ADQ/.venv/bin/python -c 
+import sys, os, time
+sys.path.insert(0, '/home/sisiniki123/ADQ/backend')
+sys.path.insert(0, '/home/sisiniki123/ADQ')
+os.environ['ADQ_ALLOW_PRIVATE_TARGETS'] = '1'
+
+from core.stress_test.stress_orchestrator import StressOrchestrator
+
+orchestrator = StressOrchestrator()
+res = orchestrator.execute_stress_test(
+    target_url='http://127.0.0.1:3004',
+    target_rps=100,
+    duration_sec=30,
+    total_reqs=2000
+)
+print('COMPLETED_REQS:', res.get('metrics', dict()).get('total_requests', 0))
+print('STATUS_200:', res.get('metrics', dict()).get('status_200', 0))
+",11071488,10.56,True,False
+c2a2_stress_pro_run_03,PRO,111312,110777,"/home/sisiniki123/ADQ/.venv/bin/python -c 
+import sys, os, time
+sys.path.insert(0, '/home/sisiniki123/ADQ/backend')
+sys.path.insert(0, '/home/sisiniki123/ADQ')
+os.environ['ADQ_ALLOW_PRIVATE_TARGETS'] = '1'
+
+from core.stress_test.stress_orchestrator import StressOrchestrator
+
+orchestrator = StressOrchestrator()
+res = orchestrator.execute_stress_test(
+    target_url='http://127.0.0.1:3004',
+    target_rps=100,
+    duration_sec=30,
+    total_reqs=2000
+)
+print('COMPLETED_REQS:', res.get('metrics', dict()).get('total_requests', 0))
+print('STATUS_200:', res.get('metrics', dict()).get('status_200', 0))
+",11063296,10.55,True,False
+c2a2_stress_promax_run_01,PRO_MAX,111430,110777,"/home/sisiniki123/ADQ/.venv/bin/python -c 
+import sys, os, time
+sys.path.insert(0, '/home/sisiniki123/ADQ/backend')
+sys.path.insert(0, '/home/sisiniki123/ADQ')
+os.environ['ADQ_ALLOW_PRIVATE_TARGETS'] = '1'
+
+from core.stress_test.stress_orchestrator import StressOrchestrator
+
+orchestrator = StressOrchestrator()
+res = orchestrator.execute_stress_test(
+    target_url='http://127.0.0.1:3004',
+    target_rps=250,
+    duration_sec=60,
+    total_reqs=5000
+)
+print('COMPLETED_REQS:', res.get('metrics', dict()).get('total_requests', 0))
+print('STATUS_200:', res.get('metrics', dict()).get('status_200', 0))
+",10444800,9.96,True,False
+c2a2_stress_promax_run_02,PRO_MAX,111673,110777,"/home/sisiniki123/ADQ/.venv/bin/python -c 
+import sys, os, time
+sys.path.insert(0, '/home/sisiniki123/ADQ/backend')
+sys.path.insert(0, '/home/sisiniki123/ADQ')
+os.environ['ADQ_ALLOW_PRIVATE_TARGETS'] = '1'
+
+from core.stress_test.stress_orchestrator import StressOrchestrator
+
+orchestrator = StressOrchestrator()
+res = orchestrator.execute_stress_test(
+    target_url='http://127.0.0.1:3004',
+    target_rps=250,
+    duration_sec=60,
+    total_reqs=5000
+)
+print('COMPLETED_REQS:', res.get('metrics', dict()).get('total_requests', 0))
+print('STATUS_200:', res.get('metrics', dict()).get('status_200', 0))
+",11051008,10.54,True,False
+c2a2_stress_promax_run_03,PRO_MAX,111870,110777,"/home/sisiniki123/ADQ/.venv/bin/python -c 
+import sys, os, time
+sys.path.insert(0, '/home/sisiniki123/ADQ/backend')
+sys.path.insert(0, '/home/sisiniki123/ADQ')
+os.environ['ADQ_ALLOW_PRIVATE_TARGETS'] = '1'
+
+from core.stress_test.stress_orchestrator import StressOrchestrator
+
+orchestrator = StressOrchestrator()
+res = orchestrator.execute_stress_test(
+    target_url='http://127.0.0.1:3004',
+    target_rps=250,
+    duration_sec=60,
+    total_reqs=5000
+)
+print('COMPLETED_REQS:', res.get('metrics', dict()).get('total_requests', 0))
+print('STATUS_200:', res.get('metrics', dict()).get('status_200', 0))
+",11067392,10.55,True,False

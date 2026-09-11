@@ -370,7 +370,61 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         print(f"[{worker_id}] Invalid job data missing target: {job_data}", flush=True)
         return
 
-    cmd = [sys.executable, "quoc_omni.py", target]
+    # ------------------------------------------------------------------
+    # Worker Security Gate (Defense-in-depth): SSRF & Ownership Recheck
+    # ------------------------------------------------------------------
+    try:
+        from backend.core.security.ssrf_guard import resolve_and_validate_target
+        from backend.services.scan_service import ScanService
+        from backend.core.engine.db import update_scan_status
+    except ImportError:
+        from core.security.ssrf_guard import resolve_and_validate_target
+        from services.scan_service import ScanService
+        from core.engine.db import update_scan_status
+
+    try:
+        origin, _ = resolve_and_validate_target(target)
+    except Exception as exc:
+        print(f"[{worker_id}] SSRF security block for job {job_id} target '{target}': {exc}", flush=True)
+        err_msg = f"SSRF_SECURITY_BLOCK: Mục tiêu không hợp lệ hoặc nằm trong dải mạng bị hạn chế ({exc})"
+        failed_result = {
+            "status": "failed",
+            "worker_id": worker_id,
+            "target": target,
+            "completed_at": time.time(),
+            "error": err_msg,
+            "stderr_tail": err_msg,
+        }
+        if redis_client:
+            redis_client.set(f"job_result:{job_id}", json.dumps(failed_result))
+        try:
+            update_scan_status(job_id, "FAILED")
+        except Exception:
+            pass
+        return
+
+    user_id = str(job_data.get("user_id") or "anonymous")
+    user_mock = {"id": user_id, "sub": user_id}
+    if not ScanService.is_target_verified(user_mock, origin):
+        print(f"[{worker_id}] Ownership verification expired/missing for job {job_id} target '{origin}' (user {user_id})", flush=True)
+        err_msg = "OWNERSHIP_VERIFICATION_EXPIRED: Mục tiêu chưa được xác minh hoặc quyền sở hữu qua Meta Tag đã hết hạn trước khi worker thực thi."
+        failed_result = {
+            "status": "failed",
+            "worker_id": worker_id,
+            "target": origin,
+            "completed_at": time.time(),
+            "error": err_msg,
+            "stderr_tail": err_msg,
+        }
+        if redis_client:
+            redis_client.set(f"job_result:{job_id}", json.dumps(failed_result))
+        try:
+            update_scan_status(job_id, "FAILED")
+        except Exception:
+            pass
+        return
+
+    cmd = [sys.executable, "quoc_omni.py", origin]
 
     if req_data.get("logic_scan"):
         cmd.append("--logic-scan")
@@ -455,10 +509,15 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
         running_status["stage_message"] = str(event.get("message") or "")
         running_status["updated_at"] = time.time()
 
+        payload_json = json.dumps(running_status, ensure_ascii=False)
         redis_client.set(
             result_key,
-            json.dumps(running_status, ensure_ascii=False),
+            payload_json,
         )
+        try:
+            redis_client.publish(f"scan_events:{job_id}", payload_json)
+        except Exception:
+            pass
 
     # Mỗi scan vẫn chạy trong process group riêng để watchdog
     # dừng được toàn bộ cây quoc_omni + nuclei/ffuf/katana/...
@@ -765,7 +824,12 @@ def execute_job(job_id: str, job_data: Dict[str, Any], redis_client: redis.Redis
     }
     # Hợp nhất toàn bộ dữ liệu quét (subdomains, vulnerabilities, action_advice) vào Redis
     completed_result.update(scan_tree_data)
-    redis_client.set(f"job_result:{job_id}", json.dumps(completed_result))
+    final_payload_json = json.dumps(completed_result, ensure_ascii=False, default=str)
+    redis_client.set(f"job_result:{job_id}", final_payload_json)
+    try:
+        redis_client.publish(f"scan_events:{job_id}", final_payload_json)
+    except Exception:
+        pass
 
     try:
         try:

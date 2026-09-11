@@ -1,0 +1,120 @@
+{
+  "meta": {
+    "phase": "C2A.1_LOCAL_MEASUREMENT_INTEGRITY_AUDIT",
+    "classification": "LOCAL_EMPIRICAL",
+    "warning": "LOCAL_EMPIRICAL != VPS_EMPIRICAL. No monetary costs derived.",
+    "measured_at": "2026-09-11T09:32:44.390620+00:00",
+    "hardware_context": {
+      "cpu_model": "Intel(R) Core(TM) Ultra 9 285H",
+      "logical_cpus": 16,
+      "total_ram_mb": 31446.07,
+      "kernel": "6.12.104-1-MANJARO",
+      "docker_version": "29.7.2",
+      "adq_head": "a0b36183cb53d8991708bf92eb35dc138053f37c"
+    }
+  },
+  "workloads": {
+    "DAST_PROFILE_A": {
+      "runs_completed": 3,
+      "metrics": {
+        "runtime": {
+          "min": 166.2,
+          "median": 200.552,
+          "max": 213.522
+        },
+        "cpu": {
+          "min": 71.912,
+          "median": 75.628,
+          "max": 84.73
+        },
+        "peak_ram": {
+          "min": 1157.46,
+          "median": 1190.07,
+          "max": 1205.16
+        },
+        "tx_bytes": {
+          "min": 13799009.0,
+          "median": 13800000.0,
+          "max": 13900000.0
+        },
+        "rx_bytes": {
+          "min": 42299315.0,
+          "median": 42300000.0,
+          "max": 42400000.0
+        },
+        "artifact_bytes": {
+          "min": 1728341.0,
+          "median": 1728341.0,
+          "max": 1728341.0
+        }
+      }
+    },
+    "L7_STRESS_PRO": {
+      "runs_completed": 3,
+      "metrics": {
+        "runtime": {
+          "min": 30.64,
+          "median": 30.654,
+          "max": 30.681
+        },
+        "cpu": {
+          "min": 2.983,
+          "median": 3.048,
+          "max": 3.15
+        },
+        "peak_ram": {
+          "min": 1080.39,
+          "median": 1080.39,
+          "max": 1080.39
+        },
+        "tx_bytes": {
+          "min": 1440000.0,
+          "median": 1449017.0,
+          "max": 1450000.0
+        },
+        "rx_bytes": {
+          "min": 4099442.0,
+          "median": 4100000.0,
+          "max": 4100001.0
+        }
+      }
+    },
+    "L7_STRESS_PRO_MAX": {
+      "runs_completed": 3,
+      "metrics": {
+        "runtime": {
+          "min": 60.799,
+          "median": 60.886,
+          "max": 60.926
+        },
+        "cpu": {
+          "min": 6.748,
+          "median": 7.471,
+          "max": 7.812
+        },
+        "peak_ram": {
+          "min": 1080.39,
+          "median": 1080.39,
+          "max": 1080.39
+        },
+        "tx_bytes": {
+          "min": 3588940.0,
+          "median": 3590000.0,
+          "max": 3620000.0
+        },
+        "rx_bytes": {
+          "min": 10199315.0,
+          "median": 10200000.0,
+          "max": 10200000.0
+        }
+      }
+    }
+  },
+  "telemetry_audit": {
+    "ai_usage_metadata_supported": true,
+    "ai_usage_metadata_currently_captured": "PARTIAL (In-memory token count in copilot_engine; unpersisted in DB)",
+    "monetary_cost_calculated": false,
+    "gross_margin_calculated": false,
+    "break_even_calculated": false
+  }
+}

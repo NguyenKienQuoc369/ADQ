@@ -12,6 +12,7 @@ services:
       - caddy_config:/config
     depends_on:
       - api-server
+      - web-dashboard
     networks:
       - adq_net
 
@@ -23,8 +24,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: adq_secure_password
       POSTGRES_DB: adq_db
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -34,8 +33,6 @@ services:
     image: redis:7-alpine
     container_name: adq_redis
     restart: always
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -48,8 +45,6 @@ services:
     container_name: adq_oast
     restart: always
     command: python3 runtime_services.py --role oast --host 0.0.0.0 --port 8888
-    ports:
-      - "8888:8888"
     networks:
       - adq_net
 
@@ -74,8 +69,6 @@ services:
     container_name: adq_api
     restart: always
     command: uvicorn api_server:app --host 0.0.0.0 --port 8000
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     volumes:
@@ -132,25 +125,6 @@ services:
     networks:
       - adq_net
 
-  worker-mobile:
-    build:
-      context: .
-      dockerfile: Dockerfile.mobile-worker
-    container_name: adq_worker_mobile
-    restart: always
-    command: python -m backend.workers.apk_worker
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - APK_SPOOL_ROOT=/tmp/adq_apk_spool
-    env_file:
-      - .env
-    volumes:
-      - apk_spool_data:/tmp/adq_apk_spool
-    depends_on:
-      - redis
-    networks:
-      - adq_net
-
   worker-stress:
     build:
       context: ./backend
@@ -179,8 +153,8 @@ services:
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_KEY}
     container_name: adq_dashboard
     restart: always
-    ports:
-      - "3000:3000"
+    environment:
+      - PORT=3000
     env_file:
       - .env
     depends_on:

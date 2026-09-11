@@ -1,0 +1,566 @@
+[
+  {
+    "id": "finding-1",
+    "category": "Open Service",
+    "host": "127.0.0.1",
+    "port": 8081,
+    "severity": "INFO",
+    "raw": "127.0.0.1:8081"
+  },
+  {
+    "id": "finding-2",
+    "category": "Open Service",
+    "host": "127.0.0.1",
+    "port": 8081,
+    "severity": "INFO",
+    "raw": "127.0.0.1:8081"
+  },
+  {
+    "id": "finding-3",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/index.php",
+    "parameter": null,
+    "severity": "CRITICAL",
+    "raw": "[dvwa-default-login] [http] [critical] http://127.0.0.1:8081/index.php [password=\"password\",username=\"admin\"]"
+  },
+  {
+    "id": "finding-4",
+    "category": "Security Misconfiguration",
+    "endpoint": "[cookies-without-httponly] [javascript] [info] 127.0.0.1:8081 [\"PHPSESSID\"]",
+    "severity": "LOW",
+    "raw": "[cookies-without-httponly] [javascript] [info] 127.0.0.1:8081 [\"PHPSESSID\"]"
+  },
+  {
+    "id": "finding-5",
+    "category": "Security Misconfiguration",
+    "endpoint": "[cookies-without-secure] [javascript] [info] 127.0.0.1:8081 [\"PHPSESSID\",\"security\"]",
+    "severity": "LOW",
+    "raw": "[cookies-without-secure] [javascript] [info] 127.0.0.1:8081 [\"PHPSESSID\",\"security\"]"
+  },
+  {
+    "id": "finding-6",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[waf-detect:apachegeneric] [http] [info] http://127.0.0.1:8081"
+  },
+  {
+    "id": "finding-7",
+    "category": "Security Misconfiguration",
+    "endpoint": "[CVE-2025-46817:version] [javascript] [critical] 127.0.0.1:6379 [\"7.4.10\"]",
+    "severity": "LOW",
+    "raw": "[CVE-2025-46817:version] [javascript] [critical] 127.0.0.1:6379 [\"7.4.10\"]"
+  },
+  {
+    "id": "finding-8",
+    "category": "Security Misconfiguration",
+    "endpoint": "[CVE-2025-49844:version] [javascript] [critical] 127.0.0.1:6379 [\"7.4.10\"]",
+    "severity": "LOW",
+    "raw": "[CVE-2025-49844:version] [javascript] [critical] 127.0.0.1:6379 [\"7.4.10\"]"
+  },
+  {
+    "id": "finding-9",
+    "category": "Security Misconfiguration",
+    "endpoint": "[CVE-2025-46818:version] [javascript] [high] 127.0.0.1:6379 [\"7.4.10\"]",
+    "severity": "LOW",
+    "raw": "[CVE-2025-46818:version] [javascript] [high] 127.0.0.1:6379 [\"7.4.10\"]"
+  },
+  {
+    "id": "finding-10",
+    "category": "Security Misconfiguration",
+    "endpoint": "[CVE-2025-46819:version] [javascript] [high] 127.0.0.1:6379 [\"7.4.10\"]",
+    "severity": "LOW",
+    "raw": "[CVE-2025-46819:version] [javascript] [high] 127.0.0.1:6379 [\"7.4.10\"]"
+  },
+  {
+    "id": "finding-11",
+    "category": "Security Misconfiguration",
+    "endpoint": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"\"]",
+    "severity": "LOW",
+    "raw": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"\"]"
+  },
+  {
+    "id": "finding-12",
+    "category": "Security Misconfiguration",
+    "endpoint": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"admin\"]",
+    "severity": "LOW",
+    "raw": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"admin\"]"
+  },
+  {
+    "id": "finding-13",
+    "category": "Security Misconfiguration",
+    "endpoint": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"password\"]",
+    "severity": "LOW",
+    "raw": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"password\"]"
+  },
+  {
+    "id": "finding-14",
+    "category": "Security Misconfiguration",
+    "endpoint": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"iamadmin\"]",
+    "severity": "LOW",
+    "raw": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"iamadmin\"]"
+  },
+  {
+    "id": "finding-15",
+    "category": "Security Misconfiguration",
+    "endpoint": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"root\"]",
+    "severity": "LOW",
+    "raw": "[redis-default-logins] [javascript] [high] 127.0.0.1:6379 [passwords=\"root\"]"
+  },
+  {
+    "id": "finding-16",
+    "category": "Security Misconfiguration",
+    "endpoint": "[redis-info] [javascript] [info] 127.0.0.1:6379 [\"used_cpu_user:149.584424\",\"connected_clients:11\",\"connected_slaves:0\",\"used_memory_human:1.43M\",\"role:master\",\"redis_version:7.4.10\",\"process_id:1\",\"used_cpu_sys:39.744155\"]",
+    "severity": "LOW",
+    "raw": "[redis-info] [javascript] [info] 127.0.0.1:6379 [\"used_cpu_user:149.584424\",\"connected_clients:11\",\"connected_slaves:0\",\"used_memory_human:1.43M\",\"role:master\",\"redis_version:7.4.10\",\"process_id:1\",\"used_cpu_sys:39.744155\"]"
+  },
+  {
+    "id": "finding-17",
+    "category": "Security Misconfiguration",
+    "endpoint": "[pgsql-detect] [tcp] [info] 127.0.0.1:5432",
+    "severity": "LOW",
+    "raw": "[pgsql-detect] [tcp] [info] 127.0.0.1:5432"
+  },
+  {
+    "id": "finding-18",
+    "category": "Security Misconfiguration",
+    "endpoint": "[exposed-redis] [tcp] [high] 127.0.0.1:6379",
+    "severity": "LOW",
+    "raw": "[exposed-redis] [tcp] [high] 127.0.0.1:6379"
+  },
+  {
+    "id": "finding-19",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:referrer-policy] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-20",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:cross-origin-embedder-policy] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-21",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:cross-origin-resource-policy] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-22",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:strict-transport-security] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-23",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:content-security-policy] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-24",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:permissions-policy] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-25",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:x-content-type-options] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-26",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:cross-origin-opener-policy] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-27",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:x-frame-options] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-28",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[http-missing-security-headers:x-permitted-cross-domain-policies] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-29",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/robots.txt",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[robots-txt] [http] [info] http://127.0.0.1:8081/robots.txt"
+  },
+  {
+    "id": "finding-30",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/robots.txt",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[robots-txt-endpoint] [http] [info] http://127.0.0.1:8081/robots.txt"
+  },
+  {
+    "id": "finding-31",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/config/",
+    "parameter": null,
+    "severity": "MEDIUM",
+    "raw": "[configuration-listing] [http] [medium] http://127.0.0.1:8081/config/"
+  },
+  {
+    "id": "finding-32",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[fingerprinthub-web-fingerprints:dvwa] [http] [info] http://127.0.0.1:8081/login.php"
+  },
+  {
+    "id": "finding-33",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[missing-cookie-samesite-strict] [http] [info] http://127.0.0.1:8081 [\"PHPSESSID=b1thv08bjj115fhgurf5ko9ud2; path=/ PHPSESSID=b1thv08bjj115fhgurf5ko9ud2; path=/; httponly security=impossible; httponly\"]"
+  },
+  {
+    "id": "finding-34",
+    "category": "Security Misconfiguration",
+    "cve_id": null,
+    "endpoint": "http://127.0.0.1:8081",
+    "parameter": null,
+    "severity": "INFO",
+    "raw": "[tech-detect:php] [http] [info] http://127.0.0.1:8081"
+  },
+  {
+    "id": "finding-35",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mdvwa-default-login\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[31mcritical\u001b[0m] http://127.0.0.1:8081/index.php [\u001b[93mpassword\u001b[0m=\u001b[93m\"password\"\u001b[0m,\u001b[93musername\u001b[0m=\u001b[93m\"admin\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mdvwa-default-login\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[31mcritical\\u001b[0m] http://127.0.0.1:8081/index.php [\\u001b[93mpassword\\u001b[0m=\\u001b[93m\\\"password\\\"\\u001b[0m,\\u001b[93musername\\u001b[0m=\\u001b[93m\\\"admin\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-36",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mcookies-without-httponly\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[34minfo\u001b[0m] 127.0.0.1:8081 [\u001b[96m\"PHPSESSID\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mcookies-without-httponly\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[34minfo\\u001b[0m] 127.0.0.1:8081 [\\u001b[96m\\\"PHPSESSID\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-37",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mcookies-without-secure\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[34minfo\u001b[0m] 127.0.0.1:8081 [\u001b[96m\"PHPSESSID\"\u001b[0m,\u001b[96m\"security\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mcookies-without-secure\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[34minfo\\u001b[0m] 127.0.0.1:8081 [\\u001b[96m\\\"PHPSESSID\\\"\\u001b[0m,\\u001b[96m\\\"security\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-38",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mwaf-detect\u001b[0m:\u001b[1;92mapachegeneric\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mwaf-detect\\u001b[0m:\\u001b[1;92mapachegeneric\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081\"}"
+  },
+  {
+    "id": "finding-39",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mCVE-2025-46817\u001b[0m:\u001b[1;92mversion\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[31mcritical\u001b[0m] 127.0.0.1:6379 [\u001b[96m\"7.4.10\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mCVE-2025-46817\\u001b[0m:\\u001b[1;92mversion\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[31mcritical\\u001b[0m] 127.0.0.1:6379 [\\u001b[96m\\\"7.4.10\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-40",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mCVE-2025-49844\u001b[0m:\u001b[1;92mversion\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[31mcritical\u001b[0m] 127.0.0.1:6379 [\u001b[96m\"7.4.10\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mCVE-2025-49844\\u001b[0m:\\u001b[1;92mversion\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[31mcritical\\u001b[0m] 127.0.0.1:6379 [\\u001b[96m\\\"7.4.10\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-41",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mCVE-2025-46818\u001b[0m:\u001b[1;92mversion\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[38;5;208mhigh\u001b[0m] 127.0.0.1:6379 [\u001b[96m\"7.4.10\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mCVE-2025-46818\\u001b[0m:\\u001b[1;92mversion\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[38;5;208mhigh\\u001b[0m] 127.0.0.1:6379 [\\u001b[96m\\\"7.4.10\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-42",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mCVE-2025-46819\u001b[0m:\u001b[1;92mversion\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[38;5;208mhigh\u001b[0m] 127.0.0.1:6379 [\u001b[96m\"7.4.10\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mCVE-2025-46819\\u001b[0m:\\u001b[1;92mversion\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[38;5;208mhigh\\u001b[0m] 127.0.0.1:6379 [\\u001b[96m\\\"7.4.10\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-43",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mredis-default-logins\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[38;5;208mhigh\u001b[0m] 127.0.0.1:6379 [\u001b[93mpasswords\u001b[0m=\u001b[93m\"\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mredis-default-logins\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[38;5;208mhigh\\u001b[0m] 127.0.0.1:6379 [\\u001b[93mpasswords\\u001b[0m=\\u001b[93m\\\"\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-44",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mredis-default-logins\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[38;5;208mhigh\u001b[0m] 127.0.0.1:6379 [\u001b[93mpasswords\u001b[0m=\u001b[93m\"admin\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mredis-default-logins\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[38;5;208mhigh\\u001b[0m] 127.0.0.1:6379 [\\u001b[93mpasswords\\u001b[0m=\\u001b[93m\\\"admin\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-45",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mredis-default-logins\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[38;5;208mhigh\u001b[0m] 127.0.0.1:6379 [\u001b[93mpasswords\u001b[0m=\u001b[93m\"password\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mredis-default-logins\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[38;5;208mhigh\\u001b[0m] 127.0.0.1:6379 [\\u001b[93mpasswords\\u001b[0m=\\u001b[93m\\\"password\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-46",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mredis-default-logins\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[38;5;208mhigh\u001b[0m] 127.0.0.1:6379 [\u001b[93mpasswords\u001b[0m=\u001b[93m\"iamadmin\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mredis-default-logins\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[38;5;208mhigh\\u001b[0m] 127.0.0.1:6379 [\\u001b[93mpasswords\\u001b[0m=\\u001b[93m\\\"iamadmin\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-47",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mredis-default-logins\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[38;5;208mhigh\u001b[0m] 127.0.0.1:6379 [\u001b[93mpasswords\u001b[0m=\u001b[93m\"root\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mredis-default-logins\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[38;5;208mhigh\\u001b[0m] 127.0.0.1:6379 [\\u001b[93mpasswords\\u001b[0m=\\u001b[93m\\\"root\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-48",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mredis-info\u001b[0m] [\u001b[94mjavascript\u001b[0m] [\u001b[34minfo\u001b[0m] 127.0.0.1:6379 [\u001b[96m\"used_cpu_user:149.584424\"\u001b[0m,\u001b[96m\"connected_clients:11\"\u001b[0m,\u001b[96m\"connected_slaves:0\"\u001b[0m,\u001b[96m\"used_memory_human:1.43M\"\u001b[0m,\u001b[96m\"role:master\"\u001b[0m,\u001b[96m\"redis_version:7.4.10\"\u001b[0m,\u001b[96m\"process_id:1\"\u001b[0m,\u001b[96m\"used_cpu_sys:39.744155\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mredis-info\\u001b[0m] [\\u001b[94mjavascript\\u001b[0m] [\\u001b[34minfo\\u001b[0m] 127.0.0.1:6379 [\\u001b[96m\\\"used_cpu_user:149.584424\\\"\\u001b[0m,\\u001b[96m\\\"connected_clients:11\\\"\\u001b[0m,\\u001b[96m\\\"connected_slaves:0\\\"\\u001b[0m,\\u001b[96m\\\"used_memory_human:1.43M\\\"\\u001b[0m,\\u001b[96m\\\"role:master\\\"\\u001b[0m,\\u001b[96m\\\"redis_version:7.4.10\\\"\\u001b[0m,\\u001b[96m\\\"process_id:1\\\"\\u001b[0m,\\u001b[96m\\\"used_cpu_sys:39.744155\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-49",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mpgsql-detect\u001b[0m] [\u001b[94mtcp\u001b[0m] [\u001b[34minfo\u001b[0m] 127.0.0.1:5432",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mpgsql-detect\\u001b[0m] [\\u001b[94mtcp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] 127.0.0.1:5432\"}"
+  },
+  {
+    "id": "finding-50",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mexposed-redis\u001b[0m] [\u001b[94mtcp\u001b[0m] [\u001b[38;5;208mhigh\u001b[0m] 127.0.0.1:6379",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mexposed-redis\\u001b[0m] [\\u001b[94mtcp\\u001b[0m] [\\u001b[38;5;208mhigh\\u001b[0m] 127.0.0.1:6379\"}"
+  },
+  {
+    "id": "finding-51",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mreferrer-policy\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mreferrer-policy\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-52",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mcross-origin-embedder-policy\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mcross-origin-embedder-policy\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-53",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mcross-origin-resource-policy\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mcross-origin-resource-policy\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-54",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mstrict-transport-security\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mstrict-transport-security\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-55",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mcontent-security-policy\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mcontent-security-policy\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-56",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mpermissions-policy\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mpermissions-policy\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-57",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mx-content-type-options\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mx-content-type-options\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-58",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mcross-origin-opener-policy\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mcross-origin-opener-policy\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-59",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mx-frame-options\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mx-frame-options\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-60",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mhttp-missing-security-headers\u001b[0m:\u001b[1;92mx-permitted-cross-domain-policies\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mhttp-missing-security-headers\\u001b[0m:\\u001b[1;92mx-permitted-cross-domain-policies\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-61",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mrobots-txt\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/robots.txt",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mrobots-txt\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/robots.txt\"}"
+  },
+  {
+    "id": "finding-62",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mrobots-txt-endpoint\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/robots.txt",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mrobots-txt-endpoint\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/robots.txt\"}"
+  },
+  {
+    "id": "finding-63",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mconfiguration-listing\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[33mmedium\u001b[0m] http://127.0.0.1:8081/config/",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mconfiguration-listing\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[33mmedium\\u001b[0m] http://127.0.0.1:8081/config/\"}"
+  },
+  {
+    "id": "finding-64",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mfingerprinthub-web-fingerprints\u001b[0m:\u001b[1;92mdvwa\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081/login.php",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mfingerprinthub-web-fingerprints\\u001b[0m:\\u001b[1;92mdvwa\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081/login.php\"}"
+  },
+  {
+    "id": "finding-65",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mmissing-cookie-samesite-strict\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081 [\u001b[96m\"PHPSESSID=b1thv08bjj115fhgurf5ko9ud2; path=/ PHPSESSID=b1thv08bjj115fhgurf5ko9ud2; path=/; httponly security=impossible; httponly\"\u001b[0m]",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mmissing-cookie-samesite-strict\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081 [\\u001b[96m\\\"PHPSESSID=b1thv08bjj115fhgurf5ko9ud2; path=/ PHPSESSID=b1thv08bjj115fhgurf5ko9ud2; path=/; httponly security=impossible; httponly\\\"\\u001b[0m]\"}"
+  },
+  {
+    "id": "finding-66",
+    "category": "nuclei",
+    "endpoint": "[\u001b[92mtech-detect\u001b[0m:\u001b[1;92mphp\u001b[0m] [\u001b[94mhttp\u001b[0m] [\u001b[34minfo\u001b[0m] http://127.0.0.1:8081",
+    "parameter": null,
+    "severity": "UNKNOWN",
+    "raw": "{\"severity\": \"unknown\", \"raw\": \"[\\u001b[92mtech-detect\\u001b[0m:\\u001b[1;92mphp\\u001b[0m] [\\u001b[94mhttp\\u001b[0m] [\\u001b[34minfo\\u001b[0m] http://127.0.0.1:8081\"}"
+  },
+  {
+    "id": "finding-67",
+    "category": "ffuf",
+    "endpoint": ":: Matcher          : Response status: 200",
+    "parameter": null,
+    "severity": "LOW",
+    "raw": "{\"raw\": \":: Matcher          : Response status: 200\"}"
+  },
+  {
+    "id": "finding-68",
+    "category": "ffuf",
+    "endpoint": "\u001b[2K[Status: 200, Size: 1406, Words: 5, Lines: 2, Duration: 0ms]\u001b[0m",
+    "parameter": null,
+    "severity": "LOW",
+    "raw": "{\"raw\": \"\\u001b[2K[Status: 200, Size: 1406, Words: 5, Lines: 2, Duration: 0ms]\\u001b[0m\"}"
+  },
+  {
+    "id": "finding-69",
+    "category": "ffuf",
+    "endpoint": "\u001b[2K[Status: 200, Size: 148, Words: 17, Lines: 5, Duration: 0ms]\u001b[0m",
+    "parameter": null,
+    "severity": "LOW",
+    "raw": "{\"raw\": \"\\u001b[2K[Status: 200, Size: 148, Words: 17, Lines: 5, Duration: 0ms]\\u001b[0m\"}"
+  },
+  {
+    "id": "finding-70",
+    "category": "ffuf",
+    "endpoint": "\u001b[2K[Status: 200, Size: 26, Words: 3, Lines: 2, Duration: 0ms]\u001b[0m",
+    "parameter": null,
+    "severity": "LOW",
+    "raw": "{\"raw\": \"\\u001b[2K[Status: 200, Size: 26, Words: 3, Lines: 2, Duration: 0ms]\\u001b[0m\"}"
+  }
+]

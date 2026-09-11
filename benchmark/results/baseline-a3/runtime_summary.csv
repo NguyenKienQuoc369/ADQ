@@ -1,0 +1,3 @@
+Target,Runs,Min_Sec,Median_Sec,Max_Sec
+OWASP Juice Shop,3,147.22,181.34,196.76
+Damn Vulnerable Web Application (DVWA),3,133.12,133.2,133.73

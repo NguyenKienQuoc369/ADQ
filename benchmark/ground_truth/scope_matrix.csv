@@ -1,0 +1,21 @@
+target,ground_truth_id,category,endpoint,parameter,scope_class,reason
+OWASP Juice Shop,JS-SQLI-01,SQL Injection,/rest/products/search,q,UNAUTHENTICATED_REACHABLE,Public search REST API endpoint reachable without authentication
+OWASP Juice Shop,JS-SQLI-02,SQL Injection,/rest/user/login,email,UNAUTHENTICATED_REACHABLE,Public authentication form endpoint reachable without prior session
+OWASP Juice Shop,JS-XSS-01,Cross-Site Scripting,/#/,q,CLIENT_SIDE_HEADLESS_REQUIRED,Client-side Angular DOM hash router input requiring headless browser JavaScript sink execution
+OWASP Juice Shop,JS-XSS-02,Cross-Site Scripting,/api/Feedbacks/,comment,UNAUTHENTICATED_REACHABLE,Public feedback submission API endpoint reachable without authentication
+OWASP Juice Shop,JS-SECRET-01,Exposed Secrets,/main.js,null,UNAUTHENTICATED_REACHABLE,Public static JavaScript application bundle accessible unauthenticated
+OWASP Juice Shop,JS-MISCONFIG-01,Security Misconfiguration,/ftp,null,UNAUTHENTICATED_REACHABLE,Public static directory listing accessible without credentials
+OWASP Juice Shop,JS-MISCONFIG-02,Security Misconfiguration,/,null,UNAUTHENTICATED_REACHABLE,Root HTTP response security headers accessible on initial connection
+OWASP Juice Shop,JS-MISCONFIG-03,Security Misconfiguration,/rest/user/login,null,UNAUTHENTICATED_REACHABLE,Public preflight OPTIONS response headers reachable unauthenticated
+OWASP Juice Shop,JS-ENDPOINT-01,Sensitive Endpoint Exposure,/api-docs,null,UNAUTHENTICATED_REACHABLE,Interactive Swagger/OpenAPI documentation exposed publicly
+OWASP Juice Shop,JS-ENDPOINT-02,Sensitive Endpoint Exposure,/metrics,null,UNAUTHENTICATED_REACHABLE,Prometheus metrics telemetry exposed without access control
+OWASP Juice Shop,JS-PORT-01,Open Service,127.0.0.1:3000,null,UNAUTHENTICATED_REACHABLE,TCP service port 3000 listening publicly on local interface
+DVWA,DVWA-SQLI-01,SQL Injection,/vulnerabilities/sqli/,id,AUTH_REQUIRED,DVWA redirects unauthenticated requests to login.php; requires authenticated PHP session cookie
+DVWA,DVWA-SQLI-02,SQL Injection,/vulnerabilities/sqli_blind/,id,AUTH_REQUIRED,DVWA redirects unauthenticated requests to login.php; requires authenticated PHP session cookie
+DVWA,DVWA-XSS-01,Cross-Site Scripting,/vulnerabilities/xss_r/,name,AUTH_REQUIRED,DVWA redirects unauthenticated requests to login.php; requires authenticated PHP session cookie
+DVWA,DVWA-XSS-02,Cross-Site Scripting,/vulnerabilities/xss_s/,mtxMessage,AUTH_REQUIRED,DVWA redirects unauthenticated requests to login.php; requires authenticated PHP session cookie
+DVWA,DVWA-CMDI-01,Command Injection,/vulnerabilities/exec/,ip,AUTH_REQUIRED,DVWA redirects unauthenticated requests to login.php; requires authenticated PHP session cookie
+DVWA,DVWA-LFI-01,Local File Inclusion,/vulnerabilities/fi/,page,AUTH_REQUIRED,DVWA redirects unauthenticated requests to login.php; requires authenticated PHP session cookie
+DVWA,DVWA-MISCONFIG-01,Security Misconfiguration,/,null,UNAUTHENTICATED_REACHABLE,HTTP response security headers on root/login page accessible unauthenticated
+DVWA,DVWA-PORT-01,Open Service,127.0.0.1:8081,null,UNAUTHENTICATED_REACHABLE,TCP service port 8081 listening publicly on local interface
+

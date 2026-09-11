@@ -1,69 +1,74 @@
-import os
-import pytest
-from backend.core.stress_orchestrator import StressOrchestrator
+from unittest.mock import patch, MagicMock
+from backend.core.stress_test.stress_orchestrator import (
+    StressOrchestrator,
+    GlobalRatePacer,
+    _parse_duration_sec,
+)
 
-def test_stress_orchestrator_js_generator():
+
+def test_stress_orchestrator_request_config_preparation():
     orchestrator = StressOrchestrator()
-    script = orchestrator.generate_k6_script(
-        target_url="https://api.target.com/v1/auth",
-        bearer_token="secret_token_123",
-        vus=100,
-        duration="45s",
-        ramp_up=True
+
+    # 1. Bearer Token Bypass
+    url, headers, cookies = orchestrator._prepare_request_config(
+        target_url="api.target.com/v1/auth",
+        bypass_code="Bearer secret_token_123",
+        waf_type="standard"
     )
-    
-    assert "https://api.target.com/v1/auth" in script
-    assert "Bearer secret_token_123" in script
-    assert "vus: 100" in script or "target: 100" in script
-    assert "X-Forwarded-For" in script
-    assert "status is 200" in script
-    assert "rate limited (429)" in script
+    assert url == "https://api.target.com/v1/auth"
+    assert headers.get("Authorization") == "Bearer secret_token_123"
 
-def test_stress_orchestrator_universal_bypass_generator():
-    orchestrator = StressOrchestrator()
-    
-    # Cloudflare Zero Trust Profile
-    cf_config = {
-        "platform": "Cloudflare Zero Trust API",
-        "headers": {
-            "CF-Access-Client-Id": "cf-client-123.access.cloudflare.com",
-            "CF-Access-Client-Secret": "cf-secret-456"
-        },
-        "cookies": {
-            "cf_clearance": "token_abc123"
-        }
-    }
-    cf_script = orchestrator.generate_k6_script(
+    # 2. Cloudflare / Cookie Token Bypass
+    url_cf, headers_cf, cookies_cf = orchestrator._prepare_request_config(
         target_url="https://cf.target.com/api",
-        bypass_config=cf_config
+        bypass_code="cf_clearance=token_abc123",
+        waf_type="cloudflare"
     )
-    assert "CF-Access-Client-Id" in cf_script
-    assert "cf-client-123.access.cloudflare.com" in cf_script
-    assert "cf_clearance=token_abc123" in cf_script
+    assert cookies_cf.get("cf_clearance") == "token_abc123"
 
-    # AWS WAF Profile
-    aws_config = {
-        "platform": "AWS API Gateway",
-        "headers": {
-            "x-api-key": "aws_api_key_789"
-        }
-    }
-    aws_script = orchestrator.generate_k6_script(
+    # 3. Custom Header Bypass
+    url_hdr, headers_hdr, cookies_hdr = orchestrator._prepare_request_config(
         target_url="https://aws.target.com/api",
-        bypass_config=aws_config
+        bypass_code="x-api-key: aws_api_key_789",
+        waf_type="awswaf"
     )
-    assert "x-api-key" in aws_script
-    assert "aws_api_key_789" in aws_script
+    assert headers_hdr.get("x-api-key") == "aws_api_key_789"
 
-def test_stress_orchestrator_native_execution():
-    orchestrator = StressOrchestrator(k6_path="/non/existent/k6_binary")
-    res = orchestrator.execute_stress_test(
-        target_url="https://httpbin.org/get",
-        vus=2,
-        duration="1s"
-    )
 
-    assert res["ok"] is True
-    assert res["simulated"] is False
-    assert res["engine"] == "ADQ-Native-Python-HTTP-Thread-Fleet"
-    assert res["metrics"]["total_requests"] >= 0
+def test_stress_orchestrator_verify_bypass():
+    orchestrator = StressOrchestrator()
+
+    mock_resp_raw = MagicMock()
+    mock_resp_raw.status_code = 403
+
+    mock_resp_bypass = MagicMock()
+    mock_resp_bypass.status_code = 200
+
+    mock_session_raw = MagicMock()
+    mock_session_raw.get.return_value = mock_resp_raw
+
+    mock_session_bypass = MagicMock()
+    mock_session_bypass.get.return_value = mock_resp_bypass
+
+    with patch("backend.core.stress_test.stress_orchestrator.resolve_and_validate_target", return_value=("https://example.com", ["93.184.216.34"])), \
+         patch.object(orchestrator, "_get_client_session", side_effect=[(mock_session_raw, False), (mock_session_bypass, False)]):
+
+        res = orchestrator.verify_bypass("https://example.com", bypass_code="x-api-key: valid_key")
+        assert res["ok"] is True
+        assert res["is_valid"] is True
+        assert res["status_no_bypass"] == 403
+        assert res["status_with_bypass"] == 200
+
+
+def test_global_rate_pacer():
+    pacer = GlobalRatePacer(target_rps=100.0)
+    assert pacer.interval == 0.01
+    # Pacing acquire does not crash
+    pacer.acquire()
+
+
+def test_parse_duration_sec():
+    assert _parse_duration_sec("10s") == 10
+    assert _parse_duration_sec(20) == 20
+    assert _parse_duration_sec("invalid", default=15) == 15
+

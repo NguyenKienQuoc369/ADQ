@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import shutil
 import logging
 from typing import Dict, Any, Optional
 
@@ -40,7 +41,7 @@ class APKService:
 
         # Move/copy temp upload into shared spool
         if os.path.exists(temp_apk_path):
-            os.replace(temp_apk_path, spool_target)
+            shutil.move(temp_apk_path, spool_target)
         else:
             raise FileNotFoundError(f"Source APK file not found at {temp_apk_path}")
 

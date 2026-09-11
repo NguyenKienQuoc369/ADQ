@@ -1,0 +1,85 @@
+{
+  "meta": {
+    "version": "1.1.0",
+    "description": "Mathematical quota bounds and assumption scenario definitions per tier. Unbounded operations are explicitly marked as UNBOUNDED_BY_PRODUCT_QUOTA / ECONOMIC_EXPOSURE_UNBOUNDED_BY_QUOTA."
+  },
+  "tiers": {
+    "FREE": {
+      "subscription_listed_price_vnd": 0,
+      "classification": "SOURCE_CONFIG",
+      "quota_bounds": {
+        "lifetime_dast_scans_ceiling": 2,
+        "monthly_stress_tests_ceiling": 0,
+        "copilot_chat_accessible": false,
+        "patch_generation_accessible": false,
+        "ai_risk_assessment_enabled": false
+      },
+      "economic_risk_assessment": "Strict lifetime ceiling of 2 scans enforced by total_lifetime_scans. No financial exposure to recurring variable costs."
+    },
+    "PRO": {
+      "subscription_listed_price_vnd": 199000,
+      "classification": "SOURCE_CONFIG",
+      "quota_bounds": {
+        "monthly_dast_scans_ceiling": "UNBOUNDED_BY_PRODUCT_QUOTA",
+        "daily_stress_tests_quota": 1,
+        "monthly_stress_tests_ceiling": 30,
+        "monthly_stress_tests_convention_note": "Calculated as 1 test/day * 30-day month modeling convention",
+        "copilot_chat_accessible": false,
+        "patch_generation_accessible": false,
+        "ai_risk_assessment_enabled": true
+      },
+      "economic_risk_assessment": {
+        "dast_variable_cost_exposure": "ECONOMIC_EXPOSURE_UNBOUNDED_BY_QUOTA",
+        "stress_test_exposure": "BOUNDED (Max 30 tests / 30-day month)"
+      },
+      "hypothetical_assumption_scenarios": {
+        "moderate_assumption_scenario": {
+          "classification": "ASSUMPTION_SCENARIO",
+          "dast_scans_assumed": 20,
+          "stress_tests_assumed": 5
+        },
+        "heavy_assumption_scenario": {
+          "classification": "ASSUMPTION_SCENARIO",
+          "dast_scans_assumed": 100,
+          "stress_tests_assumed": 30
+        }
+      }
+    },
+    "PRO_MAX": {
+      "subscription_listed_price_vnd": 499000,
+      "classification": "SOURCE_CONFIG",
+      "quota_bounds": {
+        "monthly_dast_scans_ceiling": "UNBOUNDED_BY_PRODUCT_QUOTA",
+        "daily_stress_tests_quota": 10,
+        "monthly_stress_tests_ceiling": 300,
+        "monthly_stress_tests_convention_note": "Calculated as 10 tests/day * 30-day month modeling convention",
+        "copilot_chat_accessible": true,
+        "copilot_chat_requests_ceiling": "UNBOUNDED_BY_PRODUCT_QUOTA",
+        "patch_generation_accessible": true,
+        "patch_generations_ceiling": "UNBOUNDED_BY_PRODUCT_QUOTA",
+        "ai_risk_assessment_enabled": true
+      },
+      "economic_risk_assessment": {
+        "dast_variable_cost_exposure": "ECONOMIC_EXPOSURE_UNBOUNDED_BY_QUOTA",
+        "copilot_token_cost_exposure": "ECONOMIC_EXPOSURE_UNBOUNDED_BY_QUOTA",
+        "stress_test_exposure": "BOUNDED (Max 300 tests / 30-day month)"
+      },
+      "hypothetical_assumption_scenarios": {
+        "moderate_assumption_scenario": {
+          "classification": "ASSUMPTION_SCENARIO",
+          "dast_scans_assumed": 60,
+          "stress_tests_assumed": 30,
+          "copilot_chat_turns_assumed": 40,
+          "patch_generations_assumed": 20
+        },
+        "heavy_assumption_scenario": {
+          "classification": "ASSUMPTION_SCENARIO",
+          "dast_scans_assumed": 300,
+          "stress_tests_assumed": 300,
+          "copilot_chat_turns_assumed": 200,
+          "patch_generations_assumed": 100
+        }
+      }
+    }
+  }
+}

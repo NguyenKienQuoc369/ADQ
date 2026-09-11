@@ -186,7 +186,17 @@ def start_scan(req: ScanRequest, user: Dict[str, Any] = Depends(get_current_user
     tier = get_user_tier(user)
     usage = get_user_usage(user_id)
 
-    # 1. Kiểm tra giới hạn Quét DAST
+    # 1. Gate 1: SSRF Target Validation & Canonicalization
+    origin, _ = resolve_and_validate_target(req.target)
+
+    # 2. Gate 2: Mandatory Ownership Verification Check
+    if not ScanService.is_target_verified(user, origin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Mục tiêu chưa được xác minh quyền sở hữu qua Meta Tag. Vui lòng thêm thẻ meta vào <head> và bấm Xác minh trước khi thực hiện quét an ninh."
+        )
+
+    # 3. Kiểm tra giới hạn Quét DAST
     if tier == "FREE":
         if usage["total_lifetime_scans"] >= 2:
             raise HTTPException(
@@ -197,9 +207,9 @@ def start_scan(req: ScanRequest, user: Dict[str, Any] = Depends(get_current_user
     
     usage["scans_count"] += 1
 
-    # 2. Tạo job quét (Gói FREE: skip_ai = True để tiết kiệm 100% token)
+    # 4. Tạo job quét với canonical origin & user_id (Gói FREE: skip_ai = True để tiết kiệm 100% token)
     skip_ai = (tier == "FREE")
-    job = ScanService.create_scan_job(req, skip_ai=skip_ai)
+    job = ScanService.create_scan_job(req, canonical_target=origin, user_id=user_id, skip_ai=skip_ai)
     
     return ScanResponse(
         ok=True,
@@ -239,8 +249,8 @@ def get_scan_endpoints_route(
 
 @router.get("/scan/{job_id}")
 def get_scan_status(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
-    job = ScanService.get_job_status(job_id)
     tier = get_user_tier(user)
+    job = ScanService.get_job_status(job_id, user_tier=tier)
     
     if job and isinstance(job, dict):
         job = dict(job)
@@ -252,6 +262,24 @@ def get_scan_status(job_id: str, user: Dict[str, Any] = Depends(get_current_user
             job["ai_summary"] = None
     
     return {"ok": True, "job": job}
+
+
+@router.get("/scan/{job_id}/assurance")
+def get_scan_assurance(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    tier = get_user_tier(user)
+    job = ScanService.get_job_status(job_id, user_tier=tier)
+    assurance = job.get("assurance_matrix")
+    if not assurance:
+        try:
+            try:
+                from backend.security_controls.assurance_engine import evaluate_scan_assurance
+            except ImportError:
+                from security_controls.assurance_engine import evaluate_scan_assurance
+            assurance = evaluate_scan_assurance(job, user_tier=tier)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Assurance evaluation error: {exc}")
+
+    return {"ok": True, "job_id": job_id, "assurance": assurance}
 
 @router.post("/copilot/chat")
 def copilot_chat(req: CopilotChatRequest, user: Dict[str, Any] = Depends(get_current_user)):
@@ -313,6 +341,16 @@ def detect_waf(req: WafDetectRequest, user: Dict[str, Any] = Depends(get_current
     if tier == "FREE":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gói FREE không hỗ trợ Stress Test.")
     return ScanService.detect_waf(req)
+
+@router.post("/verification/start")
+@router.post("/scan/verification/start")
+def start_verification_route(req: StressVerificationRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    return ScanService.start_target_verification(user, req.target_url)
+
+@router.post("/verification/check")
+@router.post("/scan/verification/check")
+def check_verification_route(req: StressVerificationRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    return ScanService.check_target_verification(user, req.target_url)
 
 @router.post("/stress/verification/start")
 def start_stress_verification(req: StressVerificationRequest, user: Dict[str, Any] = Depends(get_current_user)):
@@ -436,8 +474,76 @@ async def stream_stress_job_events(job_id: str, user: Dict[str, Any] = Depends(g
                 except Exception:
                     pass
 
+@router.get("/scan/{job_id}/stream")
+async def stream_scan_job_events(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    SSE relay for live scan pipeline progress, stage updates, and control assurance state.
+    """
+    tier = get_user_tier(user)
+    initial_check = ScanService.get_job_status(job_id, user_tier=tier)
+    if not initial_check:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tiến trình quét an ninh.")
+
+    async def sse_scan_relay():
+        pubsub = None
+        channel = f"scan_events:{job_id}"
+        if redis_client:
+            try:
+                pubsub = redis_client.pubsub()
+                pubsub.subscribe(channel)
+            except Exception:
+                pubsub = None
+
+        try:
+            # 1. Snapshot-first: Read current snapshot after subscription
+            snapshot = ScanService.get_job_status(job_id, user_tier=tier)
+            if snapshot:
+                yield f"data: {json.dumps(snapshot, default=str)}\n\n"
+                if str(snapshot.get("status", "")).upper() in ("COMPLETED", "FAILED"):
+                    return
+
+            # 2. Consume live events from Redis Pub/Sub
+            while True:
+                has_msg = False
+                if pubsub:
+                    try:
+                        msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.05)
+                        if msg and msg.get("type") == "message":
+                            data_str = msg.get("data")
+                            event_data = json.loads(data_str)
+                            # Augment event with assurance matrix
+                            try:
+                                try:
+                                    from backend.security_controls.assurance_engine import evaluate_scan_assurance
+                                except ImportError:
+                                    from security_controls.assurance_engine import evaluate_scan_assurance
+                                event_data["assurance_matrix"] = evaluate_scan_assurance(event_data, user_tier=tier)
+                            except Exception:
+                                pass
+                            yield f"data: {json.dumps(event_data, default=str)}\n\n"
+                            has_msg = True
+                            if str(event_data.get("status", "")).upper() in ("COMPLETED", "FAILED", "DONE"):
+                                break
+                    except Exception:
+                        pass
+
+                if not has_msg:
+                    cur_st = ScanService.get_job_status(job_id, user_tier=tier)
+                    if cur_st and str(cur_st.get("status", "")).upper() in ("COMPLETED", "FAILED"):
+                        yield f"data: {json.dumps(cur_st, default=str)}\n\n"
+                        break
+                    await asyncio.sleep(0.5)
+
+        finally:
+            if pubsub:
+                try:
+                    pubsub.unsubscribe(channel)
+                    pubsub.close()
+                except Exception:
+                    pass
+
     return StreamingResponse(
-        sse_relay(),
+        sse_scan_relay(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -445,3 +551,4 @@ async def stream_stress_job_events(job_id: str, user: Dict[str, Any] = Depends(g
             "X-Accel-Buffering": "no",
         }
     )
+

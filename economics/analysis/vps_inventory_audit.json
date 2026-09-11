@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "phase": "C2B_JAPAN_VPS_INVENTORY_AUDIT",
+    "audited_at": "2026-09-11T10:27:21.350778+00:00",
+    "ssh_host": "root@163.44.193.25",
+    "ssh_access": "PASS"
+  },
+  "vps_hardware": {
+    "hostname": "163-44-193-25",
+    "os": "Linux",
+    "os_version": "Ubuntu 26.04 LTS (Resolute Raccoon)",
+    "kernel": "7.0.0-22-generic",
+    "arch": "x86_64",
+    "vcpu_count": 4,
+    "cpu_model": "Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz",
+    "total_ram_mb": 3910,
+    "swap_mb": 3908,
+    "disk_total_gb": 50,
+    "disk_free_gb": 40,
+    "docker_version": null,
+    "docker_compose_version": null,
+    "python_version": "Python 3.14.4",
+    "virtualization": "kvm"
+  },
+  "adq_runtime_presence": {
+    "vps_adq_present": false,
+    "vps_adq_path": null,
+    "vps_adq_git_head": null,
+    "docker_installed": false,
+    "juice_shop_present": false,
+    "status": "STOPPED_PRECONDITION_MISSING_ADQ_AND_DOCKER"
+  },
+  "billing_metadata": {
+    "vps_monthly_cost_vnd": null,
+    "requires_user_billing_input": true
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "workload_id": "ai_copilot_and_risk_analysis",
+  "name": "AI LLM Token Workload Definitions",
+  "data_classification": "ESTIMATE",
+  "empirical_telemetry_measured": false,
+  "sub_operations": {
+    "dast_finding_risk_assessment": {
+      "description": "Automated AI summary and risk impact evaluation for detected vulnerabilities in DAST scans",
+      "model_recommended": "gemini-1.5-flash",
+      "estimated_prompt_tokens": 2500,
+      "estimated_candidate_tokens": 450,
+      "calls_per_dast_scan": 1,
+      "enabled_in_tiers": ["PRO", "PRO_MAX"],
+      "classification": "ESTIMATE"
+    },
+    "interactive_copilot_chat": {
+      "description": "Multi-turn conversational assistance for vulnerability explanation and exploitation triage",
+      "model_recommended": "gemini-1.5-flash",
+      "estimated_prompt_tokens": 3200,
+      "estimated_candidate_tokens": 600,
+      "typical_session_turns_assumption": 4,
+      "enabled_in_tiers": ["PRO_MAX"],
+      "classification": "ESTIMATE"
+    },
+    "one_click_patch_generation": {
+      "description": "Automated unified diff patch generation with security context for verified vulnerabilities",
+      "model_recommended": "gemini-1.5-flash",
+      "estimated_prompt_tokens": 4000,
+      "estimated_candidate_tokens": 1200,
+      "typical_calls_assumption": 2,
+      "enabled_in_tiers": ["PRO_MAX"],
+      "classification": "ESTIMATE"
+    }
+  },
+  "guardrails_and_limits": {
+    "max_context_window_chars": 24000,
+    "sensitive_data_masking_enabled": true,
+    "temperature": 0.2,
+    "classification": "SOURCE_CONFIG"
+  }
+}

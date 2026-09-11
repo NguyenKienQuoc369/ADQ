@@ -1,0 +1,181 @@
+{
+  "meta": {
+    "phase": "C2A.2_MEMORY_SCOPE_AND_IDLE_BASELINE",
+    "classification": "LOCAL_EMPIRICAL",
+    "measured_at": "2026-09-11T09:47:28.115563+00:00",
+    "hardware_context": {
+      "cpu_model": "Intel(R) Core(TM) Ultra 9 285H",
+      "logical_cpus": 16,
+      "total_ram_mb": 31446.07,
+      "kernel": "6.12.104-1-MANJARO",
+      "docker_version": "29.7.2",
+      "adq_head": "a0b36183cb53d8991708bf92eb35dc138053f37c"
+    }
+  },
+  "stress_memory_forensic": {
+    "root_cause_explanation": "In C2A.1, ru_maxrss from resource.getrusage(RUSAGE_CHILDREN) was inspected within a long-running parent runner process after DAST scans had completed. On Linux, ru_maxrss is a non-decreasing lifetime high-water mark across all waited descendants. Therefore, subsequent Stress calls inherited the DAST high-water mark (1080.39 MB). When measured in dedicated isolated subprocesses, actual process tree peak memory is ~99 MB.",
+    "original_c2a1_valid": false,
+    "double_counting_or_high_water_mark_found": true,
+    "unrelated_process_included": false,
+    "corrected_stress_pro_peak_ram": {
+      "min": 99.7,
+      "median": 99.79,
+      "max": 100.48
+    },
+    "corrected_stress_promax_peak_ram": {
+      "min": 100.07,
+      "median": 100.11,
+      "max": 100.15
+    }
+  },
+  "dast_memory_scope": {
+    "scope_valid": true,
+    "unrelated_process_included": false,
+    "median_peak_ram_mb": 1190.07,
+    "notes": "Includes quoc_omni.py and actual scanner child binaries (ffuf, nuclei, katana, httpx, naabu, arjun)."
+  },
+  "network_perspective_audit": {
+    "network_perspective": "SCANNER_EGRESS_AND_INGRESS",
+    "mapping": "SCANNER_TX = TARGET_RX, SCANNER_RX = TARGET_TX",
+    "tx_rx_labels_correct": true
+  },
+  "idle_baselines": {
+    "interval_seconds": 10,
+    "sample_count": 3,
+    "services": {
+      "adq_api": {
+        "cpu_delta_10s": {
+          "min": 0.01,
+          "median": 0.01,
+          "max": 0.02
+        },
+        "net_rx_delta_10s_bytes": {
+          "min": 0,
+          "median": 0,
+          "max": 66
+        },
+        "net_tx_delta_10s_bytes": {
+          "min": 0,
+          "median": 0,
+          "max": 66
+        },
+        "memory_snapshot_rss_mb": {
+          "min": 101.68,
+          "median": 101.68,
+          "max": 101.68
+        }
+      },
+      "adq-worker-light-1": {
+        "cpu_delta_10s": {
+          "min": 0.0,
+          "median": 0.0,
+          "max": 0.01
+        },
+        "net_rx_delta_10s_bytes": {
+          "min": 1357,
+          "median": 1492,
+          "max": 1492
+        },
+        "net_tx_delta_10s_bytes": {
+          "min": 2250,
+          "median": 2412,
+          "max": 2426
+        },
+        "memory_snapshot_rss_mb": {
+          "min": 80.05,
+          "median": 80.05,
+          "max": 80.05
+        }
+      },
+      "adq-worker-elite-1": {
+        "cpu_delta_10s": {
+          "min": 0.0,
+          "median": 0.0,
+          "max": 0.01
+        },
+        "net_rx_delta_10s_bytes": {
+          "min": 1492,
+          "median": 1492,
+          "max": 1492
+        },
+        "net_tx_delta_10s_bytes": {
+          "min": 2409,
+          "median": 2419,
+          "max": 2421
+        },
+        "memory_snapshot_rss_mb": {
+          "min": 79.41,
+          "median": 79.41,
+          "max": 79.41
+        }
+      },
+      "adq_worker_stress": {
+        "cpu_delta_10s": {
+          "min": 0.0,
+          "median": 0.0,
+          "max": 0.01
+        },
+        "net_rx_delta_10s_bytes": {
+          "min": 1492,
+          "median": 1492,
+          "max": 1492
+        },
+        "net_tx_delta_10s_bytes": {
+          "min": 2390,
+          "median": 2392,
+          "max": 2392
+        },
+        "memory_snapshot_rss_mb": {
+          "min": 87.61,
+          "median": 87.61,
+          "max": 87.61
+        }
+      },
+      "adq_redis": {
+        "cpu_delta_10s": {
+          "min": 0.04,
+          "median": 0.05,
+          "max": 0.05
+        },
+        "net_rx_delta_10s_bytes": {
+          "min": 12217,
+          "median": 12407,
+          "max": 12449
+        },
+        "net_tx_delta_10s_bytes": {
+          "min": 6261,
+          "median": 6331,
+          "max": 6397
+        },
+        "memory_snapshot_rss_mb": {
+          "min": 13.55,
+          "median": 13.55,
+          "max": 13.55
+        }
+      },
+      "adq_postgres": {
+        "cpu_delta_10s": {
+          "min": 0.0,
+          "median": 0.0,
+          "max": 0.0
+        },
+        "net_rx_delta_10s_bytes": {
+          "min": 0,
+          "median": 0,
+          "max": 0
+        },
+        "net_tx_delta_10s_bytes": {
+          "min": 0,
+          "median": 0,
+          "max": 0
+        },
+        "memory_snapshot_rss_mb": {
+          "min": 62.75,
+          "median": 62.75,
+          "max": 62.75
+        }
+      }
+    }
+  },
+  "monetary_cost_calculated": false
+}

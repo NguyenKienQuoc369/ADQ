@@ -1,0 +1,51 @@
+{
+  "manifest_version": "2.0.0",
+  "target_name": "Synthetic Test Target",
+  "target_version": "v1.0.0",
+  "base_url": "http://127.0.0.1:8000",
+  "entries": [
+    {
+      "id": "SYN-SQLI-01",
+      "expected": "POSITIVE",
+      "category": "SQL Injection",
+      "endpoint": "/api/users",
+      "parameter": "search",
+      "method": "GET",
+      "severity_reference": "HIGH"
+    },
+    {
+      "id": "SYN-XSS-01",
+      "expected": "POSITIVE",
+      "category": "Cross-Site Scripting",
+      "endpoint": "/profile",
+      "parameter": "bio",
+      "method": "POST",
+      "severity_reference": "MEDIUM"
+    },
+    {
+      "id": "SYN-PORT-01",
+      "expected": "POSITIVE",
+      "category": "Open Service",
+      "host": "127.0.0.1",
+      "port": 8000,
+      "severity_reference": "INFO"
+    },
+    {
+      "id": "SYN-NEG-01",
+      "expected": "NEGATIVE",
+      "category": "SQL Injection",
+      "endpoint": "/api/health",
+      "parameter": null,
+      "method": "GET"
+    },
+    {
+      "id": "SYN-NEG-02",
+      "expected": "NEGATIVE",
+      "category": "Cross-Site Scripting",
+      "endpoint": "/robots.txt",
+      "parameter": null,
+      "method": "GET"
+    }
+  ]
+}
+

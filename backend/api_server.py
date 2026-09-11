@@ -12,8 +12,9 @@ from backend.routers.apk_router import router as apk_router
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    redoc_url="/api/redoc",
 )
 
 app.include_router(maintenance_router)
@@ -48,6 +49,7 @@ app.include_router(apk_router)
 
 
 @app.get("/health", tags=["Health"])
+@app.get("/api/health", tags=["Health"])
 def health_check():
     return {
         "status": "healthy",

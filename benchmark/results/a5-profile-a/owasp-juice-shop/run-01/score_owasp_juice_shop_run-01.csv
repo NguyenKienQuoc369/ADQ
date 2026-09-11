@@ -1,0 +1,12 @@
+Target,Metric,Value
+OWASP Juice Shop,total_positive_ground_truth,10
+OWASP Juice Shop,total_negative_ground_truth,4
+OWASP Juice Shop,true_positives,4
+OWASP Juice Shop,false_positives,0
+OWASP Juice Shop,false_negatives,6
+OWASP Juice Shop,unknown_unscorable,4762
+OWASP Juice Shop,duplicate_positives,14
+OWASP Juice Shop,precision,1.0
+OWASP Juice Shop,recall,0.4
+OWASP Juice Shop,f1_score,0.5714
+OWASP Juice Shop,severity_concordance_rate,0.25

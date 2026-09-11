@@ -1,0 +1,4 @@
+Phase,Scope,Precision,Recall,F1,Notes
+A3_ORIGINAL,Broad (19 GT controls),1.0,0.2105,0.3478,Original baseline run with hardcoded FFuf https scheme bug
+A4_REINTERPRETATION,Profile A (12 GT controls),1.0,0.5,0.6667,Mathematical reinterpretation of A3 raw evidence without FFuf fix credit
+A5_REAL_RERUN,Profile A (12 GT controls),1.0,0.5,0.6667,New real run with Scope Matrix + Matcher correction + FFuf bugfix

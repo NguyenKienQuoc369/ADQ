@@ -1,0 +1,11 @@
+Category,TP,FP,FN,UNKNOWN,Precision,Recall
+Command Injection,0,0,3,0,N/A,0.0
+Cross-Site Scripting,0,0,12,0,N/A,0.0
+Exposed Secrets,0,0,3,0,N/A,0.0
+Local File Inclusion,0,0,3,0,N/A,0.0
+Open Service,6,0,0,0,1.0,1.0
+SQL Injection,0,0,12,0,N/A,0.0
+Security Misconfiguration,6,0,6,102,1.0,0.5
+Sensitive Endpoint Exposure,0,0,6,0,N/A,0.0
+ffuf,0,0,0,6,N/A,N/A
+nuclei,0,0,0,153,N/A,N/A

@@ -4,7 +4,7 @@ import json
 import uuid
 import time
 import urllib.parse
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from fastapi import HTTPException
 import redis
 
@@ -62,10 +62,18 @@ except Exception:
 
 class ScanService:
     @staticmethod
-    def create_scan_job(req: ScanRequest, skip_ai: bool = False) -> Dict[str, Any]:
-        if not req.target or not req.target.strip():
+    def create_scan_job(
+        req: ScanRequest,
+        canonical_target: Optional[str] = None,
+        user_id: Optional[str] = None,
+        skip_ai: bool = False,
+    ) -> Dict[str, Any]:
+        raw_target = (req.target or "").strip()
+        if not raw_target:
             raise HTTPException(status_code=400, detail="Target URL is required")
 
+        effective_target = canonical_target or raw_target
+        effective_user_id = user_id or "anonymous"
         job_id = str(uuid.uuid4())
 
         request_payload = req.model_dump()
@@ -92,7 +100,8 @@ class ScanService:
         # Execution payload dành riêng cho worker (giữ raw secret để thực thi)
         execution_job_data = {
             "job_id": job_id,
-            "target": req.target.strip(),
+            "user_id": effective_user_id,
+            "target": effective_target,
             "request": request_payload,
             "created_at": time.time(),
             "status": "QUEUED",
@@ -110,7 +119,7 @@ class ScanService:
         try:
             save_scan_job(
                 scan_id=job_id,
-                target=req.target.strip(),
+                target=effective_target,
                 status="QUEUED",
                 score=0,
             )
@@ -153,7 +162,7 @@ class ScanService:
         return public_job_data
 
     @staticmethod
-    def get_job_status(job_id: str) -> Dict[str, Any]:
+    def get_job_status(job_id: str, user_tier: str = "FREE") -> Dict[str, Any]:
         job_data = JOBS_STORAGE.get(job_id, {})
         if redis_client:
             try:
@@ -185,6 +194,16 @@ class ScanService:
         # Defense-in-depth: Đảm bảo request metadata trả về API luôn sanitized
         if isinstance(job_data.get("request"), dict):
             job_data["request"] = sanitize_request_data(job_data["request"])
+
+        # Compute / attach 4-state Assurance Matrix
+        try:
+            try:
+                from backend.security_controls.assurance_engine import evaluate_scan_assurance
+            except ImportError:
+                from security_controls.assurance_engine import evaluate_scan_assurance
+            job_data["assurance_matrix"] = evaluate_scan_assurance(job_data, user_tier=user_tier)
+        except Exception as exc:
+            print(f"[ScanService] Assurance evaluation warning: {exc}")
 
         return job_data
 
@@ -417,17 +436,17 @@ class ScanService:
         return origin
 
     @staticmethod
-    def _get_verification_redis_key(user_id: str, normalized_origin: str) -> str:
+    def _get_verification_redis_key(user_id: str, normalized_origin: str, namespace: str = "target_verification") -> str:
         import hashlib
         target_hash = hashlib.sha256(normalized_origin.encode("utf-8")).hexdigest()[:16]
-        return f"stress_verification:{user_id}:{target_hash}"
+        return f"{namespace}:{user_id}:{target_hash}"
 
     @staticmethod
-    def start_stress_verification(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
+    def start_target_verification(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
         import secrets
         user_id = str(user.get("id") or user.get("sub") or "anonymous")
         origin, _ = resolve_and_validate_target(target_url)
-        key = ScanService._get_verification_redis_key(user_id, origin)
+        key = ScanService._get_verification_redis_key(user_id, origin, namespace="target_verification")
 
         # Kiểm tra token đã có sẵn chưa nếu còn hạn
         token = None
@@ -456,6 +475,9 @@ class ScanService:
 
         if redis_client:
             redis_client.setex(key, ttl, json.dumps(state))
+            # Also keep legacy key synced for zero-downtime backward compatibility
+            legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
+            redis_client.setex(legacy_key, ttl, json.dumps(state))
 
         meta_tag = f'<meta name="adq-verification" content="{token}">'
         return {
@@ -468,15 +490,19 @@ class ScanService:
         }
 
     @staticmethod
-    def check_stress_verification(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
+    def check_target_verification(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
         import secrets
         user_id = str(user.get("id") or user.get("sub") or "anonymous")
         origin, _ = resolve_and_validate_target(target_url)
-        key = ScanService._get_verification_redis_key(user_id, origin)
+        key = ScanService._get_verification_redis_key(user_id, origin, namespace="target_verification")
 
         state = None
         if redis_client:
             raw = redis_client.get(key)
+            if not raw:
+                # Fallback check legacy namespace
+                legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
+                raw = redis_client.get(legacy_key)
             if raw:
                 try:
                     state = json.loads(raw)
@@ -521,12 +547,14 @@ class ScanService:
             if redis_client:
                 # Gia hạn TTL 3600s sau khi xác minh thành công
                 redis_client.setex(key, 3600, json.dumps(state))
+                legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
+                redis_client.setex(legacy_key, 3600, json.dumps(state))
 
             return {
                 "ok": True,
                 "verified": True,
                 "target": origin,
-                "message": "Xác minh quyền sở hữu mục tiêu thành công! Bạn có thể bắt đầu kiểm thử tải.",
+                "message": "Xác minh quyền sở hữu mục tiêu thành công! Bạn có thể bắt đầu quét an ninh hoặc kiểm thử tải.",
                 "verified_at": now,
             }
 
@@ -538,15 +566,19 @@ class ScanService:
         }
 
     @staticmethod
-    def is_stress_target_verified(user: Dict[str, Any], target_url: str) -> bool:
+    def is_target_verified(user: Dict[str, Any], target_url: str) -> bool:
         user_id = str(user.get("id") or user.get("sub") or "anonymous")
         try:
             origin = ScanService.normalize_target_origin(target_url)
         except Exception:
             return False
-        key = ScanService._get_verification_redis_key(user_id, origin)
+
+        key = ScanService._get_verification_redis_key(user_id, origin, namespace="target_verification")
         if redis_client:
             raw = redis_client.get(key)
+            if not raw:
+                legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
+                raw = redis_client.get(legacy_key)
             if raw:
                 try:
                     data = json.loads(raw)
@@ -554,4 +586,17 @@ class ScanService:
                 except Exception:
                     pass
         return False
+
+    # Backward compatibility aliases for Stress module
+    @staticmethod
+    def start_stress_verification(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
+        return ScanService.start_target_verification(user, target_url)
+
+    @staticmethod
+    def check_stress_verification(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
+        return ScanService.check_target_verification(user, target_url)
+
+    @staticmethod
+    def is_stress_target_verified(user: Dict[str, Any], target_url: str) -> bool:
+        return ScanService.is_target_verified(user, target_url)
 

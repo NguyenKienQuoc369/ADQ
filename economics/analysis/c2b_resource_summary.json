@@ -1,0 +1,168 @@
+{
+  "meta": {
+    "phase": "C2B_JAPAN_VPS_EMPIRICAL_MEASUREMENT",
+    "classification": "VPS_EMPIRICAL",
+    "measured_at": "2026-09-11T11:52:51.299724+00:00",
+    "hardware_context": {
+      "hostname": "163-44-193-25",
+      "os": "Ubuntu 26.04 LTS (Resolute Raccoon)",
+      "kernel": "7.0.0-22-generic",
+      "arch": "x86_64",
+      "vcpu_count": 4,
+      "cpu_model": "Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz",
+      "total_ram_mb": 3910,
+      "swap_mb": 3908,
+      "disk_gb": 50,
+      "docker_version": "29.8.0",
+      "adq_head": "a0b36183cb53d8991708bf92eb35dc138053f37c (with B2 fixes)"
+    },
+    "billing_input": {
+      "vps_cost_vnd_per_hour": 1790,
+      "classification": "USER_SUPPLIED_BILLING_INPUT",
+      "modelled_monthly_equivalent_720h_vnd": 1288800,
+      "modelled_monthly_equivalent_744h_vnd": 1331760,
+      "external_postgres_cost_vnd": 0,
+      "external_redis_cost_vnd": 0,
+      "provider_billing_mechanism": "WALL_CLOCK_HOURLY",
+      "modelled_full_month_uptime_cost_720h_vnd": 1288800,
+      "modelled_full_month_uptime_cost_744h_vnd": 1331760
+    }
+  },
+  "workloads": {
+    "DAST_PROFILE_A": {
+      "runs_completed": 3,
+      "metrics": {
+        "runtime": {
+          "min": 208.888,
+          "median": 264.34,
+          "max": 349.839
+        },
+        "cpu": {
+          "min": 35.884,
+          "median": 39.249,
+          "max": 49.894
+        },
+        "peak_ram": {
+          "min": 747.87,
+          "median": 754.21,
+          "max": 794.49
+        },
+        "tx_bytes": {
+          "min": 0.0,
+          "median": 0.0,
+          "max": 0.0
+        },
+        "rx_bytes": {
+          "min": 0.0,
+          "median": 0.0,
+          "max": 0.0
+        },
+        "artifact_bytes": {
+          "min": 10547.0,
+          "median": 20843.0,
+          "max": 22378.0
+        }
+      },
+      "modelled_resource_attribution_vnd": 4.88,
+      "resource_attribution_methodology": "hourly_vps_rate / 4_vcpu * measured_cpu_seconds",
+      "actual_provider_cost_per_operation": "NOT_DIRECTLY_OBSERVABLE"
+    },
+    "L7_STRESS_PRO": {
+      "runs_completed": 3,
+      "metrics": {
+        "runtime": {
+          "min": 31.268,
+          "median": 31.318,
+          "max": 31.686
+        },
+        "cpu": {
+          "min": 4.118,
+          "median": 4.201,
+          "max": 4.321
+        },
+        "peak_ram": {
+          "min": 95.65,
+          "median": 95.7,
+          "max": 95.7
+        },
+        "tx_bytes": {
+          "min": 1449059.0,
+          "median": 1449125.0,
+          "max": 1449125.0
+        },
+        "rx_bytes": {
+          "min": 4099484.0,
+          "median": 4099484.0,
+          "max": 4099484.0
+        },
+        "completed_requests": {
+          "min": 2000.0,
+          "median": 2000.0,
+          "max": 2000.0
+        }
+      },
+      "modelled_resource_attribution_vnd": 0.52,
+      "resource_attribution_methodology": "hourly_vps_rate / 4_vcpu * measured_cpu_seconds",
+      "actual_provider_cost_per_operation": "NOT_DIRECTLY_OBSERVABLE"
+    },
+    "L7_STRESS_PRO_MAX": {
+      "runs_completed": 3,
+      "metrics": {
+        "runtime": {
+          "min": 61.463,
+          "median": 61.494,
+          "max": 61.494
+        },
+        "cpu": {
+          "min": 8.524,
+          "median": 8.78,
+          "max": 8.791
+        },
+        "peak_ram": {
+          "min": 95.95,
+          "median": 95.99,
+          "max": 96.01
+        },
+        "tx_bytes": {
+          "min": 3589059.0,
+          "median": 3589083.0,
+          "max": 3589125.0
+        },
+        "rx_bytes": {
+          "min": 10199443.0,
+          "median": 10199485.0,
+          "max": 10199485.0
+        },
+        "completed_requests": {
+          "min": 4980.0,
+          "median": 4980.0,
+          "max": 4980.0
+        }
+      },
+      "modelled_resource_attribution_vnd": 1.09,
+      "resource_attribution_methodology": "hourly_vps_rate / 4_vcpu * measured_cpu_seconds",
+      "actual_provider_cost_per_operation": "NOT_DIRECTLY_OBSERVABLE"
+    }
+  },
+  "telemetry_audit": {
+    "ai_usage_metadata_supported": true,
+    "ai_usage_metadata_currently_captured": "PARTIAL (In-memory token count in copilot_engine; unpersisted in DB)",
+    "monetary_cost_calculated": true,
+    "pricing_basis": "Empirical VPS rate of 1,790 VND/hr"
+  },
+  "financial_hygiene": {
+    "actual_provider_cost_per_operation": "NOT_DIRECTLY_OBSERVABLE",
+    "resource_attribution_model_available": true,
+    "fixed_hosting_only_break_even": {
+      "pro_subscribers": 7,
+      "promax_subscribers": 3,
+      "disclaimer": "Excludes AI API cost, payment processing, domain, operations, taxes, and secondary infrastructure."
+    },
+    "full_variable_cost_per_dast": "UNKNOWN",
+    "full_variable_cost_per_copilot": "UNKNOWN",
+    "full_gross_margin": "UNKNOWN",
+    "full_business_break_even": "UNKNOWN",
+    "full_gross_margin_claim_supported": false,
+    "full_business_break_even_supported": false
+  }
+}

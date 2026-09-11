@@ -23,20 +23,31 @@ import {
   Save,
   BookmarkCheck,
   PlusCircle,
+  ShieldCheck,
+  CheckCircle2,
+  Copy,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getEntitlements } from "@/lib/entitlements";
 import { AiAnalysisCard } from "@/components/scan/ai-analysis-card";
 import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
+import { StageTimeline } from "@/components/scan/stage-timeline";
+import { CoverageSummary } from "@/components/scan/coverage-summary";
+import { AssuranceMatrix } from "@/components/scan/assurance-matrix";
+import { WhatADQCheckedModal } from "@/components/scan/what-adq-checked-modal";
 import {
   getProjectById,
   saveProjectDetail,
   startScanJob,
   getScanJobStatus,
   getScanEndpoints,
+  getScanAssurance,
   copilotChat,
+  startTargetVerification,
+  checkTargetVerification,
   ActionAdvice,
   ScanEndpoint,
+  AssuranceMatrix as AssuranceMatrixType,
 } from "@/lib/api";
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
@@ -166,6 +177,15 @@ function ScanLandingContent() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
+  // Ownership verification state
+  const [verificationStatus, setVerificationStatus] = useState<"UNVERIFIED" | "VERIFYING" | "VERIFIED" | "FAILED">("UNVERIFIED");
+  const [verificationToken, setVerificationToken] = useState<string>("");
+  const [metaTagString, setMetaTagString] = useState<string>("");
+  const [verificationMessage, setVerificationMessage] = useState<string>("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isCopiedMeta, setIsCopiedMeta] = useState(false);
+  const [showVerificationBox, setShowVerificationBox] = useState(false);
+
   // States lưu phiên & xác nhận ghi đè
   const [isSavingSession, setIsSavingSession] = useState(false);
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
@@ -186,6 +206,9 @@ function ScanLandingContent() {
   const [crawledUrls, setCrawledUrls] = useState(0);
   const [openPorts, setOpenPorts] = useState(0);
   const [vulnCount, setVulnCount] = useState(0);
+
+  const [assuranceMatrix, setAssuranceMatrix] = useState<AssuranceMatrixType | null>(null);
+  const [isWhatCheckedOpen, setIsWhatCheckedOpen] = useState(false);
 
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
   const [discoveredEndpoints, setDiscoveredEndpoints] = useState<ScanEndpoint[]>([]);
@@ -358,6 +381,10 @@ function ScanLandingContent() {
         setVulnCount(nuclei.length);
         setVulnerabilities(nuclei);
         setScanError(null);
+
+        if (job.assurance_matrix) {
+          setAssuranceMatrix(job.assurance_matrix);
+        }
 
         setNodes((prev) => {
           const recovered = { ...prev };
@@ -646,8 +673,67 @@ function ScanLandingContent() {
     }
   };
 
-  const handleStartScanClick = () => {
+  const handleFetchVerificationToken = async (targetOverride?: string) => {
+    const raw = (targetOverride || target).trim();
+    if (!raw) return;
+    try {
+      setShowVerificationBox(true);
+      setVerificationStatus("VERIFYING");
+      setVerificationMessage("Đang tạo mã xác minh quyền sở hữu...");
+      const res = await startTargetVerification(raw);
+      if (res.ok) {
+        setVerificationToken(res.verification_token);
+        setMetaTagString(res.meta_tag);
+        if (res.verified) {
+          setVerificationStatus("VERIFIED");
+          setVerificationMessage("Mục tiêu đã được xác minh quyền sở hữu thành công.");
+        } else {
+          setVerificationStatus("UNVERIFIED");
+          setVerificationMessage("Vui lòng chèn thẻ <meta> vào thẻ <head> của trang chủ website và bấm Xác Minh.");
+        }
+      }
+    } catch (err: any) {
+      setVerificationStatus("FAILED");
+      setVerificationMessage(err?.message || "Không thể khởi tạo mã xác minh.");
+    }
+  };
+
+  const handleCheckVerification = async () => {
+    if (!target.trim()) return;
+    setIsVerifying(true);
+    setVerificationMessage("Đang kết nối an toàn đến trang chủ mục tiêu để kiểm tra thẻ Meta Tag...");
+    try {
+      const res = await checkTargetVerification(target.trim());
+      if (res.ok && res.verified) {
+        setVerificationStatus("VERIFIED");
+        setVerificationMessage(res.message || "Xác minh quyền sở hữu thành công! Bạn có thể bắt đầu quét an ninh.");
+      } else {
+        setVerificationStatus("FAILED");
+        setVerificationMessage(res.message || "Không tìm thấy thẻ meta xác minh hợp lệ trong trang chủ.");
+      }
+    } catch (err: any) {
+      setVerificationStatus("FAILED");
+      setVerificationMessage(err?.message || "Lỗi kiểm tra xác minh.");
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const copyMetaTag = () => {
+    if (!metaTagString) return;
+    navigator.clipboard.writeText(metaTagString);
+    setIsCopiedMeta(true);
+    setTimeout(() => setIsCopiedMeta(false), 2000);
+  };
+
+  const handleStartScanClick = async () => {
     if (isScanning || !target.trim()) return;
+
+    if (verificationStatus !== "VERIFIED") {
+      await handleFetchVerificationToken();
+      setShowVerificationBox(true);
+      return;
+    }
 
     const hasExistingData =
       vulnerabilities.length > 0 ||
@@ -850,22 +936,38 @@ function ScanLandingContent() {
           </div>
         </div>
 
-        {/* Input Target */}
-        <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 sm:p-5">
+        {/* Input Target & Verification */}
+        <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 sm:p-5 space-y-3">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
               <Input
-                onChange={(e) => setTarget(e.target.value)}
+                onChange={(e) => {
+                  setTarget(e.target.value);
+                  if (verificationStatus === "VERIFIED") {
+                    setVerificationStatus("UNVERIFIED");
+                  }
+                }}
                 value={target}
                 disabled={isScanning}
                 placeholder="Nhập tên miền mục tiêu (vd: example.com hoặc api.domain.vn)"
                 className="pl-9 bg-[#0a0a0a] border-[#333333] text-white placeholder:text-neutral-500 focus:border-white focus:ring-0 text-xs h-9 rounded-md"
               />
             </div>
+            {verificationStatus !== "VERIFIED" ? (
+              <Button
+                className="h-9 px-3.5 border border-[#333333] bg-[#111111] hover:bg-neutral-800 text-white font-medium text-xs rounded-md shadow-sm transition active:scale-98 cursor-pointer shrink-0"
+                disabled={isScanning || !target.trim() || isVerifying}
+                onClick={() => handleFetchVerificationToken()}
+                variant="outline"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 mr-1.5 text-white" />
+                {verificationToken ? "Lấy Mã Mới" : "Xác Minh Mục Tiêu"}
+              </Button>
+            ) : null}
             <Button
-              className="h-9 px-5 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md shadow-sm transition active:scale-98 cursor-pointer"
-              disabled={isScanning || isFreeLimitExceeded || !target.trim()}
+              className="h-9 px-5 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md shadow-sm transition active:scale-98 cursor-pointer disabled:opacity-50 shrink-0"
+              disabled={isScanning || isFreeLimitExceeded || !target.trim() || verificationStatus !== "VERIFIED"}
               onClick={handleStartScanClick}
             >
               {isScanning ? (
@@ -879,6 +981,69 @@ function ScanLandingContent() {
               )}
             </Button>
           </div>
+
+          {/* Verification Challenge Box */}
+          {showVerificationBox && (
+            <div className="border border-[#222222] bg-[#0a0a0a] rounded-lg p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5 font-mono">
+                  <ShieldCheck className="h-3.5 w-3.5 text-white" /> Xác minh quyền sở hữu mục tiêu (Meta Tag)
+                </p>
+                {verificationStatus === "VERIFIED" ? (
+                  <span className="text-[10px] font-mono border border-emerald-700 bg-emerald-950 text-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> ĐÃ XÁC MINH
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono border border-amber-700 bg-amber-950 text-amber-300 px-2.5 py-0.5 rounded-full">
+                    CẦN XÁC MINH
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-relaxed">
+                Để ngăn chặn quét trái phép, bạn cần chèn thẻ meta sau vào thẻ <code className="text-white bg-neutral-900 px-1 py-0.5 rounded">&lt;head&gt;</code> của trang chủ website trước khi thực hiện quét:
+              </p>
+              {metaTagString ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-[#000000] border border-[#333333] rounded-md p-2 font-mono text-[11px] text-emerald-300 overflow-x-auto select-all">
+                      {metaTagString}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={copyMetaTag}
+                      className="h-8 text-xs border-[#333333] bg-[#111111] hover:bg-neutral-800 text-white rounded-md shrink-0"
+                    >
+                      <Copy className="h-3.5 w-3.5 mr-1" />
+                      {isCopiedMeta ? "Đã chép" : "Sao chép"}
+                    </Button>
+                  </div>
+                  {verificationMessage && (
+                    <p className={`text-xs font-mono ${verificationStatus === "VERIFIED" ? "text-emerald-400" : "text-rose-400"}`}>
+                      {verificationMessage}
+                    </p>
+                  )}
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      onClick={handleCheckVerification}
+                      disabled={isVerifying}
+                      className="h-8 text-xs bg-white text-black hover:bg-neutral-200 font-medium rounded-md px-4"
+                    >
+                      {isVerifying ? (
+                        <>
+                          <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Đang kiểm tra...
+                        </>
+                      ) : (
+                        "Xác Minh Ngay"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+
           {scanError && (
             <p className="text-xs text-rose-400 mt-2 flex items-center gap-1.5">
               <AlertCircle className="h-3.5 w-3.5" /> {scanError}
@@ -1111,6 +1276,27 @@ function ScanLandingContent() {
           </Card>
         </div>
 
+        {/* Security Control Assurance Matrix & Stage Timeline */}
+        {assuranceMatrix?.stages_summary && (
+          <StageTimeline
+            stages={assuranceMatrix.stages_summary}
+            isScanning={isScanning}
+          />
+        )}
+
+        {assuranceMatrix?.coverage_summary && (
+          <CoverageSummary
+            coverage={assuranceMatrix.coverage_summary}
+            onOpenWhatChecked={() => setIsWhatCheckedOpen(true)}
+          />
+        )}
+
+        {assuranceMatrix?.controls && (
+          <AssuranceMatrix
+            controls={assuranceMatrix.controls}
+          />
+        )}
+
         {/* DAG 7 Steps */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
           {nodeArray.map((n) => {
@@ -1339,6 +1525,16 @@ function ScanLandingContent() {
           onConfirm={handleConfirmRescan}
           onCreateNewSession={handleCreateNewSession}
         />
+
+        {/* Modal "What ADQ Checked" */}
+        {assuranceMatrix?.controls && assuranceMatrix?.scope_limitations && (
+          <WhatADQCheckedModal
+            isOpen={isWhatCheckedOpen}
+            onClose={() => setIsWhatCheckedOpen(false)}
+            controls={assuranceMatrix.controls}
+            scopeLimitations={assuranceMatrix.scope_limitations}
+          />
+        )}
       </div>
     </DashboardShell>
   );

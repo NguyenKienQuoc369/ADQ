@@ -1,0 +1,14 @@
+workload,metric,local_c2a2_median,vps_c2b_median,vps_to_local_ratio,notes
+DAST_PROFILE_A,runtime_seconds,200.552,264.34,1.318,VPS runtime +31.8% due to Xeon Gold 2.0GHz vs Ultra 9 5.4GHz boost
+DAST_PROFILE_A,cpu_seconds,75.628,39.249,0.519,CPU user+sys on 4 vCPU VM vs 16 core host
+DAST_PROFILE_A,peak_ram_mb,1190.07,754.21,0.634,Lower peak RAM under tighter Linux 4GB cgroup
+L7_STRESS_PRO,runtime_seconds,30.654,31.318,1.022,Clock pacing fixed duration ~31s
+L7_STRESS_PRO,cpu_seconds,3.048,4.201,1.378,VPS CPU +37.8% on Xeon 2.0GHz
+L7_STRESS_PRO,peak_ram_mb,99.79,95.7,0.959,Consistent ~96MB Python load generator footprint
+L7_STRESS_PRO,network_tx_bytes,1449017,1449125,1.0,Identical ~1.45 MB wire requests (2000 reqs)
+L7_STRESS_PRO,network_rx_bytes,4100000,4099484,1.0,Identical ~4.10 MB wire responses (2000 reqs)
+L7_STRESS_PRO_MAX,runtime_seconds,60.886,61.494,1.01,Clock pacing fixed duration ~61s
+L7_STRESS_PRO_MAX,cpu_seconds,7.471,8.78,1.175,VPS CPU +17.5% on Xeon 2.0GHz
+L7_STRESS_PRO_MAX,peak_ram_mb,100.11,95.99,0.959,Consistent ~96MB memory footprint
+L7_STRESS_PRO_MAX,network_tx_bytes,3590000,3589083,1.0,Identical ~3.59 MB wire requests (4980 reqs)
+L7_STRESS_PRO_MAX,network_rx_bytes,10200000,10199443,1.0,Identical ~10.20 MB wire responses (4980 reqs)

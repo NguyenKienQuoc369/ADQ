@@ -1,0 +1,19 @@
+sample_id,timestamp,container_name,cpu_percent,memory_usage,network_io,notes
+sample-01,2026-09-11T08:54:45.350899+00:00,adq_api,0.12%,128MiB / 30.71GiB,12.4MB / 4.67MB,idle_state_no_jobs_running
+sample-01,2026-09-11T08:54:45.350899+00:00,adq-worker-light-1,0.02%,80.7MiB / 30.71GiB,272kB / 437kB,idle_state_no_jobs_running
+sample-01,2026-09-11T08:54:45.350899+00:00,adq-worker-elite-1,0.03%,73.27MiB / 30.71GiB,272kB / 437kB,idle_state_no_jobs_running
+sample-01,2026-09-11T08:54:45.350899+00:00,adq_worker_stress,0.03%,69.04MiB / 30.71GiB,272kB / 432kB,idle_state_no_jobs_running
+sample-01,2026-09-11T08:54:45.350899+00:00,adq_redis,0.44%,20.98MiB / 30.71GiB,2.25MB / 1.15MB,idle_state_no_jobs_running
+sample-01,2026-09-11T08:54:45.350899+00:00,adq_postgres,0.00%,47.33MiB / 30.71GiB,2.39kB / 126B,idle_state_no_jobs_running
+sample-02,2026-09-11T08:54:50.405650+00:00,adq_api,0.13%,128MiB / 30.71GiB,12.4MB / 4.67MB,idle_state_no_jobs_running
+sample-02,2026-09-11T08:54:50.405650+00:00,adq-worker-light-1,0.02%,80.7MiB / 30.71GiB,273kB / 439kB,idle_state_no_jobs_running
+sample-02,2026-09-11T08:54:50.405650+00:00,adq-worker-elite-1,0.02%,73.27MiB / 30.71GiB,273kB / 438kB,idle_state_no_jobs_running
+sample-02,2026-09-11T08:54:50.405650+00:00,adq_worker_stress,0.02%,69.04MiB / 30.71GiB,273kB / 433kB,idle_state_no_jobs_running
+sample-02,2026-09-11T08:54:50.405650+00:00,adq_redis,0.33%,20.98MiB / 30.71GiB,2.25MB / 1.15MB,idle_state_no_jobs_running
+sample-02,2026-09-11T08:54:50.405650+00:00,adq_postgres,0.00%,47.33MiB / 30.71GiB,2.39kB / 126B,idle_state_no_jobs_running
+sample-03,2026-09-11T08:54:55.462150+00:00,adq_api,0.15%,128MiB / 30.71GiB,12.4MB / 4.67MB,idle_state_no_jobs_running
+sample-03,2026-09-11T08:54:55.462150+00:00,adq-worker-light-1,0.02%,80.7MiB / 30.71GiB,274kB / 440kB,idle_state_no_jobs_running
+sample-03,2026-09-11T08:54:55.462150+00:00,adq-worker-elite-1,0.04%,73.27MiB / 30.71GiB,274kB / 439kB,idle_state_no_jobs_running
+sample-03,2026-09-11T08:54:55.462150+00:00,adq_worker_stress,0.03%,69.04MiB / 30.71GiB,273kB / 435kB,idle_state_no_jobs_running
+sample-03,2026-09-11T08:54:55.462150+00:00,adq_redis,0.38%,20.98MiB / 30.71GiB,2.26MB / 1.16MB,idle_state_no_jobs_running
+sample-03,2026-09-11T08:54:55.462150+00:00,adq_postgres,0.00%,47.33MiB / 30.71GiB,2.39kB / 126B,idle_state_no_jobs_running

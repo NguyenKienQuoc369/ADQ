@@ -1,0 +1,150 @@
+{
+  "manifest_version": "2.0.0",
+  "target_name": "Damn Vulnerable Web Application (DVWA)",
+  "target_version": "1.9",
+  "base_url": "http://127.0.0.1:8081",
+  "coverage_scope": "Blackbox DAST (SQLi, Blind SQLi, XSS Reflected, XSS Stored, Command Injection, File Inclusion, Headers, Ports)",
+  "entries": [
+    {
+      "id": "DVWA-SQLI-01",
+      "expected": "POSITIVE",
+      "category": "SQL Injection",
+      "endpoint": "/vulnerabilities/sqli/",
+      "parameter": "id",
+      "method": "GET",
+      "cwe": "CWE-89",
+      "cve": null,
+      "severity_reference": "HIGH",
+      "source_of_ground_truth": "DVWA v1.9 Source Code (sqli/index.php)",
+      "notes": "Direct user input interpolation into MySQL query via GET parameter id"
+    },
+    {
+      "id": "DVWA-SQLI-02",
+      "expected": "POSITIVE",
+      "category": "SQL Injection",
+      "endpoint": "/vulnerabilities/sqli_blind/",
+      "parameter": "id",
+      "method": "GET",
+      "cwe": "CWE-89",
+      "cve": null,
+      "severity_reference": "HIGH",
+      "source_of_ground_truth": "DVWA v1.9 Source Code (sqli_blind/index.php)",
+      "notes": "Boolean/Time-based blind SQL injection via GET parameter id"
+    },
+    {
+      "id": "DVWA-XSS-01",
+      "expected": "POSITIVE",
+      "category": "Cross-Site Scripting",
+      "endpoint": "/vulnerabilities/xss_r/",
+      "parameter": "name",
+      "method": "GET",
+      "cwe": "CWE-79",
+      "cve": null,
+      "severity_reference": "MEDIUM",
+      "source_of_ground_truth": "DVWA v1.9 Source Code (xss_r/index.php)",
+      "notes": "Unsanitized reflected XSS via GET parameter name"
+    },
+    {
+      "id": "DVWA-XSS-02",
+      "expected": "POSITIVE",
+      "category": "Cross-Site Scripting",
+      "endpoint": "/vulnerabilities/xss_s/",
+      "parameter": "mtxMessage",
+      "method": "POST",
+      "cwe": "CWE-79",
+      "cve": null,
+      "severity_reference": "HIGH",
+      "source_of_ground_truth": "DVWA v1.9 Source Code (xss_s/index.php)",
+      "notes": "Persistent stored XSS via guestbook message submission"
+    },
+    {
+      "id": "DVWA-CMDI-01",
+      "expected": "POSITIVE",
+      "category": "Command Injection",
+      "endpoint": "/vulnerabilities/exec/",
+      "parameter": "ip",
+      "method": "POST",
+      "cwe": "CWE-78",
+      "cve": null,
+      "severity_reference": "CRITICAL",
+      "source_of_ground_truth": "DVWA v1.9 Source Code (exec/index.php)",
+      "notes": "Direct shell command execution via ping IP parameter"
+    },
+    {
+      "id": "DVWA-LFI-01",
+      "expected": "POSITIVE",
+      "category": "Local File Inclusion",
+      "endpoint": "/vulnerabilities/fi/",
+      "parameter": "page",
+      "method": "GET",
+      "cwe": "CWE-98",
+      "cve": null,
+      "severity_reference": "HIGH",
+      "source_of_ground_truth": "DVWA v1.9 Source Code (fi/index.php)",
+      "notes": "Arbitrary file inclusion via PHP include parameter page"
+    },
+    {
+      "id": "DVWA-MISCONFIG-01",
+      "expected": "POSITIVE",
+      "category": "Security Misconfiguration",
+      "endpoint": "/",
+      "parameter": null,
+      "method": "GET",
+      "cwe": "CWE-693",
+      "cve": null,
+      "severity_reference": "LOW",
+      "source_of_ground_truth": "HTTP Response Headers Audit",
+      "notes": "Missing X-Frame-Options, Content-Security-Policy, and X-Content-Type-Options"
+    },
+    {
+      "id": "DVWA-PORT-01",
+      "expected": "POSITIVE",
+      "category": "Open Service",
+      "host": "127.0.0.1",
+      "port": 8081,
+      "severity_reference": "INFO",
+      "source_of_ground_truth": "Docker Port Mapping (80/tcp -> 8081/tcp)",
+      "notes": "Primary Apache HTTP application listener"
+    },
+    {
+      "id": "DVWA-NEG-01",
+      "expected": "NEGATIVE",
+      "category": "SQL Injection",
+      "endpoint": "/about.php",
+      "parameter": null,
+      "method": "GET",
+      "source_of_ground_truth": "DVWA v1.9 Static Code Analysis (about.php)",
+      "notes": "Negative Control: Static about page does not query database"
+    },
+    {
+      "id": "DVWA-NEG-02",
+      "expected": "NEGATIVE",
+      "category": "Cross-Site Scripting",
+      "endpoint": "/instructions.php",
+      "parameter": null,
+      "method": "GET",
+      "source_of_ground_truth": "DVWA v1.9 Static Code Analysis (instructions.php)",
+      "notes": "Negative Control: Static documentation page has no user reflection"
+    },
+    {
+      "id": "DVWA-NEG-03",
+      "expected": "NEGATIVE",
+      "category": "Exposed Secrets",
+      "endpoint": "/dvwa/images/logo.png",
+      "parameter": null,
+      "resource": "logo.png",
+      "source_of_ground_truth": "DVWA v1.9 Binary Asset Analysis",
+      "notes": "Negative Control: PNG logo image contains no embedded secrets"
+    },
+    {
+      "id": "DVWA-NEG-04",
+      "expected": "NEGATIVE",
+      "category": "Open Service",
+      "host": "127.0.0.1",
+      "port": 5432,
+      "source_of_ground_truth": "Service Architecture: MySQL internal only",
+      "notes": "Negative Control: PostgreSQL port 5432 is not running"
+    }
+  ]
+}
+

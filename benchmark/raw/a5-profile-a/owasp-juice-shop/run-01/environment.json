@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-09-09T19:48:02.573272+00:00",
+  "target_key": "owasp_juice_shop",
+  "env_info": {
+    "target": "OWASP Juice Shop",
+    "version": "v17.1.1",
+    "base_url": "http://127.0.0.1:3000",
+    "container_id": "1ba62aeec116aa9f85c2e96bb6bc9309a6847c4d1ec03b16da23264b01fd8309",
+    "port": 3000
+  },
+  "adq_commit": "a0b3618",
+  "scanner_profile": "PROFILE_A_UNAUTHENTICATED_BLACKBOX"
+}

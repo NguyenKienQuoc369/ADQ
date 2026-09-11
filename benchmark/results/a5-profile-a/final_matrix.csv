@@ -1,0 +1,7 @@
+Target,Run,TP,FP,FN,UNKNOWN,Precision,Recall,F1,Runtime_Sec,Severity_Concordance
+OWASP Juice Shop,run-01,4,0,6,4762,1.0,0.4,0.5714,165.93,0.25
+OWASP Juice Shop,run-02,4,0,6,4762,1.0,0.4,0.5714,165.26,0.25
+OWASP Juice Shop,run-03,4,0,6,4762,1.0,0.4,0.5714,172.0,0.25
+Damn Vulnerable Web Application (DVWA),run-01,2,0,0,65,1.0,1.0,1.0,142.08,0.5
+Damn Vulnerable Web Application (DVWA),run-02,2,0,0,65,1.0,1.0,1.0,142.94,0.5
+Damn Vulnerable Web Application (DVWA),run-03,2,0,0,65,1.0,1.0,1.0,168.21,0.5
