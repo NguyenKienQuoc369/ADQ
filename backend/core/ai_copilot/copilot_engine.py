@@ -610,3 +610,169 @@ Yêu cầu output:
 3. Cấu hình WAF / Header khuyến nghị nếu có.
 """
         return self._call_gemini_api(prompt, system_instruction=system_instruction)
+
+    # =========================================================================
+    # COMPREHENSIVE SCAN RISK ASSESSMENT (EVIDENCE-GROUNDED)
+    # =========================================================================
+
+    def generate_scan_risk_assessment(self, scan_job: Dict[str, Any], force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Generates an evidence-grounded AI Risk Assessment analyzing the COMPLETE scan context:
+        - Discovered Assets (hosts, subdomains, open ports/services, crawled URLs)
+        - 19 Security Control evaluations (PASS, FAIL, INCONCLUSIVE, NOT_TESTED)
+        - Confirmed Findings and technical evidence
+        - Coverage limitations and scope gaps
+        
+        Strictly strictly excludes remediation scripts, sample code, and patch commands.
+        """
+        target = scan_job.get("target") or scan_job.get("request", {}).get("target") or "target"
+        job_id = scan_job.get("id") or scan_job.get("job_id") or "job"
+        
+        # 1. Check Redis cache first
+        cache_key = f"scan_ai_risk:{job_id}"
+        if not force_refresh and self.redis_client:
+            try:
+                cached_data = self.redis_client.get(cache_key)
+                if cached_data:
+                    return json.loads(cached_data)
+            except Exception:
+                pass
+
+        # 2. Extract Discovered Assets
+        live_data = scan_job.get("live_data") or {}
+        subdomains = live_data.get("subdomains") or scan_job.get("subdomains", {}).get("all") or []
+        live_hosts = live_data.get("live_hosts") or scan_job.get("subdomains", {}).get("http_live") or []
+        open_ports = live_data.get("open_ports") or scan_job.get("ports", {}).get("open") or []
+        crawled_urls = live_data.get("crawled_urls") or scan_job.get("urls", {}).get("combined") or []
+
+        # 3. Extract Assurance Matrix & Controls
+        assurance = scan_job.get("assurance_matrix") or {}
+        controls = assurance.get("controls") or []
+        coverage = assurance.get("coverage_summary") or {}
+
+        pass_count = sum(1 for c in controls if c.get("status") == "PASS")
+        fail_count = sum(1 for c in controls if c.get("status") == "FAIL")
+        inconclusive_count = sum(1 for c in controls if c.get("status") == "INCONCLUSIVE")
+        not_tested_count = sum(1 for c in controls if c.get("status") == "NOT_TESTED")
+        total_controls = len(controls) or 19
+
+        non_pass_controls = [
+            {
+                "id": c.get("id"),
+                "code": c.get("code"),
+                "title": c.get("title_vi") or c.get("title"),
+                "status": c.get("status"),
+                "severity": c.get("severity_if_failed"),
+                "stage": c.get("stage_name"),
+                "reason": c.get("reason"),
+            }
+            for c in controls
+            if c.get("status") in ("FAIL", "INCONCLUSIVE", "NOT_TESTED")
+        ]
+
+        # 4. Extract Findings
+        raw_findings = live_data.get("nuclei_findings") or scan_job.get("vulnerabilities", {}).get("nuclei") or []
+        formatted_findings = [
+            {
+                "title": f.get("title") or f.get("template_id"),
+                "severity": f.get("severity"),
+                "endpoint": f.get("matched") or f.get("url") or f.get("endpoint"),
+                "evidence": f.get("matched") or f.get("raw"),
+                "owasp": f.get("owasp_category"),
+                "cwe": f.get("cwe_id") or f.get("cwe_ids"),
+            }
+            for f in raw_findings[:15]
+        ]
+
+        # 5. Build Authoritative ScanRiskContext
+        scan_risk_context = {
+            "target": target,
+            "scan_summary": {
+                "status": scan_job.get("status", "COMPLETED"),
+                "total_controls": total_controls,
+                "pass_count": pass_count,
+                "fail_count": fail_count,
+                "inconclusive_count": inconclusive_count,
+                "not_tested_count": not_tested_count,
+                "coverage_percentage": coverage.get("coverage_percentage", 100),
+            },
+            "discovery": {
+                "subdomains_count": len(subdomains),
+                "subdomains_sample": [s if isinstance(s, str) else s.get("host") for s in subdomains[:5]],
+                "live_hosts_count": len(live_hosts),
+                "live_hosts_sample": [h if isinstance(h, str) else h.get("host") or h.get("url") for h in live_hosts[:5]],
+                "open_ports_count": len(open_ports),
+                "open_ports_observed": [
+                    {
+                        "port": p.get("port") if isinstance(p, dict) else str(p),
+                        "service": p.get("service") if isinstance(p, dict) else ("HTTPS" if "443" in str(p) else "HTTP"),
+                        "state": p.get("state") if isinstance(p, dict) else "OPEN",
+                    }
+                    for p in open_ports[:10]
+                ],
+                "crawled_urls_count": len(crawled_urls),
+                "crawled_urls_sample": [u if isinstance(u, str) else u.get("url") for u in crawled_urls[:10]],
+            },
+            "non_pass_controls_and_limitations": non_pass_controls,
+            "confirmed_findings": formatted_findings,
+        }
+
+        # Mask secrets
+        masked_context = self.masker.mask_dict_or_list(scan_risk_context)
+
+        prompt = f"""Bạn là Hệ thống Đánh giá Rủi ro An ninh (AI Risk Assessment Engine) của ADQ.
+Nhiệm vụ của bạn là phân tích TOÀN DIỆN dữ liệu kết quả rà quét bảo mật dưới đây để đưa ra đánh giá rủi ro khách quan, chính xác dựa trên bằng chứng kỹ thuật thu thập được.
+
+DỮ LIỆU RÀ QUÉT THỰC TẾ (SCAN RISK CONTEXT):
+{json.dumps(masked_context, ensure_ascii=False, indent=2)}
+
+NGUYÊN TẮC BẮT BUỘC:
+1. Dựa trên dữ liệu thực tế: KHÔNG tự bịa ra port, URL, dịch vụ, finding hoặc lỗ hổng không có trong ngữ cảnh.
+2. Với phiên quét không có finding (0 findings): KHÔNG tuyên bố 'Hệ thống an toàn 100%' hoặc 'Không có lỗ hổng'. Hãy nhận định mức rủi ro quan sát được là THẤP trong phạm vi các hạng mục đã kiểm thử, nêu rõ các tài sản/port/URL đã khám phá và chỉ ra các giới hạn kiểm thử (hạng mục NOT_TESTED/INCONCLUSIVE nếu có).
+3. NGHIÊM CẤM đưa vào: Hướng dẫn khắc phục, mã code vá lỗi, lệnh firewall, giải pháp sửa lỗi hay One-Click Patch. Nhiệm vụ của bạn là GIẢI THÍCH KẾT QUẢ VÀ ĐÁNH GIÁ RỦI RO.
+4. Ngôn ngữ: Sử dụng tiếng Việt tự nhiên, gãy gọn, giữ nguyên các thuật ngữ kỹ thuật tiếng Anh phổ biến (Scan, URL, API, endpoint, host, subdomain, port, service, request, response, header, cookie, token, WAF, CORS, SQL Injection, XSS, RCE, IDOR, PASS, FAIL).
+
+CẤU TRÚC ĐẦU RA BẮT BUỘC (Sử dụng đúng các tiêu đề Markdown sau):
+## MỨC RỦI RO QUAN SÁT ĐƯỢC
+[THẤP / TRUNG BÌNH / CAO / NGHIÊM TRỌNG] - [Tóm tắt nhận định trong 1-2 câu ngắn gọn]
+
+## ĐIỂM ĐÁNG CHÚ Ý
+- [Gạch đầu dòng các số liệu và sự kiện nổi bật: số lượng URL đã crawl, số host hoạt động, port ghi nhận, tỷ lệ hạng mục PASS/FAIL/NOT_TESTED]
+
+## BỀ MẶT TẤN CÔNG
+[Phân tích ngắn gọn về các dịch vụ public, endpoint/URL ghi nhận được và tiềm năng tiếp cận của kẻ tấn công]
+
+## FINDING QUAN TRỌNG
+[Chỉ xuất hiện nếu có finding thực tế. Nếu không có finding, ghi: 'Chưa ghi nhận finding bảo mật nào được xác nhận trong các hạng mục đã thực thi.']
+
+## PHẠM VI & GIỚI HẠN
+[Nêu rõ phạm vi kỹ thuật đã kiểm thử, các hạng mục chưa kiểm tra (NOT_TESTED) hoặc chưa kết luận (INCONCLUSIVE) nếu có, và lưu ý về các khu vực cần xác thực nội bộ.]
+"""
+
+        system_instruction = (
+            "Bạn là Chuyên gia Phân tích Rủi ro An ninh Thông tin cấp cao của ADQ. "
+            "Bạn chịu trách nhiệm đọc dữ liệu rà quét an ninh và tổng hợp đánh giá rủi ro khách quan, "
+            "chính xác dựa trên bằng chứng, không đưa ra mã vá lỗi hay giải pháp sửa chữa."
+        )
+
+        res = self._call_gemini_api(prompt, system_instruction=system_instruction)
+        
+        # Format response
+        result_payload = {
+            "status": res.get("status", "SUCCESS"),
+            "text": res.get("text") or "Đã hoàn thành đánh giá rủi ro an ninh từ dữ liệu rà quét.",
+            "target": target,
+            "job_id": job_id,
+            "model": res.get("model", "ADQ AI Engine"),
+            "scan_risk_context": masked_context,
+        }
+
+        # Cache in Redis with 7-day TTL if valid
+        if self.redis_client and result_payload.get("status") == "SUCCESS":
+            try:
+                self.redis_client.setex(cache_key, 604800, json.dumps(result_payload, ensure_ascii=False))
+            except Exception:
+                pass
+
+        return result_payload
+

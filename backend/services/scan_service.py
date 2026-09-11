@@ -205,7 +205,56 @@ class ScanService:
         except Exception as exc:
             print(f"[ScanService] Assurance evaluation warning: {exc}")
 
+        # Check and populate AI Risk Assessment for COMPLETED scan jobs
+        if job_data.get("status") == "COMPLETED" and user_tier != "FREE":
+            if not job_data.get("ai_summary"):
+                try:
+                    if redis_client:
+                        cached_ai = redis_client.get(f"scan_ai_risk:{job_id}")
+                        if cached_ai:
+                            parsed_ai = json.loads(cached_ai)
+                            job_data["ai_summary"] = parsed_ai.get("text")
+                except Exception:
+                    pass
+
         return job_data
+
+    @staticmethod
+    def get_or_generate_scan_ai_assessment(job_id: str, user_tier: str = "PRO", force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Retrieves cached AI Risk Assessment or generates a new one based on complete scan evidence.
+        """
+        if user_tier == "FREE":
+            raise HTTPException(
+                status_code=403,
+                detail="TIER_LOCKED: AI Risk Assessment yêu cầu gói PRO hoặc PRO MAX."
+            )
+
+        job_data = ScanService.get_job_status(job_id, user_tier=user_tier)
+        
+        try:
+            from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
+            copilot = ADQSecurityCopilot()
+            ai_res = copilot.generate_scan_risk_assessment(job_data, force_refresh=force_refresh)
+            
+            if ai_res.get("status") in ("API_ERROR", "CONFIG_ERROR"):
+                raise HTTPException(
+                    status_code=502,
+                    detail=ai_res.get("error") or "Không thể tạo đánh giá AI lúc này."
+                )
+
+            return {
+                "ok": True,
+                "job_id": job_id,
+                "ai_summary": ai_res.get("text"),
+                "status": ai_res.get("status", "SUCCESS"),
+                "model": ai_res.get("model", "ADQ AI Engine"),
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Lỗi khởi tạo AI Risk Assessment: {str(exc)}")
+
 
     @staticmethod
     def copilot_chat(req: CopilotChatRequest) -> Dict[str, Any]:

@@ -14,26 +14,26 @@ STAGES_ORDER = [
     {
         "id": "recon_infra",
         "name": "Infrastructure & Discovery",
-        "name_vi": "Hạ tầng & Khám phá (Recon)",
-        "description": "Rà soát tên miền phụ, phân tích DNS và phát hiện cổng dịch vụ công khai.",
+        "name_vi": "Khám phá mục tiêu (RECON)",
+        "description": "Rà soát subdomain, bản ghi DNS và phát hiện port/dịch vụ công khai.",
     },
     {
         "id": "web_mapping",
         "name": "Web Attack Surface Mapping",
-        "name_vi": "Lập bản đồ Bề mặt Tấn công (Web Mapping)",
-        "description": "Thu thập endpoint, phát hiện WAF/CDN, tài liệu API và phân tích secret trong JavaScript.",
+        "name_vi": "Lập bản đồ website (WEB MAPPING)",
+        "description": "Thu thập endpoint, phát hiện WAF, tài liệu API và phân tích secret trong JavaScript frontend.",
     },
     {
         "id": "dast_active",
         "name": "Active Dynamic Application Security Testing",
-        "name_vi": "Kiểm thử An ninh Động (Active DAST)",
-        "description": "Kiểm thử tiêu đề HTTP, cookie, rò rỉ file cấu hình (.env, .git) và các mẫu tấn công SQLi/XSS/RCE cơ bản.",
+        "name_vi": "Kiểm thử chủ động (ACTIVE DAST)",
+        "description": "Kiểm thử tiêu đề HTTP, cookie, rò rỉ file cấu hình (.env, .git) và các lỗ hổng SQLi/XSS/RCE cơ bản.",
     },
     {
         "id": "deep_logic",
         "name": "Deep Logic & API Integrity",
-        "name_vi": "Logic Nghiệp vụ Chuyên sâu (Deep Logic)",
-        "description": "Phân tích chuỗi logic phân quyền, IDOR, ô nhiễm tham số (HPP) và chính sách CORS liên nguồn.",
+        "name_vi": "Kiểm tra logic & API (DEEP LOGIC)",
+        "description": "Phân tích logic phân quyền, IDOR, ô nhiễm tham số (HPP) và chính sách CORS liên nguồn.",
     },
 ]
 

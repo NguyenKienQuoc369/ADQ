@@ -455,6 +455,19 @@ export async function getScanAssurance(
   );
 }
 
+export async function generateScanAiAssessment(
+  jobId: string,
+  forceRefresh: boolean = false
+): Promise<{ ok: boolean; job_id: string; ai_summary: string; status: string }> {
+  return requestJson<{ ok: boolean; job_id: string; ai_summary: string; status: string }>(
+    `/api/scan/${encodeURIComponent(jobId)}/ai-assessment`,
+    {
+      method: forceRefresh ? "POST" : "GET",
+    }
+  );
+}
+
+
 export async function streamScanJob(
   jobId: string,
   onData: (chunk: any) => void,

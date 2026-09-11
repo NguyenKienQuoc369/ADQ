@@ -11,10 +11,10 @@ interface TopStageRunnerProps {
 }
 
 const DEFAULT_STAGES = [
-  { id: "recon_infra", label: "RECON", nameVi: "Thu Thập Tài Sản" },
-  { id: "web_mapping", label: "WEB MAPPING", nameVi: "Lập Bản Đồ Ứng Dụng" },
-  { id: "dast_active", label: "ACTIVE DAST", nameVi: "Kiểm Thử Chủ Động" },
-  { id: "deep_logic", label: "DEEP LOGIC", nameVi: "Phân Tích Logic Chuyên Sâu" },
+  { id: "recon_infra", label: "RECON", nameVi: "Khám phá mục tiêu" },
+  { id: "web_mapping", label: "WEB MAPPING", nameVi: "Lập bản đồ website" },
+  { id: "dast_active", label: "ACTIVE DAST", nameVi: "Kiểm thử chủ động" },
+  { id: "deep_logic", label: "DEEP LOGIC", nameVi: "Kiểm tra logic & API" },
 ];
 
 export function TopStageRunner({ stages = [], currentStageId, isScanning }: TopStageRunnerProps) {
@@ -37,12 +37,12 @@ export function TopStageRunner({ stages = [], currentStageId, isScanning }: TopS
           let statusIndicator = (
             <span className="h-2 w-2 rounded-full bg-[#444444]" />
           );
-          let badgeText = "QUEUED";
+          let badgeText = "ĐANG CHỜ";
           let badgeClass = "border-[#333333] bg-[#141414] text-[#888888]";
 
           if (isCompleted) {
             statusIndicator = <Check className="h-3.5 w-3.5 text-[#22C55E]" />;
-            badgeText = "COMPLETED";
+            badgeText = "HOÀN TẤT";
             badgeClass = "border-[#22C55E]/40 bg-[#22C55E]/10 text-[#22C55E]";
           } else if (isInProgress) {
             statusIndicator = (
@@ -51,15 +51,15 @@ export function TopStageRunner({ stages = [], currentStageId, isScanning }: TopS
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
               </span>
             );
-            badgeText = "RUNNING";
+            badgeText = "ĐANG CHẠY";
             badgeClass = "border-white/40 bg-white/10 text-white";
           } else if (isFailed) {
             statusIndicator = <X className="h-3.5 w-3.5 text-[#EF4444]" />;
-            badgeText = "FAILED";
+            badgeText = "LỖI";
             badgeClass = "border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]";
           } else if (isWarning) {
             statusIndicator = <AlertTriangle className="h-3.5 w-3.5 text-[#EAB308]" />;
-            badgeText = "WARNING";
+            badgeText = "CHƯA XONG";
             badgeClass = "border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308]";
           }
 
@@ -81,7 +81,7 @@ export function TopStageRunner({ stages = [], currentStageId, isScanning }: TopS
             >
               <div className="flex items-center justify-between gap-1 mb-1.5">
                 <span className="font-mono text-[10px] text-[#666666]">
-                  STAGE 0{idx + 1}
+                  GIAI ĐOẠN 0{idx + 1}
                 </span>
                 <span
                   className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold border ${badgeClass}`}

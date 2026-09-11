@@ -46,66 +46,72 @@ export function AssuranceMatrix({ controls, onInspectFinding, targetDomain = "" 
     switch (status) {
       case "PASS":
         return (
-          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#22C55E]/40 bg-[#22C55E]/10 text-[#22C55E]">
+          <span className="inline-flex w-[105px] items-center justify-center gap-1.5 px-2 py-1 rounded text-xs font-mono font-bold border border-[#22C55E]/40 bg-[#22C55E]/10 text-[#22C55E]">
             <CheckCircle2 className="w-3.5 h-3.5" />
             PASS
           </span>
         );
       case "FAIL":
         return (
-          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]">
+          <span className="inline-flex w-[105px] items-center justify-center gap-1.5 px-2 py-1 rounded text-xs font-mono font-bold border border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]">
             <XCircle className="w-3.5 h-3.5" />
             FAIL
           </span>
         );
       case "INCONCLUSIVE":
         return (
-          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308]">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            INCONCL
+          <span className="inline-flex w-[105px] items-center justify-center gap-1 px-1.5 py-1 rounded text-[10px] font-mono font-bold border border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308]">
+            <AlertTriangle className="w-3 h-3 shrink-0" />
+            CHƯA KẾT LUẬN
           </span>
         );
       case "RUNNING":
         return (
-          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-white/40 bg-white/10 text-white">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            RUNNING
+          <span className="inline-flex w-[105px] items-center justify-center gap-1.5 px-1.5 py-1 rounded text-[10px] font-mono font-bold border border-white/40 bg-white/10 text-white">
+            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+            ĐANG KIỂM TRA
           </span>
         );
       case "QUEUED":
         return (
-          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#333333] bg-[#141414] text-[#666666]">
-            QUEUED
+          <span className="inline-flex w-[105px] items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] font-mono font-bold border border-[#333333] bg-[#141414] text-[#666666]">
+            ĐANG CHỜ
           </span>
         );
       case "NOT_TESTED":
       default:
         return (
-          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#333333] bg-[#141414] text-[#666666]">
-            <MinusCircle className="w-3.5 h-3.5" />
-            NOT TESTED
+          <span className="inline-flex w-[105px] items-center justify-center gap-1 px-1.5 py-1 rounded text-[10px] font-mono font-bold border border-[#333333] bg-[#141414] text-[#888888]">
+            <MinusCircle className="w-3 h-3 shrink-0" />
+            CHƯA KIỂM TRA
           </span>
         );
     }
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 font-sans">
       {/* Filters Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#242424] bg-[#0A0A0A] p-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs font-semibold text-[#888888] mr-1 font-mono">Trạng thái:</span>
-          {["ALL", "FAIL", "PASS", "INCONCLUSIVE", "NOT_TESTED"].map((st) => (
+          {[
+            { id: "ALL", label: `Tất cả (${controls.length})` },
+            { id: "FAIL", label: "FAIL" },
+            { id: "PASS", label: "PASS" },
+            { id: "INCONCLUSIVE", label: "Chưa kết luận" },
+            { id: "NOT_TESTED", label: "Chưa kiểm tra" },
+          ].map((st) => (
             <button
-              key={st}
-              onClick={() => setFilterStatus(st)}
+              key={st.id}
+              onClick={() => setFilterStatus(st.id)}
               className={`px-2.5 py-1 rounded text-xs font-medium font-mono transition cursor-pointer ${
-                filterStatus === st
+                filterStatus === st.id
                   ? "bg-white text-black font-bold"
                   : "bg-[#141414] text-[#A3A3A3] hover:text-white border border-[#242424]"
               }`}
             >
-              {st === "ALL" ? `Tất cả (${controls.length})` : st}
+              {st.label}
             </button>
           ))}
         </div>
@@ -118,10 +124,10 @@ export function AssuranceMatrix({ controls, onInspectFinding, targetDomain = "" 
             className="rounded border border-[#242424] bg-[#141414] px-2.5 py-1 text-xs text-[#F5F5F5] focus:outline-none focus:border-[#444444] font-mono cursor-pointer"
           >
             <option value="ALL">Tất cả giai đoạn</option>
-            <option value="recon_infra">01. Recon & Infra</option>
-            <option value="web_mapping">02. Web Mapping</option>
-            <option value="dast_active">03. Active DAST</option>
-            <option value="deep_logic">04. Deep Logic</option>
+            <option value="recon_infra">01. Khám phá mục tiêu (RECON)</option>
+            <option value="web_mapping">02. Lập bản đồ website (WEB MAPPING)</option>
+            <option value="dast_active">03. Kiểm thử chủ động (ACTIVE DAST)</option>
+            <option value="deep_logic">04. Kiểm tra logic & API (DEEP LOGIC)</option>
           </select>
         </div>
       </div>
@@ -186,7 +192,7 @@ export function AssuranceMatrix({ controls, onInspectFinding, targetDomain = "" 
                 <div className="flex items-center gap-2.5 self-end md:self-center shrink-0">
                   {control.findings_count > 0 && (
                     <span className="text-xs font-mono font-bold text-[#EF4444] bg-[#EF4444]/10 border border-[#EF4444]/30 px-2.5 py-0.5 rounded">
-                      {control.findings_count} vi phạm
+                      {control.findings_count} finding
                     </span>
                   )}
                   {getStatusBadge(control.status)}
@@ -200,17 +206,17 @@ export function AssuranceMatrix({ controls, onInspectFinding, targetDomain = "" 
                   <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 text-xs leading-relaxed space-y-1">
                     <div className="text-[10px] font-mono uppercase font-bold text-[#888888] flex items-center gap-1.5">
                       <ShieldCheck className="w-3.5 h-3.5 text-white" />
-                      Đánh Giá Kiểm Soát (Assessment)
+                      Kết Quả Kiểm Tra (Assessment)
                     </div>
                     <p className="text-[#A3A3A3] font-sans">
                       {control.reason || (
                         control.status === "PASS"
-                          ? "Trình kiểm thử đã hoàn thành đầy đủ quy trình kiểm tra và không phát hiện vi phạm nào trong phạm vi rà quét được kích hoạt."
+                          ? "Đã kiểm tra xong và chưa ghi nhận vấn đề trong phạm vi detector đã thực thi."
                           : control.status === "FAIL"
-                          ? "Bằng chứng kỹ thuật xác nhận phát hiện vi phạm quy chuẩn an toàn tương ứng."
+                          ? "Đã ghi nhận bằng chứng cho thấy hạng mục này có vấn đề bảo mật."
                           : control.status === "INCONCLUSIVE"
-                          ? "Trình kiểm thử đã thực thi nhưng dữ liệu phản hồi từ mục tiêu không đủ để đưa ra kết luận đạt/không đạt tin cậy."
-                          : "Kiểm soát này chưa được kích hoạt do thiếu điều kiện tiền đề hoặc cấu hình xác thực bổ sung."
+                          ? "Detector đã thực thi nhưng dữ liệu phản hồi từ mục tiêu chưa đủ để đưa ra kết luận tin cậy."
+                          : "Hạng mục này chưa được kiểm tra do thiếu điều kiện cấu hình hoặc thông tin xác thực."
                       )}
                     </p>
                   </div>
@@ -232,13 +238,13 @@ export function AssuranceMatrix({ controls, onInspectFinding, targetDomain = "" 
                     <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 space-y-1.5">
                       <div className="text-[#666666] font-mono text-[10px] uppercase font-bold flex items-center gap-1.5">
                         <FileText className="w-3 h-3 text-white" />
-                        Bằng Chứng Quan Sát (Observed Evidence)
+                        Bằng Chứng Ghi Nhận (Observed Evidence)
                       </div>
                       <div className="text-[#A3A3A3] font-mono text-[11px] leading-relaxed">
                         {control.evidence ? (
                           <div className="truncate">{String(control.evidence)}</div>
                         ) : control.status === "PASS" ? (
-                          <span>Mục tiêu: {targetDomain || "target"} — Không ghi nhận phản hồi bất thường hoặc dấu hiệu khai thác thành công.</span>
+                          <span>Mục tiêu: {targetDomain || "target"} — Chưa phát hiện dấu hiệu bất thường trong phạm vi đã scan.</span>
                         ) : (
                           <span>Ghi nhận từ pipeline thực thi: {control.findings_count} chỉ dấu quan sát được.</span>
                         )}
@@ -251,7 +257,7 @@ export function AssuranceMatrix({ controls, onInspectFinding, targetDomain = "" 
                     <div className="rounded-lg bg-[#0A0A0A] border border-[#EF4444]/30 p-3 space-y-2">
                       <div className="text-[10px] font-mono font-bold uppercase text-[#EF4444] flex items-center gap-1.5">
                         <Layers className="w-3 h-3" />
-                        Tài Sản Ảnh Hưởng & Chi Tiết Vi Phạm ({control.findings.length})
+                        Thành Phần Liên Quan & Chi Tiết Finding ({control.findings.length})
                       </div>
                       <div className="space-y-1.5">
                         {control.findings.map((f: any, fIdx: number) => (
@@ -267,7 +273,7 @@ export function AssuranceMatrix({ controls, onInspectFinding, targetDomain = "" 
                                 onClick={() => onInspectFinding(f)}
                                 className="text-[10px] text-[#EF4444] hover:underline font-mono shrink-0 cursor-pointer"
                               >
-                                Xem &rarr;
+                                Xem chi tiết &rarr;
                               </button>
                             )}
                           </div>
@@ -291,7 +297,7 @@ export function AssuranceMatrix({ controls, onInspectFinding, targetDomain = "" 
 
                     <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 space-y-1.5">
                       <div className="text-[#666666] font-mono text-[10px] uppercase font-bold">
-                        Siêu Dữ Liệu Kỹ Thuật (Technical Metadata)
+                        Thông Tin Kỹ Thuật (Technical Metadata)
                       </div>
                       <div className="space-y-1 text-[#A3A3A3] font-mono text-[11px]">
                         <div><strong className="text-white">Giai đoạn:</strong> {control.stage_name} ({control.stage_id})</div>

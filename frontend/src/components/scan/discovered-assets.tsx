@@ -57,7 +57,7 @@ export function DiscoveredAssets({
         host: h.host || defaultTarget || "unknown",
         state: h.state || "LIVE",
         ip: h.ip || "-",
-        source: h.source || "recon",
+        source: h.source || "Recon",
       };
     });
   }, [hosts, defaultTarget]);
@@ -120,16 +120,16 @@ export function DiscoveredAssets({
   }, [filteredUrls, urlPage]);
 
   return (
-    <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 space-y-4">
+    <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 space-y-4 font-sans">
       {/* Header & Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#1C1C1C]">
         <div>
           <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
             <Server className="h-4 w-4 text-white" />
-            Tài Sản Thu Thập Được (Discovered Assets)
+            Thông Tin Đã Phát Hiện (Discovered Assets)
           </h3>
           <p className="text-[11px] text-[#888888]">
-            Dữ liệu quan sát thực tế từ quá trình rà quét (Hosts, Ports, Endpoints)
+            Dữ liệu quan sát thực tế từ quá trình rà quét (Host, Port, Endpoint)
           </p>
         </div>
 
@@ -144,7 +144,7 @@ export function DiscoveredAssets({
             }`}
           >
             <Globe className="h-3.5 w-3.5" />
-            Hosts ({normalizedHosts.length})
+            Host & Subdomain ({normalizedHosts.length})
           </button>
           <button
             onClick={() => setActiveTab("ports")}
@@ -155,7 +155,7 @@ export function DiscoveredAssets({
             }`}
           >
             <Server className="h-3.5 w-3.5" />
-            Ports ({normalizedPorts.length})
+            Port & Service ({normalizedPorts.length})
           </button>
           <button
             onClick={() => setActiveTab("urls")}
@@ -166,7 +166,7 @@ export function DiscoveredAssets({
             }`}
           >
             <Link2 className="h-3.5 w-3.5" />
-            URLs ({normalizedUrls.length})
+            URL Đã Tìm Thấy ({normalizedUrls.length})
           </button>
         </div>
       </div>
@@ -179,7 +179,7 @@ export function DiscoveredAssets({
               <tr className="border-b border-[#242424] text-[#888888]">
                 <th className="pb-2.5 font-semibold">HOST / SUBDOMAIN</th>
                 <th className="pb-2.5 font-semibold">IP ADDRESS</th>
-                <th className="pb-2.5 font-semibold">NGUỒN THU THẬP</th>
+                <th className="pb-2.5 font-semibold">NGUỒN</th>
                 <th className="pb-2.5 font-semibold text-right">TRẠNG THÁI</th>
               </tr>
             </thead>
@@ -210,7 +210,7 @@ export function DiscoveredAssets({
               <tr className="border-b border-[#242424] text-[#888888]">
                 <th className="pb-2.5 font-semibold">HOST</th>
                 <th className="pb-2.5 font-semibold">PORT / PROTOCOL</th>
-                <th className="pb-2.5 font-semibold">DỊCH VỤ (SERVICE)</th>
+                <th className="pb-2.5 font-semibold">SERVICE</th>
                 <th className="pb-2.5 font-semibold text-right">TRẠNG THÁI</th>
               </tr>
             </thead>
@@ -252,7 +252,7 @@ export function DiscoveredAssets({
 
           {paginatedUrls.length === 0 ? (
             <div className="p-6 text-center text-xs font-mono text-[#666666] border border-[#1C1C1C] rounded-lg bg-[#050505]">
-              {normalizedUrls.length === 0 ? "Chưa có URL nào được thu thập trong phiên quét này." : "Không tìm thấy URL phù hợp với từ khóa."}
+              {normalizedUrls.length === 0 ? "Chưa có URL nào được tìm thấy trong phiên scan này." : "Không tìm thấy URL phù hợp với từ khóa."}
             </div>
           ) : (
             <div className="overflow-x-auto">

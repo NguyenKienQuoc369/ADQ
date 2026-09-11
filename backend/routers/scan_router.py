@@ -281,6 +281,25 @@ def get_scan_assurance(job_id: str, user: Dict[str, Any] = Depends(get_current_u
 
     return {"ok": True, "job_id": job_id, "assurance": assurance}
 
+
+@router.post("/scan/{job_id}/ai-assessment")
+def get_or_generate_ai_assessment(
+    job_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    tier = get_user_tier(user)
+    return ScanService.get_or_generate_scan_ai_assessment(job_id, user_tier=tier, force_refresh=True)
+
+
+@router.get("/scan/{job_id}/ai-assessment")
+def get_cached_ai_assessment(
+    job_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    tier = get_user_tier(user)
+    return ScanService.get_or_generate_scan_ai_assessment(job_id, user_tier=tier, force_refresh=False)
+
+
 @router.post("/copilot/chat")
 def copilot_chat(req: CopilotChatRequest, user: Dict[str, Any] = Depends(get_current_user)):
     tier = get_user_tier(user)

@@ -44,6 +44,7 @@ import {
   startTargetVerification,
   checkTargetVerification,
   streamScanJob,
+  generateScanAiAssessment,
   ScanEndpoint,
   AssuranceMatrix as AssuranceMatrixType,
   EvaluatedSecurityControl,
@@ -70,15 +71,6 @@ interface ActivityEvent {
   time: string;
   message: string;
   type: "info" | "success" | "warning" | "error";
-}
-
-function safeString(val: any): string {
-  if (val === null || val === undefined) return "";
-  if (typeof val === "string") return val;
-  if (typeof val === "object") {
-    return val.text || val.content || val.message || JSON.stringify(val);
-  }
-  return String(val);
 }
 
 function ScanLandingContent() {
@@ -134,6 +126,8 @@ function ScanLandingContent() {
   // Findings & AI Summary
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
 
   // Live Activity Stream (bounded 8 items)
@@ -166,7 +160,6 @@ function ScanLandingContent() {
 
   // 2. Hydrate Active Scan from SessionStorage or Project URL on Mount
   useEffect(() => {
-    // Check session storage active job pointer for resilience across page refresh / navigation
     if (typeof window !== "undefined") {
       const activeJob = sessionStorage.getItem("adq_active_job_id");
       const activeTarget = sessionStorage.getItem("adq_active_target");
@@ -313,7 +306,7 @@ function ScanLandingContent() {
       const res = await checkTargetVerification(target.trim());
       if (res.ok && res.verified) {
         setVerificationStatus("VERIFIED");
-        setVerificationMessage(res.message || "Xác minh quyền sở hữu thành công! Bạn có thể bắt đầu quét an ninh.");
+        setVerificationMessage(res.message || "Xác minh quyền sở hữu thành công! Bạn có thể bắt đầu scan an ninh.");
       } else {
         setVerificationStatus("FAILED");
         setVerificationMessage(res.message || "Không tìm thấy thẻ meta xác minh hợp lệ trong trang chủ.");
@@ -376,6 +369,7 @@ function ScanLandingContent() {
     if (isScanning || !target.trim()) return;
 
     setScanError(null);
+    setAiError(null);
     setDiscoveredHostsList([]);
     setDiscoveredPortsList([]);
     setDiscoveredUrlsList([]);
@@ -386,9 +380,9 @@ function ScanLandingContent() {
     setStartedAtTime(new Date());
     setElapsedSeconds(0);
     setCurrentStageId("recon_infra");
-    setCurrentTestingControl("Khởi tạo tiến trình quét hạ tầng...");
+    setCurrentTestingControl("Khám phá mục tiêu và hạ tầng...");
 
-    addActivity(`Bắt đầu khởi tạo tiến trình quét mục tiêu: ${target.trim()}`, "info");
+    addActivity(`Bắt đầu khởi tạo phiên scan mục tiêu: ${target.trim()}`, "info");
 
     try {
       const data = await startScanJob(target.trim());
@@ -402,13 +396,13 @@ function ScanLandingContent() {
         sessionStorage.setItem("adq_active_target", target.trim());
       }
 
-      addActivity(`Job ID: ${data.job_id} đã được đưa vào hàng đợi xử lý SOC Engine.`, "info");
+      addActivity(`Job ID: ${data.job_id} đã được tiếp nhận vào hàng đợi xử lý.`, "info");
       await persistScanSummary("RUNNING", { jobId: data.job_id });
     } catch (err: any) {
       setIsScanning(false);
       setScanStatus("FAILED");
-      setScanError(err?.message || "Lỗi khi khởi chạy tiến trình quét.");
-      addActivity(`Lỗi khởi chạy quét: ${err?.message}`, "error");
+      setScanError(err?.message || "Lỗi khi khởi chạy phiên scan.");
+      addActivity(`Lỗi khởi chạy scan: ${err?.message}`, "error");
     }
   };
 
@@ -419,7 +413,6 @@ function ScanLandingContent() {
     let cancelled = false;
     const abortController = new AbortController();
 
-    // Setup SSE listener if running
     if (isScanning) {
       streamScanJob(
         jobId,
@@ -433,14 +426,14 @@ function ScanLandingContent() {
               if (typeof window !== "undefined") {
                 sessionStorage.removeItem("adq_active_job_id");
               }
-              addActivity("Tiến trình quét hoàn tất thành công. 19/19 kiểm soát đã đạt trạng thái chung cuộc.", "success");
+              addActivity("Phiên scan hoàn tất. 19/19 hạng mục kiểm tra đã có kết quả.", "success");
             } else if (st === "FAILED") {
               setIsScanning(false);
               setScanStatus("FAILED");
               if (typeof window !== "undefined") {
                 sessionStorage.removeItem("adq_active_job_id");
               }
-              addActivity("Tiến trình quét gặp sự cố gián đoạn.", "error");
+              addActivity("Phiên scan gặp sự cố gián đoạn.", "error");
             }
           }
 
@@ -459,7 +452,6 @@ function ScanLandingContent() {
       ).catch(() => {});
     }
 
-    // Polling fallback every 2 seconds
     const interval = setInterval(async () => {
       try {
         const res = await getScanJobStatus(jobId);
@@ -543,6 +535,25 @@ function ScanLandingContent() {
     };
   }, [jobId, isScanning, target]);
 
+  const handleRegenerateAi = async () => {
+    if (!jobId || isScanning) return;
+    setIsAiGenerating(true);
+    setAiError(null);
+    try {
+      const res = await generateScanAiAssessment(jobId, true);
+      if (res.ok && res.ai_summary) {
+        setAiSummary(res.ai_summary);
+        addActivity("Đã tạo mới đánh giá rủi ro từ AI Engine.", "success");
+      } else {
+        throw new Error("Không nhận được kết quả phân tích AI.");
+      }
+    } catch (err: any) {
+      setAiError(err?.message || "Lỗi kết nối AI.");
+    } finally {
+      setIsAiGenerating(false);
+    }
+  };
+
   const persistScanSummary = async (status: string, overrides?: any) => {
     if (!projectId) return;
     try {
@@ -622,7 +633,7 @@ function ScanLandingContent() {
                 LIVE SCAN MISSION CONTROL
               </h2>
               <p className="text-xs text-[#888888]">
-                Rà quét bảo mật chủ động toàn diện 19 kiểm soát kỹ thuật theo chuẩn OWASP & ISO 27001
+                Rà quét bảo mật chủ động toàn diện 19 hạng mục kiểm tra theo chuẩn OWASP & ISO 27001
               </p>
             </div>
 
@@ -658,15 +669,15 @@ function ScanLandingContent() {
             <Button
               onClick={handleStartScanClick}
               disabled={isScanning || !target.trim() || isFreeLimitExceeded}
-              className="h-10 px-5 bg-white hover:bg-[#E5E5E5] text-black font-semibold text-xs rounded-md shadow-sm transition active:scale-98 cursor-pointer disabled:opacity-50"
+              className="h-10 px-5 bg-white hover:bg-[#E5E5E5] text-black font-semibold text-xs rounded-md shadow-sm transition active:scale-98 cursor-pointer disabled:opacity-50 font-mono"
             >
               {isScanning ? (
                 <>
-                  <LoaderCircle className="h-4 w-4 mr-1.5 animate-spin" /> Đang Quét...
+                  <LoaderCircle className="h-4 w-4 mr-1.5 animate-spin" /> Đang Scan...
                 </>
               ) : (
                 <>
-                  <Zap className="h-4 w-4 mr-1.5 text-black" /> Bắt Đầu Quét
+                  <Zap className="h-4 w-4 mr-1.5 text-black" /> Bắt Đầu Scan
                 </>
               )}
             </Button>
@@ -690,7 +701,7 @@ function ScanLandingContent() {
 
           {isFreeLimitExceeded && (
             <div className="rounded-lg border border-[#EF4444]/40 bg-[#EF4444]/10 p-3 text-xs text-[#EF4444] font-mono flex items-center justify-between">
-              <span>Bạn đã sử dụng hết 2 lượt quét miễn phí trọn đời. Vui lòng nâng cấp lên gói PRO để quét không giới hạn.</span>
+              <span>Bạn đã sử dụng hết 2 lượt scan miễn phí trọn đời. Vui lòng nâng cấp lên gói PRO để scan không giới hạn.</span>
               <Button
                 size="sm"
                 onClick={() => router.push("/dashboard/billing")}
@@ -725,13 +736,13 @@ function ScanLandingContent() {
                           : "border-white/40 bg-white/10 text-white animate-pulse"
                       }`}
                     >
-                      {scanStatus === "COMPLETED" ? "SCAN COMPLETE ✓" : scanStatus === "FAILED" ? "SCAN FAILED ✗" : "SCANNING ●"}
+                      {scanStatus === "COMPLETED" ? "SCAN HOÀN TẤT ✓" : scanStatus === "FAILED" ? "SCAN THẤT BẠI ✗" : "ĐANG SCAN ●"}
                     </span>
                   </div>
                   <div className="text-[11px] text-[#888888] font-mono mt-0.5 flex items-center gap-2">
                     <span>Job ID: {jobId}</span>
                     <span>&bull;</span>
-                    <span>{scanStatus === "COMPLETED" ? `Thời lượng: ${formatElapsed(elapsedSeconds)}` : `Đang chạy: ${formatElapsed(elapsedSeconds)}`}</span>
+                    <span>{scanStatus === "COMPLETED" ? `Thời lượng: ${formatElapsed(elapsedSeconds)}` : `Đang scan: ${formatElapsed(elapsedSeconds)}`}</span>
                   </div>
                 </div>
               </div>
@@ -756,7 +767,7 @@ function ScanLandingContent() {
                     onClick={() => setShowRescanModal(true)}
                     className="h-8 text-xs border-[#242424] bg-[#141414] hover:bg-[#222222] text-white rounded font-mono cursor-pointer"
                   >
-                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Quét Lại
+                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Scan Lại
                   </Button>
                 )}
               </div>
@@ -769,12 +780,12 @@ function ScanLandingContent() {
             <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 space-y-2.5 font-mono">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
                 <span className="text-[#888888]">
-                  Tiến độ kiểm soát an ninh: <strong className="text-white">{completedControlsCount} / {totalControlsCount}</strong> controls hoàn thành
+                  Tiến độ kiểm tra: <strong className="text-white">{completedControlsCount} / {totalControlsCount}</strong> hạng mục hoàn thành
                 </span>
                 <span className="text-[11px] text-[#A3A3A3]">
                   {scanStatus === "COMPLETED"
-                    ? "✓ Tất cả kiểm soát đã đạt trạng thái chung cuộc"
-                    : currentTestingControl || "Đang thực thi các kiểm soát an ninh..."}
+                    ? "✓ Tất cả 19 hạng mục kiểm tra đã có kết quả"
+                    : currentTestingControl || "Đang kiểm tra các hạng mục an ninh..."}
                 </span>
               </div>
               <div className="h-1.5 w-full rounded-full bg-[#1C1C1C] overflow-hidden">
@@ -790,11 +801,11 @@ function ScanLandingContent() {
             {/* 4. LIVE METRICS ROW */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
               {[
-                { label: "Subdomains", val: subdomains },
-                { label: "Live Hosts", val: liveHosts },
-                { label: "Crawled URLs", val: crawledUrls },
-                { label: "Controls Done", val: `${completedControlsCount} / ${totalControlsCount}` },
-                { label: "Findings", val: vulnCount, highlight: vulnCount > 0 },
+                { label: "Subdomain", val: subdomains },
+                { label: "Host đang hoạt động", val: liveHosts },
+                { label: "URL đã tìm thấy", val: crawledUrls },
+                { label: "Tiến độ kiểm tra", val: `${completedControlsCount} / ${totalControlsCount}` },
+                { label: "Finding", val: vulnCount, highlight: vulnCount > 0 },
               ].map((m, idx) => (
                 <div key={idx} className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-3 text-center">
                   <div className="text-[10px] font-mono text-[#888888] uppercase">{m.label}</div>
@@ -823,10 +834,10 @@ function ScanLandingContent() {
                 <div>
                   <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4 text-white" />
-                    Ma Trận Kiểm Soát An Ninh (19 Controls)
+                    Kết Quả Kiểm Tra Bảo Mật (19 Hạng Mục)
                   </h3>
                   <p className="text-[11px] text-[#888888]">
-                    Đánh giá độc lập 4 trạng thái kỹ thuật (PASS, FAIL, INCONCLUSIVE, NOT TESTED)
+                    Đánh giá độc lập 4 trạng thái (PASS, FAIL, CHƯA KẾT LUẬN, CHƯA KIỂM TRA)
                   </p>
                 </div>
                 <Button
@@ -848,7 +859,7 @@ function ScanLandingContent() {
                 <div className="flex items-center justify-between pb-2 border-b border-[#1C1C1C]">
                   <h4 className="text-xs font-bold text-white font-mono uppercase flex items-center gap-2">
                     <Activity className="h-3.5 w-3.5 text-white" />
-                    Nhật Ký Hoạt Động Thời Gian Thực
+                    Hoạt Động Đang Diễn Ra
                   </h4>
                   <span className="text-[10px] font-mono text-[#666666]">Real-time Event Stream</span>
                 </div>
@@ -883,7 +894,7 @@ function ScanLandingContent() {
               <div className="flex items-center justify-between pb-2 border-b border-[#1C1C1C]">
                 <h4 className="text-xs sm:text-sm font-bold text-white font-mono uppercase flex items-center gap-2">
                   <ShieldAlert className="h-4 w-4 text-[#EF4444]" />
-                  Phát Hiện Vi Phạm An Ninh ({vulnerabilities.length})
+                  Vấn Đề Bảo Mật Phát Hiện ({vulnerabilities.length})
                 </h4>
               </div>
 
@@ -891,10 +902,10 @@ function ScanLandingContent() {
                 <div className="p-4 rounded-lg bg-[#050505] border border-[#1C1C1C] space-y-1.5 font-mono text-xs">
                   <div className="text-[#22C55E] font-bold flex items-center gap-1.5">
                     <CheckCircle2 className="h-4 w-4" />
-                    Không phát hiện vi phạm bảo mật đã xác nhận (No confirmed findings).
+                    Không phát hiện finding bảo mật nào được xác nhận (0 findings).
                   </div>
                   <p className="text-[11px] text-[#888888] font-sans">
-                    Lưu ý: Kết quả này không đồng nghĩa mục tiêu an toàn 100%. Kết quả chỉ phản ánh các kiểm soát kỹ thuật và phạm vi tài sản đã thực thi trong phiên rà quét này.
+                    Lưu ý: Kết quả này phản ánh các hạng mục và phạm vi tài sản đã thực thi trong phiên scan này, không đảm bảo mục tiêu an toàn tuyệt đối 100%.
                   </p>
                 </div>
               ) : (
@@ -930,6 +941,9 @@ function ScanLandingContent() {
               target={target}
               isScanning={isScanning}
               findingsCount={vulnerabilities.length}
+              onRetry={handleRegenerateAi}
+              isRetrying={isAiGenerating}
+              error={aiError}
             />
           </div>
         )}

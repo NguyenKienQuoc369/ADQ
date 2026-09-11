@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sparkles, Lock, ArrowRight, RefreshCw, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { Sparkles, Lock, ArrowRight, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { MarkdownRenderer } from "@/components/ui/markdown-renderer";
@@ -14,6 +14,7 @@ interface AiAnalysisCardProps {
   findingsCount?: number;
   onRetry?: () => void;
   isRetrying?: boolean;
+  error?: string | null;
 }
 
 export function AiAnalysisCard({
@@ -24,6 +25,7 @@ export function AiAnalysisCard({
   findingsCount = 0,
   onRetry,
   isRetrying = false,
+  error = null,
 }: AiAnalysisCardProps) {
   const router = useRouter();
   const isFree = userTier === "FREE";
@@ -31,20 +33,17 @@ export function AiAnalysisCard({
   return (
     <div className="relative overflow-hidden rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 font-sans">
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-[#242424]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#242424]">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#242424] bg-[#141414] text-white">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#242424] bg-[#141414] text-white shrink-0">
             <Sparkles className="h-4 w-4" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-[#F5F5F5] flex items-center gap-2">
-              AI Risk Assessment
-              <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded border border-[#242424] bg-[#141414] text-[#A3A3A3]">
-                ADQ Security Engine
-              </span>
+            <h3 className="text-sm font-semibold text-[#F5F5F5] font-mono flex items-center gap-2">
+              AI RISK ASSESSMENT
             </h3>
             <p className="text-[11px] text-[#888888]">
-              Đánh giá rủi ro an ninh tổng quan, phân tích ngữ cảnh tấn công và các hạn chế phạm vi rà quét
+              AI phân tích kết quả scan và đánh giá mức rủi ro dựa trên bằng chứng đã thu thập
             </p>
           </div>
         </div>
@@ -55,27 +54,27 @@ export function AiAnalysisCard({
             size="sm"
             onClick={onRetry}
             disabled={isRetrying}
-            className="h-7 px-2.5 text-xs font-mono border-[#242424] bg-[#141414] text-[#A3A3A3] hover:text-white rounded cursor-pointer"
+            className="h-7 px-2.5 text-xs font-mono border-[#242424] bg-[#141414] text-[#A3A3A3] hover:text-white rounded cursor-pointer self-start sm:self-center"
           >
             <RefreshCw className={`h-3 w-3 mr-1.5 ${isRetrying ? "animate-spin" : ""}`} />
-            {isRetrying ? "Đang xử lý..." : "Tạo Lại Đánh Giá"}
+            {isRetrying ? "AI đang phân tích..." : aiSummary ? "Tạo lại đánh giá" : "Thử lại"}
           </Button>
         )}
       </div>
 
       {/* Content Area */}
-      <div className="relative mt-3.5 min-h-[100px]">
+      <div className="relative mt-3.5 min-h-[90px]">
         {isFree ? (
           <>
             <div className="space-y-2 select-none filter blur-[4px] opacity-25 pointer-events-none text-xs text-[#888888]">
               <p>
-                <strong>Đánh giá rủi ro an ninh:</strong> Hệ thống đã hoàn tất đánh giá các chỉ số an toàn và ghi nhận phạm vi kiểm thử kỹ thuật.
+                <strong>Mức rủi ro quan sát được:</strong> Hệ thống đã hoàn tất đánh giá các chỉ số an toàn và ghi nhận phạm vi kiểm thử kỹ thuật.
               </p>
               <p>
-                <strong>Kịch bản phơi nhiễm tiềm tàng:</strong> Các chỉ dấu quan sát được phân tích trong tương quan an ninh tổng thể.
+                <strong>Bề mặt tấn công:</strong> Các chỉ dấu quan sát được phân tích trong tương quan an ninh tổng thể.
               </p>
               <p>
-                <strong>Phạm vi & Giới hạn:</strong> Đánh giá phản ánh các kiểm soát đã thực thi trên mục tiêu.
+                <strong>Phạm vi & Giới hạn:</strong> Đánh giá phản ánh các hạng mục đã thực thi trên mục tiêu.
               </p>
             </div>
 
@@ -98,35 +97,46 @@ export function AiAnalysisCard({
               </Button>
             </div>
           </>
-        ) : isScanning && !aiSummary ? (
+        ) : isScanning ? (
           <div className="flex items-center gap-3 p-4 text-xs text-[#888888] bg-[#050505] rounded-lg border border-[#1C1C1C] font-mono">
             <Sparkles className="w-4 h-4 text-white animate-spin shrink-0" />
-            <span>Đang thu thập và tổng hợp dữ liệu rà quét để kích hoạt AI Risk Assessment...</span>
+            <span>Đang chờ phiên scan hoàn tất để tổng hợp bằng chứng...</span>
+          </div>
+        ) : isRetrying ? (
+          <div className="flex items-center gap-3 p-4 text-xs text-[#888888] bg-[#050505] rounded-lg border border-[#1C1C1C] font-mono">
+            <Sparkles className="w-4 h-4 text-white animate-spin shrink-0" />
+            <span>AI đang phân tích kết quả scan...</span>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-between p-3.5 rounded-lg bg-[#EF4444]/5 border border-[#EF4444]/20 text-xs font-mono">
+            <div className="flex items-center gap-2 text-[#EF4444]">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>Không thể tạo đánh giá AI lúc này. ({error})</span>
+            </div>
+            {onRetry && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onRetry}
+                className="h-6 text-[11px] border-[#EF4444]/30 bg-[#141414] text-white hover:bg-[#222222]"
+              >
+                Thử lại
+              </Button>
+            )}
           </div>
         ) : (
           <div className="text-xs text-[#F5F5F5] leading-relaxed">
             {aiSummary ? (
-              <MarkdownRenderer content={aiSummary} />
-            ) : findingsCount === 0 ? (
-              <div className="space-y-2 p-3.5 rounded-lg bg-[#050505] border border-[#1C1C1C]">
-                <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#22C55E]">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Tổng Quan Rủi Ro Quan Sát Được: THẤP (LOW)</span>
-                </div>
-                <p className="text-xs text-[#A3A3A3] font-sans">
-                  Không ghi nhận phát hiện vi phạm bảo mật nào trong toàn bộ 19 kiểm soát kỹ thuật thuộc phạm vi quét đã thực thi.
-                </p>
-                <p className="text-[11px] text-[#666666] font-mono">
-                  Lưu ý: Kết quả này phản ánh các kiểm soát và phạm vi đã kích hoạt trong phiên quét, không bảo đảm tuyệt đối rằng hệ thống không tồn tại các bề mặt tấn công chưa được kiểm tra.
-                </p>
+              <div className="prose prose-invert max-w-none text-xs">
+                <MarkdownRenderer content={aiSummary} />
               </div>
             ) : (
               <div className="space-y-1.5 p-3 rounded-lg bg-[#050505] border border-[#1C1C1C]">
                 <p className="text-[#A3A3A3] font-mono text-xs">
-                  Chưa có báo cáo phân tích AI cho phiên quét này.
+                  Chưa có báo cáo phân tích AI cho phiên scan này.
                 </p>
                 <p className="text-[11px] text-[#666666]">
-                  Kết quả rà quét kỹ thuật đã được lưu đầy đủ. Nhấn &quot;Tạo Lại Đánh Giá&quot; để gửi yêu cầu phân tích rủi ro tới AI Engine.
+                  Kết quả rà quét kỹ thuật đã được lưu đầy đủ. Nhấn &quot;Tạo lại đánh giá&quot; để gửi yêu cầu phân tích rủi ro tới AI Engine.
                 </p>
               </div>
             )}
