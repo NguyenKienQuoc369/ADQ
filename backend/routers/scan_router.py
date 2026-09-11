@@ -342,6 +342,20 @@ def detect_waf(req: WafDetectRequest, user: Dict[str, Any] = Depends(get_current
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gói FREE không hỗ trợ Stress Test.")
     return ScanService.detect_waf(req)
 
+@router.post("/verification/status")
+@router.get("/verification/status")
+@router.post("/scan/verification/status")
+@router.get("/scan/verification/status")
+def get_verification_status_route(
+    target_url: Optional[str] = None,
+    req: Optional[StressVerificationRequest] = None,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    target = req.target_url if (req and req.target_url) else target_url
+    if not target:
+        raise HTTPException(status_code=400, detail="Missing target_url parameter.")
+    return ScanService.get_target_verification_status(user, target)
+
 @router.post("/verification/start")
 @router.post("/scan/verification/start")
 def start_verification_route(req: StressVerificationRequest, user: Dict[str, Any] = Depends(get_current_user)):

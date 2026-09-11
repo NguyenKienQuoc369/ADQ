@@ -9,29 +9,25 @@ import {
   MinusCircle, 
   ChevronDown, 
   ChevronRight, 
-  ShieldAlert, 
   Copy, 
   Check, 
   Code, 
   ExternalLink,
-  Lock,
-  Layers,
-  Sparkles
+  ShieldCheck,
+  Loader2
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 interface AssuranceMatrixProps {
   controls: EvaluatedSecurityControl[];
   onInspectFinding?: (finding: any) => void;
 }
 
-const SEVERITY_COLORS: Record<string, string> = {
-  CRITICAL: "bg-rose-500/20 text-rose-300 border-rose-500/40",
-  HIGH: "bg-orange-500/20 text-orange-300 border-orange-500/40",
-  MEDIUM: "bg-amber-500/20 text-amber-300 border-amber-500/40",
-  LOW: "bg-blue-500/20 text-blue-300 border-blue-500/40",
-  INFO: "bg-slate-700/40 text-slate-300 border-slate-600",
+const SEVERITY_BADGES: Record<string, { label: string; class: string }> = {
+  CRITICAL: { label: "CRITICAL", class: "border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]" },
+  HIGH: { label: "HIGH", class: "border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]" },
+  MEDIUM: { label: "MEDIUM", class: "border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308]" },
+  LOW: { label: "LOW", class: "border-[#333333] bg-[#141414] text-[#A3A3A3]" },
+  INFO: { label: "INFO", class: "border-[#333333] bg-[#141414] text-[#888888]" },
 };
 
 export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixProps) {
@@ -52,33 +48,46 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const getStatusBadge = (status: ControlStatus) => {
+  const getStatusBadge = (status: ControlStatus | string) => {
     switch (status) {
       case "PASS":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#22C55E]/40 bg-[#22C55E]/10 text-[#22C55E]">
             <CheckCircle2 className="w-3.5 h-3.5" />
             PASS
           </span>
         );
       case "FAIL":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]">
             <XCircle className="w-3.5 h-3.5" />
             FAIL
           </span>
         );
       case "INCONCLUSIVE":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#EAB308]/40 bg-[#EAB308]/10 text-[#EAB308]">
             <AlertTriangle className="w-3.5 h-3.5" />
-            INCONCLUSIVE
+            INCONCL
+          </span>
+        );
+      case "RUNNING":
+        return (
+          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-white/40 bg-white/10 text-white">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            RUNNING
+          </span>
+        );
+      case "QUEUED":
+        return (
+          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#333333] bg-[#141414] text-[#666666]">
+            QUEUED
           </span>
         );
       case "NOT_TESTED":
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700">
+          <span className="inline-flex w-[100px] items-center justify-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold border border-[#333333] bg-[#141414] text-[#666666]">
             <MinusCircle className="w-3.5 h-3.5" />
             NOT TESTED
           </span>
@@ -87,32 +96,32 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Filters Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/80 p-3.5 backdrop-blur">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#242424] bg-[#0A0A0A] p-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-semibold text-slate-400 mr-1">Trạng thái:</span>
+          <span className="text-xs font-semibold text-[#888888] mr-1">Trạng thái:</span>
           {["ALL", "FAIL", "PASS", "INCONCLUSIVE", "NOT_TESTED"].map((st) => (
             <button
               key={st}
               onClick={() => setFilterStatus(st)}
-              className={`px-3 py-1 rounded-lg text-xs font-medium font-mono transition ${
+              className={`px-2.5 py-1 rounded text-xs font-medium font-mono transition cursor-pointer ${
                 filterStatus === st
-                  ? "bg-cyan-500 text-slate-950 font-bold shadow-sm"
-                  : "bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/50"
+                  ? "bg-white text-black font-bold"
+                  : "bg-[#141414] text-[#A3A3A3] hover:text-white border border-[#242424]"
               }`}
             >
-              {st === "ALL" ? "Tất cả (" + controls.length + ")" : st}
+              {st === "ALL" ? `Tất cả (${controls.length})` : st}
             </button>
           ))}
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-400">Giai đoạn:</span>
+          <span className="text-xs font-semibold text-[#888888]">Giai đoạn:</span>
           <select
             value={filterStage}
             onChange={(e) => setFilterStage(e.target.value)}
-            className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-400 font-mono"
+            className="rounded border border-[#242424] bg-[#141414] px-2.5 py-1 text-xs text-[#F5F5F5] focus:outline-none focus:border-[#444444] font-mono cursor-pointer"
           >
             <option value="ALL">Tất cả giai đoạn</option>
             <option value="recon_infra">01. Recon & Infra</option>
@@ -123,65 +132,66 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
         </div>
       </div>
 
-      {/* Controls List / Accordion */}
-      <div className="space-y-3">
+      {/* Controls List */}
+      <div className="space-y-2">
         {filteredControls.map((control) => {
           const isExpanded = expandedControlId === control.id;
           const isFail = control.status === "FAIL";
           const isPass = control.status === "PASS";
+          const sevMeta = SEVERITY_BADGES[control.severity_if_failed] || SEVERITY_BADGES.INFO;
 
           return (
             <div
               key={control.id}
               className={`rounded-xl border transition-all duration-200 overflow-hidden ${
                 isExpanded
-                  ? "border-cyan-500/40 bg-slate-900/95 ring-1 ring-cyan-500/20"
+                  ? "border-[#3A3A3A] bg-[#0F0F0F]"
                   : isFail
-                  ? "border-rose-900/40 bg-slate-900/60 hover:border-rose-700/50"
+                  ? "border-[#EF4444]/30 bg-[#0A0A0A] hover:border-[#EF4444]/50"
                   : isPass
-                  ? "border-slate-800/80 bg-slate-900/50 hover:border-slate-700"
-                  : "border-slate-800/40 bg-slate-950/40 opacity-75"
+                  ? "border-[#242424] bg-[#0A0A0A] hover:border-[#333333]"
+                  : "border-[#1C1C1C] bg-[#080808] opacity-80"
               }`}
             >
               {/* Header Row */}
               <div
                 onClick={() => setExpandedControlId(isExpanded ? null : control.id)}
-                className="p-4 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 select-none"
+                className="p-3.5 sm:p-4 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 select-none"
               >
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 text-slate-400">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="mt-1 text-[#666666] shrink-0">
                     {isExpanded ? (
-                      <ChevronDown className="w-4 h-4 text-cyan-400" />
+                      <ChevronDown className="w-4 h-4 text-white" />
                     ) : (
                       <ChevronRight className="w-4 h-4" />
                     )}
                   </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="font-mono text-xs font-bold text-cyan-300">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1 font-mono">
+                      <span className="text-xs font-bold text-white">
                         {control.code}
                       </span>
-                      <span className="text-xs text-slate-500 font-mono">[{control.id}]</span>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${SEVERITY_COLORS[control.severity_if_failed] || "bg-slate-800 text-slate-300"}`}>
-                        {control.severity_if_failed}
+                      <span className="text-[11px] text-[#666666]">[{control.id}]</span>
+                      <span className={`w-[68px] text-center text-[10px] font-semibold px-1.5 py-0.5 rounded border ${sevMeta.class}`}>
+                        {sevMeta.label}
                       </span>
-                      <span className="text-[10px] text-slate-400 font-mono bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                      <span className="text-[10px] text-[#888888] bg-[#141414] px-2 py-0.5 rounded border border-[#242424]">
                         {control.stage_name}
                       </span>
                     </div>
 
-                    <h4 className="text-sm font-semibold text-white">
+                    <h4 className="text-xs sm:text-sm font-semibold text-[#F5F5F5] truncate">
                       {control.title_vi || control.title}
                     </h4>
-                    <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">
+                    <p className="text-[11px] sm:text-xs text-[#888888] line-clamp-1 mt-0.5 font-sans">
                       {control.description_vi || control.description}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 self-end md:self-center shrink-0">
+                <div className="flex items-center gap-2.5 self-end md:self-center shrink-0">
                   {control.findings_count > 0 && (
-                    <span className="text-xs font-mono font-bold text-rose-400 bg-rose-950/40 border border-rose-800/40 px-2.5 py-0.5 rounded-full">
+                    <span className="text-xs font-mono font-bold text-[#EF4444] bg-[#EF4444]/10 border border-[#EF4444]/30 px-2.5 py-0.5 rounded">
                       {control.findings_count} vi phạm
                     </span>
                   )}
@@ -191,116 +201,88 @@ export function AssuranceMatrix({ controls, onInspectFinding }: AssuranceMatrixP
 
               {/* Expanded Detail Panel */}
               {isExpanded && (
-                <div className="px-5 pb-5 pt-2 border-t border-slate-800/80 space-y-4 bg-slate-950/50">
-                  {/* Status Justification */}
-                  <div className="rounded-lg bg-slate-900/90 border border-slate-800 p-3.5 text-xs text-slate-300">
-                    <span className="font-bold text-slate-200">Đánh giá kiểm soát: </span>
+                <div className="px-4 pb-4 pt-2 border-t border-[#242424] space-y-3 bg-[#050505]">
+                  <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 text-xs text-[#A3A3A3] leading-relaxed">
+                    <span className="font-bold text-white">Đánh giá kiểm soát: </span>
                     {control.reason}
                   </div>
 
-                  {/* Findings Breakdown */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 space-y-1.5">
+                      <div className="text-[#666666] font-mono text-[10px] uppercase font-semibold">
+                        Chi Tiết Kỹ Thuật
+                      </div>
+                      <div className="space-y-1 text-[#A3A3A3]">
+                        <div><strong className="text-[#F5F5F5]">OWASP:</strong> {control.owasp_category || "N/A"}</div>
+                        <div><strong className="text-[#F5F5F5]">CWE:</strong> {control.cwe_ids?.join(", ") || "N/A"}</div>
+                        <div><strong className="text-[#F5F5F5]">Gói tối thiểu:</strong> {control.minimum_tier}</div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg bg-[#0A0A0A] border border-[#242424] p-3 space-y-1.5">
+                      <div className="text-[#666666] font-mono text-[10px] uppercase font-semibold">
+                        Hướng Dẫn Khắc Phục
+                      </div>
+                      <p className="text-[#A3A3A3] leading-relaxed">
+                        {control.remediation_guide || "Tuân thủ các hướng dẫn an toàn tiêu chuẩn và rà soát cấu hình liên quan."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {control.remediation_code_snippet && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] font-mono text-[#888888]">
+                        <span className="flex items-center gap-1.5">
+                          <Code className="w-3.5 h-3.5 text-white" />
+                          Mã Khắc Phục Mẫu:
+                        </span>
+                        <button
+                          onClick={() => handleCopy(control.id, control.remediation_code_snippet!)}
+                          className="flex items-center gap-1 text-[10px] text-[#A3A3A3] hover:text-white transition cursor-pointer"
+                        >
+                          {copiedId === control.id ? <Check className="w-3 h-3 text-[#22C55E]" /> : <Copy className="w-3 h-3" />}
+                          Sao chép mã
+                        </button>
+                      </div>
+                      <pre className="rounded-lg border border-[#242424] bg-[#000000] p-3 font-mono text-xs text-[#22C55E] overflow-x-auto select-all">
+                        <code>{control.remediation_code_snippet}</code>
+                      </pre>
+                    </div>
+                  )}
+
                   {control.findings && control.findings.length > 0 && (
-                    <div className="space-y-2">
-                      <h5 className="text-xs font-semibold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
-                        <ShieldAlert className="w-3.5 h-3.5" />
-                        Danh sách vi phạm phát hiện ({control.findings.length})
-                      </h5>
-                      <div className="space-y-2">
-                        {control.findings.map((f, fIdx) => (
+                    <div className="space-y-2 pt-2 border-t border-[#1C1C1C]">
+                      <div className="text-xs font-bold text-[#EF4444] font-mono">
+                        Bằng Chứng Vi Phạm Phát Hiện Được ({control.findings.length}):
+                      </div>
+                      <div className="space-y-1.5">
+                        {control.findings.map((f: any, fIdx: number) => (
                           <div
                             key={fIdx}
-                            className="rounded-lg border border-rose-900/30 bg-rose-950/20 p-3 text-xs space-y-1"
+                            className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/5 p-2.5 text-xs text-[#A3A3A3] flex items-center justify-between gap-2"
                           >
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-white">
-                                {f.title || f.template_id || f.name || "Phát hiện bất thường"}
-                              </span>
-                              <span className="font-mono text-[10px] text-rose-300 uppercase">
-                                {f.severity || control.severity_if_failed}
-                              </span>
-                            </div>
-                            {f.endpoint && (
-                              <div className="font-mono text-[11px] text-slate-300">
-                                <span className="text-slate-500">Endpoint: </span>
-                                {f.endpoint}
-                              </div>
-                            )}
-                            {f.cve && (
-                              <div className="font-mono text-[10px] text-slate-400">
-                                <span className="text-slate-500">Mã phân loại: </span>
-                                {f.cve}
-                              </div>
-                            )}
-                            {f.description && (
-                              <p className="text-[11px] text-slate-400 mt-1">
-                                {f.description}
-                              </p>
+                            <span className="font-mono text-white truncate">
+                              {f.endpoint || f.matched || f.title || "Phát hiện lỗ hổng"}
+                            </span>
+                            {onInspectFinding && (
+                              <button
+                                onClick={() => onInspectFinding(f)}
+                                className="text-[11px] text-[#EF4444] hover:underline font-mono shrink-0 cursor-pointer"
+                              >
+                                Xem chi tiết &rarr;
+                              </button>
                             )}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-
-                  {/* Actionable Remediation Guide */}
-                  <div className="space-y-2">
-                    <h5 className="text-xs font-semibold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
-                      <Code className="w-3.5 h-3.5" />
-                      Hướng dẫn khắc phục đề xuất (Actionable Remediation)
-                    </h5>
-                    <p className="text-xs text-slate-300 leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-slate-800">
-                      {control.remediation_guide}
-                    </p>
-
-                    {control.remediation_code_snippet && (
-                      <div className="relative rounded-lg bg-slate-950 border border-slate-800 p-3.5 font-mono text-xs text-slate-300">
-                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-[11px] text-slate-400">
-                          <span>Snippet Cấu hình Khắc phục</span>
-                          <button
-                            onClick={() => handleCopy(control.id, control.remediation_code_snippet || "")}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-slate-800 text-cyan-400 transition text-[10px]"
-                          >
-                            {copiedId === control.id ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-400" />
-                                <span className="text-emerald-400">Đã sao chép</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                <span>Sao chép</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <pre className="overflow-x-auto text-[11px] leading-relaxed text-amber-200">
-                          {control.remediation_code_snippet}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Standards & CWE */}
-                  <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] text-slate-400 font-mono">
-                    <span>OWASP: <strong className="text-slate-300">{control.owasp_category}</strong></span>
-                    <span>•</span>
-                    <span>CWE: <strong className="text-slate-300">{control.cwe_ids.join(", ") || "N/A"}</strong></span>
-                    <span>•</span>
-                    <span>Gói yêu cầu: <strong className="text-cyan-400">{control.minimum_tier}</strong></span>
-                  </div>
                 </div>
               )}
             </div>
           );
         })}
-
-        {filteredControls.length === 0 && (
-          <div className="text-center py-10 rounded-xl border border-dashed border-slate-800 text-slate-500 text-xs">
-            Không tìm thấy kiểm soát an ninh nào phù hợp với bộ lọc.
-          </div>
-        )}
       </div>
     </div>
   );
 }
-

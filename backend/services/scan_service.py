@@ -566,6 +566,57 @@ class ScanService:
         }
 
     @staticmethod
+    def get_target_verification_status(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
+        user_id = str(user.get("id") or user.get("sub") or "anonymous")
+        try:
+            origin = ScanService.normalize_target_origin(target_url)
+        except Exception:
+            return {
+                "ok": False,
+                "verified": False,
+                "target": target_url,
+                "reason": "INVALID_ORIGIN",
+            }
+
+        key = ScanService._get_verification_redis_key(user_id, origin, namespace="target_verification")
+        if redis_client:
+            raw = redis_client.get(key)
+            if not raw:
+                legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
+                raw = redis_client.get(legacy_key)
+            if raw:
+                try:
+                    data = json.loads(raw)
+                    verified = bool(data.get("verified"))
+                    verified_at = data.get("verified_at")
+                    token = data.get("token")
+                    ttl = redis_client.ttl(key)
+                    if ttl is not None and ttl <= 0:
+                        ttl = redis_client.ttl(legacy_key)
+
+                    expires_at = (time.time() + ttl) if (ttl and ttl > 0) else None
+
+                    return {
+                        "ok": True,
+                        "verified": verified,
+                        "target": origin,
+                        "verified_at": verified_at,
+                        "expires_at": expires_at,
+                        "token": token if not verified else None,
+                        "expires_in": max(0, ttl) if ttl and ttl > 0 else 0,
+                    }
+                except Exception:
+                    pass
+
+        return {
+            "ok": True,
+            "verified": False,
+            "target": origin,
+            "verified_at": None,
+            "expires_at": None,
+        }
+
+    @staticmethod
     def is_target_verified(user: Dict[str, Any], target_url: str) -> bool:
         user_id = str(user.get("id") or user.get("sub") or "anonymous")
         try:

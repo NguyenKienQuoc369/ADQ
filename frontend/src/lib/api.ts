@@ -877,6 +877,22 @@ export async function discoverEndpoints(targetUrl: string) {
   });
 }
 
+export async function getTargetVerificationStatus(targetUrl: string) {
+  return requestJson<{
+    ok: boolean;
+    verified: boolean;
+    target: string;
+    verified_at?: number | null;
+    expires_at?: number | null;
+    token?: string | null;
+    expires_in?: number;
+    reason?: string;
+  }>("/api/verification/status", {
+    method: "POST",
+    body: JSON.stringify({ target_url: targetUrl }),
+  });
+}
+
 export async function startTargetVerification(targetUrl: string) {
   return requestJson<{ ok: boolean; target: string; verification_token: string; meta_tag: string; expires_in: number; verified: boolean }>("/api/verification/start", {
     method: "POST",

@@ -3,36 +3,35 @@
 import React, { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Globe,
+  ShieldCheck,
   ShieldAlert,
   Sparkles,
-  Bot,
-  Send,
   LoaderCircle,
   Check,
   Zap,
-  Terminal,
-  KeyRound,
-  AlertCircle,
   Radio,
   Save,
-  BookmarkCheck,
-  PlusCircle,
-  ShieldCheck,
+  RotateCcw,
   CheckCircle2,
-  Copy,
+  XCircle,
+  AlertTriangle,
+  Clock,
+  Layers,
+  Activity,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Code
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getEntitlements } from "@/lib/entitlements";
 import { AiAnalysisCard } from "@/components/scan/ai-analysis-card";
 import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
-import { StageTimeline } from "@/components/scan/stage-timeline";
-import { CoverageSummary } from "@/components/scan/coverage-summary";
+import { TopStageRunner } from "@/components/scan/top-stage-runner";
 import { AssuranceMatrix } from "@/components/scan/assurance-matrix";
 import { WhatADQCheckedModal } from "@/components/scan/what-adq-checked-modal";
 import { OwnershipVerificationCard } from "@/components/scan/ownership-verification-card";
@@ -42,13 +41,15 @@ import {
   startScanJob,
   getScanJobStatus,
   getScanEndpoints,
-  getScanAssurance,
-  copilotChat,
+  getTargetVerificationStatus,
   startTargetVerification,
   checkTargetVerification,
+  streamScanJob,
   ActionAdvice,
   ScanEndpoint,
   AssuranceMatrix as AssuranceMatrixType,
+  EvaluatedSecurityControl,
+  StageSummary,
 } from "@/lib/api";
 
 type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
@@ -60,95 +61,14 @@ interface Vulnerability {
   endpoint: string;
   cve?: string;
   description?: string;
+  evidence?: string;
 }
 
-interface DAGNodeState {
+interface ActivityEvent {
   id: string;
-  step: number;
-  label: string;
-  sublabel: string;
-  icon: React.ComponentType<{ className?: string }>;
-  status: "pending" | "running" | "completed" | "failed";
-  error?: string;
-}
-
-interface ChatMessage {
-  sender: "user" | "copilot";
-  text: string;
-}
-
-function parseMarkdown(content: string) {
-  const blocks = content.split("\n\n");
-  return (
-    <div className="space-y-3">
-      {blocks.map((block, bIdx) => {
-        if (block.startsWith("```")) {
-          const lines = block.split("\n");
-          const code = lines.slice(1, -1).join("\n");
-          return (
-            <div key={bIdx} className="relative rounded-lg bg-slate-950 border border-slate-800 p-3 font-mono text-xs text-slate-300">
-              <pre className="overflow-x-auto">{code}</pre>
-            </div>
-          );
-        }
-        const lines = block.split("\n");
-        return (
-          <div key={bIdx} className="space-y-1">
-            {lines.map((line, lIdx) => {
-              if (line.startsWith("### ")) {
-                return (
-                  <h4 key={lIdx} className="text-sm font-bold text-white mt-2">
-                    {renderInline(line.replace("### ", ""))}
-                  </h4>
-                );
-              }
-              if (line.startsWith("## ")) {
-                return (
-                  <h3 key={lIdx} className="text-base font-bold text-white mt-3">
-                    {renderInline(line.replace("## ", ""))}
-                  </h3>
-                );
-              }
-              if (line.startsWith("- ") || line.startsWith("* ")) {
-                return (
-                  <div key={lIdx} className="flex items-start gap-2 ml-2">
-                    <span className="text-cyan-400 mt-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 shrink-0" />
-                    <p className="text-slate-200">{renderInline(line.slice(2))}</p>
-                  </div>
-                );
-              }
-              return (
-                <p key={lIdx} className="text-slate-200">
-                  {renderInline(line)}
-                </p>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function renderInline(text: string) {
-  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
-  return parts.map((seg, i) => {
-    if (seg.startsWith("**") && seg.endsWith("**")) {
-      return (
-        <strong key={i} className="font-semibold text-cyan-200">
-          {seg.slice(2, -2)}
-        </strong>
-      );
-    }
-    if (seg.startsWith("`") && seg.endsWith("`")) {
-      return (
-        <code key={i} className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-xs text-amber-300 border border-slate-700">
-          {seg.slice(1, -1)}
-        </code>
-      );
-    }
-    return seg;
-  });
+  time: string;
+  message: string;
+  type: "info" | "success" | "warning" | "error";
 }
 
 function safeString(val: any): string {
@@ -171,66 +91,77 @@ function ScanLandingContent() {
     entitlements.scanLifetimeLimit !== null &&
     (user?.scansToday ?? 0) >= entitlements.scanLifetimeLimit;
   const projectId = searchParams.get("projectId");
-  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   const [projectName, setProjectName] = useState("");
   const [target, setTarget] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanStatus, setScanStatus] = useState<"IDLE" | "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED">("IDLE");
+  const [startedAtTime, setStartedAtTime] = useState<Date | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  // Ownership verification state
+  // Server-Authoritative Ownership Verification State
   const [verificationStatus, setVerificationStatus] = useState<"UNVERIFIED" | "VERIFYING" | "VERIFIED" | "FAILED">("UNVERIFIED");
   const [verificationToken, setVerificationToken] = useState<string>("");
   const [metaTagString, setMetaTagString] = useState<string>("");
   const [verificationExpiresIn, setVerificationExpiresIn] = useState<number>(3600);
   const [verificationMessage, setVerificationMessage] = useState<string>("");
   const [isVerifying, setIsVerifying] = useState(false);
-  const [isCopiedMeta, setIsCopiedMeta] = useState(false);
-  const [showVerificationBox, setShowVerificationBox] = useState(false);
+  const [isCheckingServerStatus, setIsCheckingServerStatus] = useState(false);
+
+  // Telemetry & Live Scan Metrics
+  const [subdomains, setSubdomains] = useState(0);
+  const [liveHosts, setLiveHosts] = useState(0);
+  const [crawledUrls, setCrawledUrls] = useState(0);
+  const [openPorts, setOpenPorts] = useState(0);
+  const [requestCount, setRequestCount] = useState(0);
+  const [vulnCount, setVulnCount] = useState(0);
+
+  // Live Assurance Matrix & Stages
+  const [assuranceMatrix, setAssuranceMatrix] = useState<AssuranceMatrixType | null>(null);
+  const [stages, setStages] = useState<StageSummary[]>([]);
+  const [currentStageId, setCurrentStageId] = useState<string>("recon_infra");
+  const [isWhatCheckedOpen, setIsWhatCheckedOpen] = useState(false);
+
+  // Findings & Action Advice
+  const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
+  const [discoveredEndpoints, setDiscoveredEndpoints] = useState<ScanEndpoint[]>([]);
+  const [actionAdvice, setActionAdvice] = useState<ActionAdvice[]>([]);
+  const [rawActionAdvice, setRawActionAdvice] = useState<string>("");
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  // Live Activity Stream (bounded 8 items)
+  const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
 
   // States lưu phiên & xác nhận ghi đè
   const [isSavingSession, setIsSavingSession] = useState(false);
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
   const [showRescanModal, setShowRescanModal] = useState(false);
 
-  const [nodes, setNodes] = useState<Record<string, DAGNodeState>>({
-    node_recon: { step: 1, id: "node_recon", label: "Asset Discovery", sublabel: "External asset inventory", icon: Globe, status: "pending" },
-    node_port: { step: 2, id: "node_port", label: "Network Exposure", sublabel: "Reachable services & ports", icon: Radio, status: "pending" },
-    node_crawl: { step: 3, id: "node_crawl", label: "Web Surface Mapping", sublabel: "Routes, URLs & resources", icon: Terminal, status: "pending" },
-    node_nuclei: { step: 4, id: "node_nuclei", label: "Vulnerability Analysis", sublabel: "Known weaknesses & exposure", icon: ShieldAlert, status: "pending" },
-    node_secrets: { step: 5, id: "node_secrets", label: "Sensitive Data Exposure", sublabel: "Credentials & leaked secrets", icon: KeyRound, status: "pending" },
-    node_logic: { step: 6, id: "node_logic", label: "Application Security", sublabel: "Behavior & logic analysis", icon: Zap, status: "pending" },
-    node_ai: { step: 7, id: "node_ai", label: "AI Risk Assessment", sublabel: "Risk synthesis & remediation", icon: Sparkles, status: "pending" },
-  });
+  // 1. Elapsed timer
+  useEffect(() => {
+    let timer: any;
+    if (isScanning && startedAtTime) {
+      timer = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - startedAtTime.getTime()) / 1000));
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [isScanning, startedAtTime]);
 
-  const [subdomains, setSubdomains] = useState(0);
-  const [liveHosts, setLiveHosts] = useState(0);
-  const [crawledUrls, setCrawledUrls] = useState(0);
-  const [openPorts, setOpenPorts] = useState(0);
-  const [vulnCount, setVulnCount] = useState(0);
+  const addActivity = (message: string, type: ActivityEvent["type"] = "info") => {
+    const now = new Date();
+    const timeStr = now.toTimeString().split(" ")[0];
+    setActivityFeed((prev) => [
+      { id: `act_${Date.now()}_${Math.random()}`, time: timeStr, message, type },
+      ...prev.slice(0, 7),
+    ]);
+  };
 
-  const [assuranceMatrix, setAssuranceMatrix] = useState<AssuranceMatrixType | null>(null);
-  const [isWhatCheckedOpen, setIsWhatCheckedOpen] = useState(false);
-
-  const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
-  const [discoveredEndpoints, setDiscoveredEndpoints] = useState<ScanEndpoint[]>([]);
-  const [actionAdvice, setActionAdvice] = useState<ActionAdvice[]>([]);
-  const [rawActionAdvice, setRawActionAdvice] = useState<string>("");
-  const [scanContext, setScanContext] = useState<Record<string, any>>({});
-  const [scanError, setScanError] = useState<string | null>(null);
-
-  const [copilotMessages, setCopilotMessages] = useState<ChatMessage[]>([
-    {
-      sender: "copilot",
-      text: "Xin chào! Tôi là **ADQ Security Copilot**. Sau khi khởi chạy quét mục tiêu, tôi sẽ phân tích các phát hiện và hỗ trợ bạn tạo bản vá hoặc cấu hình bảo mật trực tiếp.",
-    },
-  ]);
-  const [copilotInput, setCopilotInput] = useState("");
-  const [copilotLoading, setCopilotLoading] = useState(false);
-
+  // 2. Hydrate Project or Target from URL
   useEffect(() => {
     if (!projectId) return;
-
     let cancelled = false;
 
     getProjectById(projectId)
@@ -241,14 +172,14 @@ function ScanLandingContent() {
         const detail = p.projectDetail || {};
         const summary = (detail.summary as Record<string, any>) || {};
 
-        // project.domain có thể là internal key kèm user suffix.
-        // Scanner phải dùng domain thật được lưu trong project summary.
         const scanDomain = String(summary.domain || boundDomain || "")
           .trim()
           .replace(/^https?:\/\//i, "")
           .split("/")[0];
 
-        if (scanDomain) setTarget(scanDomain);
+        if (scanDomain) {
+          setTarget(scanDomain);
+        }
 
         if (summary) {
           setSubdomains(summary.subdomains ?? 0);
@@ -257,26 +188,15 @@ function ScanLandingContent() {
           setOpenPorts(summary.openPorts ?? 0);
           setVulnCount(summary.totalVulns ?? (summary.critical ?? 0) + (summary.high ?? 0) + (summary.medium ?? 0));
 
-          // Resume scan sau khi user F5 / đóng tab / quay lại project.
           const savedJobId = String(summary.lastJobId || "").trim();
           if (savedJobId) {
             setJobId(savedJobId);
-
-            // Nếu frontend trước đó chưa kịp nhận kết quả cuối,
-            // bật polling lại. Backend sẽ trả trạng thái thật của job.
-            if (
-              detail.status === "RUNNING" ||
-              summary.lastScanStatus === "RUNNING" ||
-              summary.lastScanStatus === "QUEUED"
-            ) {
+            if (detail.status === "RUNNING" || summary.lastScanStatus === "RUNNING") {
               setIsScanning(true);
-              setNodes((prev) => ({
-                ...prev,
-                node_recon: {
-                  ...prev.node_recon,
-                  status: "running",
-                },
-              }));
+              setScanStatus("RUNNING");
+              setStartedAtTime(new Date());
+            } else if (detail.status === "COMPLETED") {
+              setScanStatus("COMPLETED");
             }
           }
         }
@@ -291,18 +211,8 @@ function ScanLandingContent() {
         if (findings.rawActionAdvice) {
           setRawActionAdvice(findings.rawActionAdvice);
         }
-        if (Array.isArray(findings.chatHistory) && findings.chatHistory.length > 0) {
-          setCopilotMessages(findings.chatHistory);
-        }
-
-        if (detail.status === "COMPLETED" || (findings.actionAdvice && findings.actionAdvice.length > 0)) {
-          setNodes((prev) => {
-            const updated = { ...prev };
-            Object.keys(updated).forEach((k) => {
-              updated[k] = { ...updated[k], status: "completed" };
-            });
-            return updated;
-          });
+        if (summary.ai_summary) {
+          setAiSummary(summary.ai_summary);
         }
       })
       .catch((e) => console.warn("Load project detail error:", e));
@@ -312,374 +222,51 @@ function ScanLandingContent() {
     };
   }, [projectId]);
 
-  // Khôi phục đầy đủ kết quả của job đã hoàn tất khi user F5,
-  // đóng tab hoặc quay lại project sau này.
+  // 3. Persistent Server-Side Verification Hydration on Target Change
   useEffect(() => {
-    if (!jobId) {
-      setDiscoveredEndpoints([]);
+    const raw = target.trim();
+    if (!raw) {
+      setVerificationStatus("UNVERIFIED");
+      setVerificationToken("");
+      setMetaTagString("");
       return;
     }
 
     let cancelled = false;
+    setIsCheckingServerStatus(true);
 
-    const loadEndpoints = async () => {
-      try {
-        const res = await getScanEndpoints(jobId);
-
-        if (cancelled || !res?.ok) return;
-
-        setDiscoveredEndpoints(
-          Array.isArray(res.endpoints) ? res.endpoints : []
-        );
-      } catch (err) {
-        if (!cancelled) {
-          console.warn("[loadEndpoints] Ignored error:", err);
-        }
-      }
-    };
-
-    loadEndpoints();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [jobId, isScanning]);
-
-  useEffect(() => {
-    if (!jobId || isScanning) return;
-
-    let cancelled = false;
-
-    const recoverCompletedJob = async () => {
-      try {
-        const res = await getScanJobStatus(jobId);
-        if (!res?.ok || cancelled) return;
-
-        const job = res.job ?? res;
-        const status = String(job.status || "").toUpperCase();
-
-        if (status !== "COMPLETED" && status !== "DONE") return;
-
-        const allSubs = job.subdomains?.all ?? [];
-        const httpLive = job.subdomains?.http_live ?? [];
-        const ports = job.ports?.open ?? job.open_ports ?? [];
-        const urls = job.urls?.combined ?? [];
-
-        const nuclei = (job.vulnerabilities?.nuclei ?? []).map(
-          (f: any, idx: number) => ({
-            id: `vuln-${idx}`,
-            severity: (f.severity || "MEDIUM").toUpperCase() as SeverityLevel,
-            title: f.template_id || f.title || "Phát hiện lỗ hổng",
-            endpoint: f.matched || f.url || job.target || target,
-            cve: f.cve_id,
-            description: f.description,
-          })
-        );
-
-        setSubdomains(allSubs.length);
-        setLiveHosts(httpLive.length);
-        setOpenPorts(ports.length);
-        setCrawledUrls(urls.length);
-        setVulnCount(nuclei.length);
-        setVulnerabilities(nuclei);
-        setScanError(null);
-
-        if (job.assurance_matrix) {
-          setAssuranceMatrix(job.assurance_matrix);
-        }
-
-        setNodes((prev) => {
-          const recovered = { ...prev };
-          Object.keys(recovered).forEach((k) => {
-            recovered[k] = {
-              ...recovered[k],
-              status: "completed",
-              error: undefined,
-            };
-          });
-          return recovered;
-        });
-
-        const recoveredAdvice = safeString(
-          job.recommendations ??
-          job.action_advice ??
-          job.raw_action_advice ??
-          ""
-        );
-
-        if (recoveredAdvice) {
-          setRawActionAdvice(recoveredAdvice);
-
-          const lines = recoveredAdvice
-            .split("\n")
-            .filter((line: string) => line.trim().startsWith("-"));
-
-          const parsedAdvice: ActionAdvice[] = lines
-            .slice(0, 5)
-            .map((line: string, idx: number) => ({
-              id: `advice-${idx + 1}`,
-              vulnerabilityId: `vuln-${idx + 1}`,
-              title: `Khuyến nghị #${idx + 1}`,
-              rootCause: line.replace(/^- (Nguyên nhân:\s*)?/, ""),
-              remediation: [line.replace(/^- /, "")],
-            }));
-
-          setActionAdvice(parsedAdvice);
-        }
-      } catch (err) {
-        console.warn("[recoverCompletedJob] Ignored error:", err);
-      }
-    };
-
-    recoverCompletedJob();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [jobId, isScanning, target]);
-
-  useEffect(() => {
-    if (!jobId || !isScanning) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await getScanJobStatus(jobId);
-        if (!res.ok) return;
-
-        // FastAPI trả { ok: true, job: {...} }.
-        // Hỗ trợ cả response cũ để không phá compatibility.
-        const job = res.job ?? res;
-        const status = String(job.status || "").toUpperCase();
-
-        const progress = job.progress ?? {};
-
-        // Worker hiện merge result.json trực tiếp vào job result.
-        // Chuẩn hóa về shape mà UI scan đang sử dụng.
-        const live_data = job.live_data ?? {
-          subdomains: job.subdomains?.all ?? [],
-          live_hosts: job.subdomains?.http_live ?? [],
-          open_ports: job.ports?.open ?? job.open_ports ?? [],
-          crawled_urls: job.urls?.combined ?? [],
-          nuclei_findings: job.vulnerabilities?.nuclei ?? [],
-        };
-
-        const recommendations =
-          job.recommendations ??
-          job.action_advice ??
-          job.raw_action_advice ??
-          "";
-
-        // Structured context cho Copilot.
-        setScanContext({
-          jobId,
-          target,
-          counts: job.counts ?? {},
-          highlights: job.highlights ?? {},
-          subdomains: job.subdomains ?? {},
-          ports: job.ports ?? live_data?.open_ports ?? [],
-          urls: job.urls ?? {},
-          vulnerabilities: job.vulnerabilities ?? {},
-          secretsSummary: job.secrets_summary ?? "",
-          logicVulnerabilities: job.logic_vulnerabilities ?? {},
-          aiAnalysis: job.ai_analysis ?? "",
-          aiSource: job.ai_source ?? (job.ai_analysis ? "gemini" : "rule_fallback"),
-          humanSummary: job.human_summary ?? "",
-          riskNotes: job.risk_notes ?? [],
-          recommendations,
-        });
-
-        // Job lỗi phải dừng polling ngay, không quay loading vô hạn.
-        if (status === "FAILED" || status === "ERROR") {
-          const failureMessage =
-            safeString(job.stderr_tail) ||
-            safeString(job.stdout_tail) ||
-            "Lượt quét đã thất bại.";
-
-          setScanError(failureMessage.trim());
-          setIsScanning(false);
-
-          setNodes((prev) => {
-            const failed = { ...prev };
-            Object.keys(failed).forEach((k) => {
-              failed[k] = {
-                ...failed[k],
-                status: "failed",
-                error: failureMessage.trim(),
-              };
-            });
-            return failed;
-          });
-
-          await persistScanSummary("FAILED");
-          return;
-        }
-
-        const stageStatus = (value: any): DAGNodeState["status"] => {
-          const normalized = String(value || "").toLowerCase();
-
-          if (normalized === "done" || normalized === "skipped") {
-            return "completed";
+    getTargetVerificationStatus(raw)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok && res.verified) {
+          setVerificationStatus("VERIFIED");
+          setVerificationMessage("");
+        } else {
+          setVerificationStatus("UNVERIFIED");
+          if (res.token) {
+            setVerificationToken(res.token);
+            setMetaTagString(`<meta name="adq-verification" content="${res.token}">`);
           }
-
-          if (normalized === "failed" || normalized === "error") {
-            return "failed";
-          }
-
-          if (normalized === "pending" || !normalized) {
-            return "pending";
-          }
-
-          return "running";
-        };
-
-        setNodes((prev) => {
-          const next = { ...prev };
-
-          if (progress?.recon) next.node_recon.status = stageStatus(progress.recon);
-          if (progress?.port_scan) next.node_port.status = stageStatus(progress.port_scan);
-          if (progress?.crawl) next.node_crawl.status = stageStatus(progress.crawl);
-          if (progress?.nuclei) next.node_nuclei.status = stageStatus(progress.nuclei);
-          if (progress?.secrets) next.node_secrets.status = stageStatus(progress.secrets);
-          if (progress?.logic) next.node_logic.status = stageStatus(progress.logic);
-          if (progress?.ai_remediation) next.node_ai.status = stageStatus(progress.ai_remediation);
-
-          return next;
-        });
-
-        const allSubs = live_data?.subdomains || [];
-        const httpLive = live_data?.live_hosts || [];
-        const ports = live_data?.open_ports || [];
-        const urls = live_data?.crawled_urls || [];
-        const nuclei = (live_data?.nuclei_findings || []).map((f: any, idx: number) => ({
-          id: `vuln-${idx}`,
-          severity: (f.severity || "MEDIUM").toUpperCase() as SeverityLevel,
-          title: f.template_id || f.title || "Phát hiện lỗ hổng",
-          endpoint: f.matched || f.url || target,
-          cve: f.cve_id,
-          description: f.description,
-        }));
-
-        setSubdomains(allSubs.length);
-        setLiveHosts(httpLive.length);
-        setOpenPorts(ports.length);
-        setCrawledUrls(urls.length);
-        setVulnCount(nuclei.length);
-        setVulnerabilities(nuclei);
-
-        if (status === "COMPLETED" || status === "DONE") {
-          setIsScanning(false);
-          // Giữ nguyên trạng thái thực của từng stage từ worker progress;
-          // không ép stage failed/skipped thành completed.
-
-          let parsedAdvice: ActionAdvice[] = [];
-          const rawAdv = safeString(recommendations);
-          if (rawAdv) {
-            setRawActionAdvice(rawAdv);
-            const lines = rawAdv.split("\n").filter((l: string) => l.trim().startsWith("-"));
-            parsedAdvice = lines.slice(0, 5).map((l: string, idx: number) => ({
-              id: `advice-${idx + 1}`,
-              vulnerabilityId: `vuln-${idx + 1}`,
-              title: `Khuyến nghị #${idx + 1}`,
-              rootCause: l.replace(/^- (Nguyên nhân:\s*)?/, ""),
-              remediation: [l.replace(/^- /, "")],
-            }));
-            setActionAdvice(parsedAdvice);
-
-            setCopilotMessages((prev) => [
-              ...prev,
-              {
-                sender: "copilot",
-                text: `✅ **Đã hoàn tất quét mục tiêu \`${target}\`!**\n\nTôi đã ghi nhận **${parsedAdvice.length} khuyến nghị bảo mật cốt lõi**. Bạn có thể hỏi chi tiết hoặc yêu cầu tạo file cấu hình / mã vá ngay bên dưới.`,
-              },
-            ]);
-          }
-
-          await persistScanSummary("COMPLETED", {
-            subdomains: allSubs.length,
-            liveHosts: httpLive.length,
-            crawledUrls: urls.length,
-            openPorts: ports.length,
-            critical: nuclei.filter((v: any) => v.severity === "CRITICAL").length,
-            high: nuclei.filter((v: any) => v.severity === "HIGH").length,
-            medium: nuclei.filter((v: any) => v.severity === "MEDIUM").length,
-            totalVulns: nuclei.length,
-            vulnerabilities: nuclei,
-            actionAdvice: parsedAdvice,
-            rawActionAdvice: rawAdv,
-          });
         }
-      } catch (err) {
-        console.error("Polling error:", err);
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [jobId, isScanning, target]);
-
-  const persistScanSummary = async (status: string, overrides?: any) => {
-    if (!projectId) return;
-    try {
-      const summary = {
-        // Luôn giữ target thật để project.domain nội bộ có suffix cũng
-        // không ảnh hưởng scanner.
-        domain: target,
-
-        // Persist job linkage để scan có thể resume sau reload/tab close.
-        lastJobId: String(overrides?.jobId ?? jobId ?? ""),
-        lastScanStatus: status,
-
-        subdomains: Number(overrides?.subdomains ?? subdomains),
-        liveHosts: Number(overrides?.liveHosts ?? liveHosts),
-        crawledUrls: Number(overrides?.crawledUrls ?? crawledUrls),
-        openPorts: Number(overrides?.openPorts ?? openPorts),
-        critical: Number(overrides?.critical ?? vulnerabilities.filter((v) => v.severity === "CRITICAL").length),
-        high: Number(overrides?.high ?? vulnerabilities.filter((v) => v.severity === "HIGH").length),
-        medium: Number(overrides?.medium ?? vulnerabilities.filter((v) => v.severity === "MEDIUM").length),
-        totalVulns: Number(overrides?.totalVulns ?? vulnCount),
-      };
-
-      await saveProjectDetail(projectId, {
-        title: target || projectName || "Scan session",
-        description: `Scan session for ${target || "target"}`,
-        module: "scan",
-        status,
-        riskScore: Math.min(100, summary.critical * 26 + summary.high * 12 + summary.medium * 6),
-        summary,
-        findings: {
-          vulnerabilities: overrides?.vulnerabilities ?? vulnerabilities,
-          actionAdvice: overrides?.actionAdvice ?? actionAdvice,
-          rawActionAdvice: overrides?.rawActionAdvice ?? rawActionAdvice,
-          chatHistory: overrides?.chatHistory ?? copilotMessages,
-        },
-        lastScanAt: new Date().toISOString(),
+      })
+      .catch(() => {
+        if (!cancelled) setVerificationStatus("UNVERIFIED");
+      })
+      .finally(() => {
+        if (!cancelled) setIsCheckingServerStatus(false);
       });
-    } catch (e) {
-      console.warn("[persistScanSummary] Ignored error:", e);
-    }
-  };
 
-  const handleSaveSessionManually = async () => {
-    if (!projectId) {
-      alert("Vui lòng gắn một Project ID hoặc tạo dự án để lưu phiên này.");
-      return;
-    }
-    setIsSavingSession(true);
-    try {
-      await persistScanSummary("COMPLETED");
-      setIsSavedSuccess(true);
-      setTimeout(() => setIsSavedSuccess(false), 3000);
-    } catch (err) {
-      console.error("Save session failed", err);
-    } finally {
-      setIsSavingSession(false);
-    }
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [target]);
 
+  // 4. Verification Handlers
   const handleFetchVerificationToken = async (targetOverride?: string) => {
     const raw = (targetOverride || target).trim();
     if (!raw) return;
     try {
-      setShowVerificationBox(true);
+      setIsVerifying(true);
       setVerificationStatus("VERIFYING");
       setVerificationMessage("Đang tạo mã xác minh quyền sở hữu...");
       const res = await startTargetVerification(raw);
@@ -700,6 +287,8 @@ function ScanLandingContent() {
     } catch (err: any) {
       setVerificationStatus("FAILED");
       setVerificationMessage(err?.message || "Không thể khởi tạo mã xác minh.");
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -729,30 +318,21 @@ function ScanLandingContent() {
     setVerificationToken("");
     setMetaTagString("");
     setVerificationMessage("");
-    setShowVerificationBox(true);
   };
 
-  const copyMetaTag = () => {
-    if (!metaTagString) return;
-    navigator.clipboard.writeText(metaTagString);
-    setIsCopiedMeta(true);
-    setTimeout(() => setIsCopiedMeta(false), 2000);
-  };
-
+  // 5. Start Scan Trigger
   const handleStartScanClick = async () => {
     if (isScanning || !target.trim()) return;
 
     if (verificationStatus !== "VERIFIED") {
       await handleFetchVerificationToken();
-      setShowVerificationBox(true);
       return;
     }
 
     const hasExistingData =
       vulnerabilities.length > 0 ||
       actionAdvice.length > 0 ||
-      subdomains > 0 ||
-      nodes.node_recon.status === "completed";
+      subdomains > 0;
 
     const isSuppressed =
       typeof window !== "undefined" &&
@@ -776,227 +356,301 @@ function ScanLandingContent() {
 
   const handleCreateNewSession = () => {
     setShowRescanModal(false);
-    router.push("/dashboard/projects");
+    startScan();
   };
 
   const startScan = async () => {
     if (isScanning || !target.trim()) return;
 
     setScanError(null);
-    setScanContext({});
     setDiscoveredEndpoints([]);
+    setVulnerabilities([]);
+    setActivityFeed([]);
     setIsScanning(true);
-    setNodes((prev) => {
-      const reset = { ...prev };
-      Object.keys(reset).forEach((k) => {
-        reset[k] = { ...reset[k], status: "pending" };
-      });
-      reset.node_recon.status = "running";
-      return reset;
-    });
+    setScanStatus("RUNNING");
+    setStartedAtTime(new Date());
+    setElapsedSeconds(0);
+    setCurrentStageId("recon_infra");
+
+    addActivity(`Bắt đầu khởi tạo tiến trình quét mục tiêu: ${target.trim()}`, "info");
 
     try {
       const data = await startScanJob(target.trim());
       if (!data.ok || !data.job_id) {
-        throw new Error("Không thể khởi tạo lượt quét");
+        throw new Error("Không nhận được Job ID từ hệ thống quét.");
       }
+
       setJobId(data.job_id);
-
-      // setJobId là async state update, vì vậy truyền job ID trực tiếp
-      // để DB chắc chắn nhận đúng job ngay lập tức.
-      await persistScanSummary("RUNNING", {
-        jobId: data.job_id,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Khởi tạo lượt quét thất bại";
-      setScanError(msg);
+      addActivity(`Job ID: ${data.job_id} đã được đưa vào hàng đợi xử lý SOC Engine.`, "info");
+      await persistScanSummary("RUNNING", { jobId: data.job_id });
+    } catch (err: any) {
       setIsScanning(false);
-      setNodes((prev) => ({ ...prev, node_recon: { ...prev.node_recon, status: "failed", error: msg } }));
+      setScanStatus("FAILED");
+      setScanError(err?.message || "Lỗi khi khởi chạy tiến trình quét.");
+      addActivity(`Lỗi khởi chạy quét: ${err?.message}`, "error");
     }
   };
 
-  const handleCopilotSend = async (customPrompt?: string) => {
-    const query = (customPrompt || copilotInput).trim();
-    if (!query || copilotLoading) return;
+  // 6. Polling & SSE Stream for Live Scan Job
+  useEffect(() => {
+    if (!jobId) return;
 
-    const nextMessages: ChatMessage[] = [...copilotMessages, { sender: "user", text: query }];
-    setCopilotMessages(nextMessages);
-    if (!customPrompt) setCopilotInput("");
-    setCopilotLoading(true);
+    let cancelled = false;
+    const abortController = new AbortController();
 
+    // Setup SSE listener if running
+    if (isScanning) {
+      streamScanJob(
+        jobId,
+        (event) => {
+          if (cancelled) return;
+          if (event.status) {
+            const st = String(event.status).toUpperCase();
+            if (st === "COMPLETED" || st === "DONE") {
+              setIsScanning(false);
+              setScanStatus("COMPLETED");
+              addActivity("Tiến trình quét hoàn tất thành công.", "success");
+            } else if (st === "FAILED") {
+              setIsScanning(false);
+              setScanStatus("FAILED");
+              addActivity("Tiến trình quét gặp sự cố gián đoạn.", "error");
+            }
+          }
+
+          if (event.assurance_matrix) {
+            setAssuranceMatrix(event.assurance_matrix);
+            if (event.assurance_matrix.stages_summary) {
+              setStages(event.assurance_matrix.stages_summary);
+            }
+          }
+        },
+        abortController.signal
+      ).catch(() => {});
+    }
+
+    // Polling fallback every 2 seconds
+    const interval = setInterval(async () => {
+      try {
+        const res = await getScanJobStatus(jobId);
+        if (!res.ok || cancelled) return;
+
+        const job = res.job ?? res;
+        const status = String(job.status || "").toUpperCase();
+
+        if (job.assurance_matrix) {
+          setAssuranceMatrix(job.assurance_matrix);
+          if (job.assurance_matrix.stages_summary) {
+            setStages(job.assurance_matrix.stages_summary);
+          }
+        }
+
+        const liveData = job.live_data || {};
+        const allSubs = liveData.subdomains || job.subdomains?.all || [];
+        const httpLive = liveData.live_hosts || job.subdomains?.http_live || [];
+        const ports = liveData.open_ports || job.ports?.open || [];
+        const urls = liveData.crawled_urls || job.urls?.combined || [];
+
+        setSubdomains(allSubs.length);
+        setLiveHosts(httpLive.length);
+        setOpenPorts(ports.length);
+        setCrawledUrls(urls.length);
+        setRequestCount(allSubs.length * 8 + ports.length * 4 + urls.length * 2);
+
+        const nucleiFindings = liveData.nuclei_findings || job.vulnerabilities?.nuclei || [];
+        const nuclei: Vulnerability[] = nucleiFindings.map((f: any, idx: number) => ({
+          id: `vuln-${idx}`,
+          severity: (f.severity || "MEDIUM").toUpperCase() as SeverityLevel,
+          title: f.template_id || f.title || "Phát hiện lỗ hổng",
+          endpoint: f.matched || f.url || target,
+          cve: f.cve_id,
+          description: f.description,
+          evidence: f.matched || f.raw,
+        }));
+
+        setVulnCount(nuclei.length);
+        setVulnerabilities(nuclei);
+
+        if (job.ai_summary) {
+          setAiSummary(job.ai_summary);
+        }
+
+        if (status === "COMPLETED" || status === "DONE") {
+          setIsScanning(false);
+          setScanStatus("COMPLETED");
+
+          let parsedAdvice: ActionAdvice[] = [];
+          const rawAdv = safeString(job.recommendations || job.action_advice || job.raw_action_advice);
+          if (rawAdv) {
+            setRawActionAdvice(rawAdv);
+            const lines = rawAdv.split("\n").filter((l: string) => l.trim().startsWith("-"));
+            parsedAdvice = lines.slice(0, 5).map((l: string, idx: number) => ({
+              id: `advice-${idx + 1}`,
+              vulnerabilityId: `vuln-${idx + 1}`,
+              title: `Khuyến nghị #${idx + 1}`,
+              rootCause: l.replace(/^- (Nguyên nhân:\s*)?/, ""),
+              remediation: [l.replace(/^- /, "")],
+            }));
+            setActionAdvice(parsedAdvice);
+          }
+
+          await persistScanSummary("COMPLETED", {
+            subdomains: allSubs.length,
+            liveHosts: httpLive.length,
+            crawledUrls: urls.length,
+            openPorts: ports.length,
+            critical: nuclei.filter((v) => v.severity === "CRITICAL").length,
+            high: nuclei.filter((v) => v.severity === "HIGH").length,
+            medium: nuclei.filter((v) => v.severity === "MEDIUM").length,
+            totalVulns: nuclei.length,
+            vulnerabilities: nuclei,
+            actionAdvice: parsedAdvice,
+            rawActionAdvice: rawAdv,
+            ai_summary: job.ai_summary,
+          });
+        }
+      } catch (err) {
+        console.warn("[Polling Error]:", err);
+      }
+    }, isScanning ? 2000 : 10000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      abortController.abort();
+    };
+  }, [jobId, isScanning, target]);
+
+  const persistScanSummary = async (status: string, overrides?: any) => {
+    if (!projectId) return;
     try {
-      const structuredContext = JSON.stringify(scanContext).slice(0, 12000);
+      const summary = {
+        domain: target,
+        lastJobId: String(overrides?.jobId ?? jobId ?? ""),
+        lastScanStatus: status,
+        subdomains: Number(overrides?.subdomains ?? subdomains),
+        liveHosts: Number(overrides?.liveHosts ?? liveHosts),
+        crawledUrls: Number(overrides?.crawledUrls ?? crawledUrls),
+        openPorts: Number(overrides?.openPorts ?? openPorts),
+        critical: Number(overrides?.critical ?? vulnerabilities.filter((v) => v.severity === "CRITICAL").length),
+        high: Number(overrides?.high ?? vulnerabilities.filter((v) => v.severity === "HIGH").length),
+        medium: Number(overrides?.medium ?? vulnerabilities.filter((v) => v.severity === "MEDIUM").length),
+        totalVulns: Number(overrides?.totalVulns ?? vulnCount),
+        ai_summary: overrides?.ai_summary ?? aiSummary,
+      };
 
-      const promptContext = [
-        `Target: ${target || "Chưa xác định"}.`,
-        `Scan ID: ${jobId || "unknown"}.`,
-        `Structured scan context: ${structuredContext || "{}"}`,
-        `AI analysis / remediation: ${rawActionAdvice || "Chưa có khuyến nghị."}`,
-        `Câu hỏi của tôi: ${query}`,
-        "Chỉ dựa trên dữ liệu scan đã cung cấp; nếu thiếu dữ liệu hãy nói rõ, không tự tạo finding.",
-      ].join("\\n\\n");
-
-      const res = await copilotChat(promptContext);
-      const answerText = safeString(res.copilot_response);
-      const finalMessages: ChatMessage[] = [...nextMessages, { sender: "copilot", text: answerText }];
-      setCopilotMessages(finalMessages);
-
-      await persistScanSummary("COMPLETED", { chatHistory: finalMessages });
-    } catch {
-      setCopilotMessages((prev) => [
-        ...prev,
-        { sender: "copilot", text: "Xin lỗi, không thể kết nối tới Copilot AI lúc này. Vui lòng kiểm tra lại kết nối mạng." },
-      ]);
-    } finally {
-      setCopilotLoading(false);
+      await saveProjectDetail(projectId, {
+        title: target || projectName || "Scan session",
+        description: `Scan session for ${target || "target"}`,
+        module: "scan",
+        status,
+        riskScore: Math.min(100, summary.critical * 26 + summary.high * 12 + summary.medium * 6),
+        summary,
+        findings: {
+          vulnerabilities: overrides?.vulnerabilities ?? vulnerabilities,
+          actionAdvice: overrides?.actionAdvice ?? actionAdvice,
+          rawActionAdvice: overrides?.rawActionAdvice ?? rawActionAdvice,
+        },
+        lastScanAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn("[persistScanSummary] Error:", e);
     }
   };
 
-  const nodeArray = Object.values(nodes);
-
-  // Presentation layer: chỉ hiển thị dữ liệu bảo mật đã chuẩn hóa,
-  // không phơi bày implementation/tooling nội bộ của ADQ Security Engine.
-  const resultSubdomains = Array.isArray(scanContext?.subdomains?.all)
-    ? scanContext.subdomains.all
-    : [];
-  const resultLiveHosts = Array.isArray(scanContext?.subdomains?.http_live)
-    ? scanContext.subdomains.http_live
-    : [];
-  const resultUrls = Array.isArray(scanContext?.urls?.combined)
-    ? scanContext.urls.combined
-    : [];
-  const resultJsLinks = Array.isArray(scanContext?.urls?.js_links)
-    ? scanContext.urls.js_links
-    : [];
-  const resultPorts = Array.isArray(scanContext?.ports)
-    ? scanContext.ports
-    : Array.isArray(scanContext?.ports?.open)
-    ? scanContext.ports.open
-    : [];
-  const exposedEndpoints = Array.isArray(scanContext?.vulnerabilities?.ffuf)
-    ? scanContext.vulnerabilities.ffuf
-    : [];
-  const logicResults = scanContext?.logicVulnerabilities ?? {};
-  const logicModuleKeys = ["idor_bola", "race_condition", "workflow_bypass"];
-  const logicFindingCount = logicModuleKeys.reduce((total: number, key: string) => {
-    const item = logicResults[key];
-    return total + (item && item.flagged === true ? 1 : 0);
-  }, 0);
-  const secretsSummary = safeString(scanContext?.secretsSummary);
-  const aiAssessment = safeString(scanContext?.aiAnalysis);
-  const humanSummary = safeString(scanContext?.humanSummary);
-  const riskNotes = Array.isArray(scanContext?.riskNotes) ? scanContext.riskNotes : [];
-
-  const severityCounts = {
-    critical: vulnerabilities.filter((v) => v.severity === "CRITICAL").length,
-    high: vulnerabilities.filter((v) => v.severity === "HIGH").length,
-    medium: vulnerabilities.filter((v) => v.severity === "MEDIUM").length,
-    low: vulnerabilities.filter((v) => v.severity === "LOW").length,
-    info: vulnerabilities.filter((v) => v.severity === "INFO").length,
+  const handleSaveSessionManually = async () => {
+    if (!projectId) {
+      alert("Vui lòng gắn một Project ID hoặc tạo dự án để lưu phiên này.");
+      return;
+    }
+    setIsSavingSession(true);
+    try {
+      await persistScanSummary("COMPLETED");
+      setIsSavedSuccess(true);
+      setTimeout(() => setIsSavedSuccess(false), 3000);
+    } catch (err) {
+      console.error("Save session failed", err);
+    } finally {
+      setIsSavingSession(false);
+    }
   };
 
-  const totalSurfaceItems =
-    resultSubdomains.length +
-    resultLiveHosts.length +
-    resultUrls.length +
-    exposedEndpoints.length;
+  const formatElapsed = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${mins < 10 ? "0" : ""}${mins}:${s < 10 ? "0" : ""}${s}`;
+  };
+
+  // Compute terminal controls progress
+  const controlsList = assuranceMatrix?.controls || [];
+  const completedControlsCount = controlsList.filter(
+    (c) => c.status === "PASS" || c.status === "FAIL" || c.status === "INCONCLUSIVE" || c.status === "NOT_TESTED"
+  ).length;
+  const totalControlsCount = controlsList.length || 19;
 
   return (
     <DashboardShell area="dashboard">
-      <div className="space-y-6 text-[#ededed] font-sans">
-        {/* Header bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#222222] pb-4">
-          <div>
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 space-y-5 font-sans">
+        {/* PRE-SCAN / TARGET INPUT & VERIFICATION PANEL */}
+        <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#1C1C1C]">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight font-mono flex items-center gap-2">
+                <Globe className="h-4 w-4 text-white" />
+                LIVE SCAN MISSION CONTROL
+              </h2>
+              <p className="text-xs text-[#888888]">
+                Rà quét bảo mật chủ động toàn diện 19 kiểm soát kỹ thuật theo chuẩn OWASP & ISO 27001
+              </p>
+            </div>
+
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold text-white tracking-tight">ADQ Autonomous Security Assessment</h1>
+              <span className="text-[11px] font-mono px-2.5 py-1 rounded bg-[#141414] border border-[#242424] text-[#A3A3A3]">
+                Gói hiện tại: <strong className="text-white">{userTier}</strong>
+              </span>
               {projectId && (
-                <span className="text-[10px] font-mono border border-neutral-700 bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full">
-                  TARGET: {projectName || projectId}
+                <span className="text-[11px] font-mono px-2.5 py-1 rounded bg-[#141414] border border-[#242424] text-[#888888]">
+                  Project: <strong className="text-[#A3A3A3]">{projectName || projectId}</strong>
                 </span>
               )}
             </div>
-            <p className="text-xs text-neutral-400 mt-1">
-              Phân tích bảo mật đa tầng trên tài sản, dịch vụ mạng, bề mặt web, lỗ hổng DAST và bằng chứng PoC.
-            </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              className="h-8 text-xs border border-[#333333] bg-[#111111] text-white hover:bg-neutral-800 rounded-md transition"
-              disabled={isSavingSession || isScanning}
-              onClick={handleSaveSessionManually}
-              size="sm"
-              variant="outline"
-            >
-              {isSavingSession ? (
-                <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-              ) : isSavedSuccess ? (
-                <BookmarkCheck className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
-              ) : (
-                <Save className="h-3.5 w-3.5 mr-1.5" />
-              )}
-              {isSavedSuccess ? "Đã Lưu Phiên" : "Lưu Phiên"}
-            </Button>
-
-            <Button
-              className="h-8 text-xs border border-[#333333] bg-[#111111] text-white hover:bg-neutral-800 rounded-md"
-              onClick={handleCreateNewSession}
-              size="sm"
-              variant="outline"
-            >
-              <PlusCircle className="h-3.5 w-3.5 mr-1.5" /> Phiên Mới
-            </Button>
-          </div>
-        </div>
-
-        {/* Input Target & Verification */}
-        <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 sm:p-5 space-y-3">
-          <div className="flex flex-col sm:flex-row gap-3">
+          {/* Target Input Form */}
+          <div className="flex flex-col sm:flex-row gap-2.5">
             <div className="relative flex-1">
-              <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
               <Input
-                onChange={(e) => {
-                  setTarget(e.target.value);
-                  if (verificationStatus === "VERIFIED") {
-                    setVerificationStatus("UNVERIFIED");
-                  }
-                }}
+                placeholder="Nhập tên miền hoặc URL mục tiêu (vd: example.com, https://app.example.com)..."
                 value={target}
+                onChange={(e) => setTarget(e.target.value)}
                 disabled={isScanning}
-                placeholder="Nhập tên miền mục tiêu (vd: example.com hoặc api.domain.vn)"
-                className="pl-9 bg-[#0a0a0a] border-[#333333] text-white placeholder:text-neutral-500 focus:border-white focus:ring-0 text-xs h-9 rounded-md"
+                className="h-10 bg-[#000000] border-[#242424] text-[#F5F5F5] placeholder-[#555555] font-mono text-xs rounded-md focus:border-[#444444]"
               />
+              {isCheckingServerStatus && (
+                <div className="absolute right-3 top-3">
+                  <LoaderCircle className="h-4 w-4 text-[#888888] animate-spin" />
+                </div>
+              )}
             </div>
-            {verificationStatus !== "VERIFIED" ? (
-              <Button
-                className="h-9 px-3.5 border border-[#333333] bg-[#111111] hover:bg-neutral-800 text-white font-medium text-xs rounded-md shadow-sm transition active:scale-98 cursor-pointer shrink-0"
-                disabled={isScanning || !target.trim() || isVerifying}
-                onClick={() => handleFetchVerificationToken()}
-                variant="outline"
-              >
-                <ShieldCheck className="h-3.5 w-3.5 mr-1.5 text-white" />
-                {verificationToken ? "Lấy Mã Mới" : "Xác Minh Mục Tiêu"}
-              </Button>
-            ) : null}
+
             <Button
-              className="h-9 px-5 bg-white hover:bg-neutral-200 text-black font-medium text-xs rounded-md shadow-sm transition active:scale-98 cursor-pointer disabled:opacity-50 shrink-0"
-              disabled={isScanning || isFreeLimitExceeded || !target.trim() || verificationStatus !== "VERIFIED"}
               onClick={handleStartScanClick}
+              disabled={isScanning || !target.trim() || isFreeLimitExceeded}
+              className="h-10 px-5 bg-white hover:bg-[#E5E5E5] text-black font-semibold text-xs rounded-md shadow-sm transition active:scale-98 cursor-pointer disabled:opacity-50"
             >
               {isScanning ? (
                 <>
-                  <LoaderCircle className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Đang Rà Quét...
+                  <LoaderCircle className="h-4 w-4 mr-1.5 animate-spin" /> Đang Quét...
                 </>
               ) : (
                 <>
-                  <Zap className="h-3.5 w-3.5 mr-1.5 fill-black" /> Bắt Đầu Quét
+                  <Zap className="h-4 w-4 mr-1.5 text-black" /> Bắt Đầu Quét
                 </>
               )}
             </Button>
           </div>
 
-          {/* Verification Challenge Card */}
-          {showVerificationBox && (
+          {/* Ownership Verification Card */}
+          {target.trim() && (
             <OwnershipVerificationCard
               target={target}
               verificationToken={verificationToken}
@@ -1011,497 +665,212 @@ function ScanLandingContent() {
             />
           )}
 
-          {scanError && (
-            <p className="text-xs text-rose-400 mt-2 flex items-center gap-1.5">
-              <AlertCircle className="h-3.5 w-3.5" /> {scanError}
-            </p>
+          {isFreeLimitExceeded && (
+            <div className="rounded-lg border border-[#EF4444]/40 bg-[#EF4444]/10 p-3 text-xs text-[#EF4444] font-mono flex items-center justify-between">
+              <span>Bạn đã sử dụng hết 2 lượt quét miễn phí trọn đời. Vui lòng nâng cấp lên gói PRO để quét không giới hạn.</span>
+              <Button
+                size="sm"
+                onClick={() => router.push("/dashboard/billing")}
+                className="h-7 bg-white text-black font-semibold text-xs rounded px-3"
+              >
+                Nâng Cấp PRO
+              </Button>
+            </div>
           )}
         </div>
 
-        {/* Security Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
-            <p className="text-[11px] font-mono uppercase text-neutral-500">Assets</p>
-            <p className="text-xl font-bold text-white font-mono mt-1">{subdomains}</p>
-          </div>
-          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
-            <p className="text-[11px] font-mono uppercase text-neutral-500">Live Hosts</p>
-            <p className="text-xl font-bold text-emerald-400 font-mono mt-1">{liveHosts}</p>
-          </div>
-          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
-            <p className="text-[11px] font-mono uppercase text-neutral-500">Open Services</p>
-            <p className="text-xl font-bold text-white font-mono mt-1">{openPorts}</p>
-          </div>
-          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
-            <p className="text-[11px] font-mono uppercase text-neutral-500">Mapped URLs</p>
-            <p className="text-xl font-bold text-white font-mono mt-1">{crawledUrls}</p>
-          </div>
-          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
-            <p className="text-[11px] font-mono uppercase text-neutral-500">Findings</p>
-            <p className="text-xl font-bold text-rose-400 font-mono mt-1">{vulnCount}</p>
-          </div>
-          <div className="rounded-lg border border-[#222222] bg-[#000000] p-3">
-            <p className="text-[11px] font-mono uppercase text-neutral-500">Signals</p>
-            <p className="text-xl font-bold text-neutral-300 font-mono mt-1">{totalSurfaceItems}</p>
-          </div>
-        </div>
-
-        {/* Attack Surface Inventory */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          <div className="rounded-lg border border-[#222222] bg-[#000000]">
-            <div className="p-4 border-b border-[#222222]">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <Globe className="h-4 w-4 text-white"/> Asset & Host Inventory
-              </h3>
-            </div>
-            <div className="p-4 space-y-4">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 font-mono">Discovered assets</p>
-                <div className="max-h-32 overflow-y-auto space-y-1">
-                  {resultSubdomains.length ? resultSubdomains.map((item: any, idx: number) => (
-                    <p key={`asset-${idx}`} className="text-[11px] font-mono text-neutral-300 break-all">{safeString(item)}</p>
-                  )) : <p className="text-[11px] text-neutral-600">Không có dữ liệu.</p>}
+        {/* SCAN RUNNING & RESULTS SECTION */}
+        {(jobId || isScanning || scanStatus !== "IDLE" || vulnerabilities.length > 0) && (
+          <div className="space-y-4">
+            {/* 1. TOP COMPACT SCAN HEADER */}
+            <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-lg bg-[#141414] border border-[#242424] flex items-center justify-center shrink-0">
+                  <Globe className="h-4 w-4 text-white" />
                 </div>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 font-mono">Reachable hosts</p>
-                <div className="max-h-32 overflow-y-auto space-y-1">
-                  {resultLiveHosts.length ? resultLiveHosts.map((item: any, idx: number) => (
-                    <p key={`live-${idx}`} className="text-[11px] font-mono text-emerald-400 break-all">{safeString(item)}</p>
-                  )) : <p className="text-[11px] text-neutral-600">Không có dữ liệu.</p>}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-[#222222] bg-[#000000]">
-            <div className="p-4 border-b border-[#222222]">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <Radio className="h-4 w-4 text-white"/> Network Exposure
-              </h3>
-            </div>
-            <div className="p-4">
-              <div className="max-h-72 overflow-y-auto space-y-2">
-                {resultPorts.length ? resultPorts.map((item: any, idx: number) => (
-                  <div key={`port-${idx}`} className="rounded-md border border-[#222222] bg-[#0a0a0a] px-3 py-2">
-                    <p className="text-[11px] font-mono text-neutral-300 break-all">{safeString(item)}</p>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white font-mono">{target}</span>
+                    <span
+                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                        scanStatus === "COMPLETED"
+                          ? "border-[#22C55E]/40 bg-[#22C55E]/10 text-[#22C55E]"
+                          : scanStatus === "FAILED"
+                          ? "border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]"
+                          : "border-white/40 bg-white/10 text-white animate-pulse"
+                      }`}
+                    >
+                      {scanStatus}
+                    </span>
                   </div>
-                )) : <p className="text-[11px] text-neutral-600">Không có dịch vụ mạng mở.</p>}
+                  <div className="text-[11px] text-[#888888] font-mono mt-0.5 flex items-center gap-2">
+                    <span>Job: {jobId}</span>
+                    <span>&bull;</span>
+                    <span>Thời gian: {formatElapsed(elapsedSeconds)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-center">
+                {projectId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSaveSessionManually}
+                    disabled={isSavingSession}
+                    className="h-8 text-xs border-[#242424] bg-[#141414] hover:bg-[#222222] text-[#A3A3A3] hover:text-white rounded font-mono cursor-pointer"
+                  >
+                    <Save className="h-3.5 w-3.5 mr-1.5" />
+                    {isSavedSuccess ? "Đã Lưu" : isSavingSession ? "Đang lưu..." : "Lưu Phiên"}
+                  </Button>
+                )}
+                {!isScanning && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowRescanModal(true)}
+                    className="h-8 text-xs border-[#242424] bg-[#141414] hover:bg-[#222222] text-white rounded font-mono cursor-pointer"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Quét Lại
+                  </Button>
+                )}
               </div>
             </div>
-          </div>
 
-          <div className="rounded-lg border border-[#222222] bg-[#000000]">
-            <div className="p-4 border-b border-[#222222]">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <ShieldAlert className="h-4 w-4 text-rose-400"/> Severity Distribution
-              </h3>
-            </div>
-            <div className="p-4 grid grid-cols-2 gap-2">
+            {/* 2. TOP STAGE RUNNER (REQUIRED AT TOP) */}
+            <TopStageRunner stages={stages} currentStageId={currentStageId} isScanning={isScanning} />
+
+            {/* 3. LIVE METRICS ROW */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
               {[
-                ["Critical", severityCounts.critical, "text-rose-400"],
-                ["High", severityCounts.high, "text-orange-400"],
-                ["Medium", severityCounts.medium, "text-amber-400"],
-                ["Low", severityCounts.low, "text-neutral-300"],
-                ["Info", severityCounts.info, "text-neutral-400"],
-                ["Logic", logicFindingCount, "text-neutral-300"],
-              ].map(([label, value, color]) => (
-                <div key={String(label)} className="rounded-md border border-[#222222] bg-[#0a0a0a] p-3">
-                  <p className="text-[10px] text-neutral-500 font-mono uppercase">{label}</p>
-                  <p className={`text-lg font-bold font-mono ${String(color)}`}>{String(value)}</p>
+                { label: "Subdomains", val: subdomains },
+                { label: "Live Hosts", val: liveHosts },
+                { label: "Crawled URLs", val: crawledUrls },
+                { label: "Controls Progress", val: `${completedControlsCount} / ${totalControlsCount}` },
+                { label: "Findings", val: vulnCount, highlight: vulnCount > 0 },
+              ].map((m, idx) => (
+                <div key={idx} className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-3 text-center">
+                  <div className="text-[10px] font-mono text-[#888888] uppercase">{m.label}</div>
+                  <div
+                    className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${
+                      m.highlight ? "text-[#EF4444]" : "text-white"
+                    }`}
+                  >
+                    {m.val}
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        </div>
 
-        {/* Discovered Endpoints */}
-        <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
-          <CardHeader className="pb-3 border-b border-slate-800">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                  <Terminal className="h-4 w-4 text-amber-400"/>
-                  Endpoints Đã Phát Hiện
-                </CardTitle>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Toàn bộ endpoint được ADQ Security Engine xác nhận trong phạm vi phiên quét hiện tại.
-                </p>
-              </div>
-
-              <Badge
-                className="font-mono text-[10px] border border-amber-500/30 text-amber-300 bg-amber-950/20"
-              >
-                {discoveredEndpoints.length} URL
-              </Badge>
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-0">
-            {discoveredEndpoints.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500 font-mono">
-                Chưa có endpoint nào được xác nhận trong phiên này.
-              </div>
-            ) : (
-              <div className="max-h-80 overflow-y-auto divide-y divide-slate-800/70">
-                {discoveredEndpoints.map((endpoint) => (
-                  <div
-                    key={`${endpoint.id}-${endpoint.source}-${endpoint.url}`}
-                    className="px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02]"
-                  >
-                    <Badge
-                      className="mt-0.5 shrink-0 uppercase text-[9px] font-mono border border-cyan-500/30 text-cyan-300 bg-cyan-950/20"
-                    >
-                      DISCOVERED
-                    </Badge>
-
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className="text-xs text-slate-200 font-mono break-all"
-                        title={endpoint.url}
-                      >
-                        {endpoint.url}
-                      </p>
-
-                      {(endpoint.method ||
-                        endpoint.status_code != null ||
-                        endpoint.content_length != null) && (
-                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500 font-mono">
-                          {endpoint.method && (
-                            <span>{endpoint.method}</span>
-                          )}
-
-                          {endpoint.status_code != null && (
-                            <span>HTTP {endpoint.status_code}</span>
-                          )}
-
-                          {endpoint.content_length != null && (
-                            <span>{endpoint.content_length} bytes</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Web Surface & Exposure Details */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
-            <CardHeader className="pb-3 border-b border-slate-800">
-              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                <Terminal className="h-4 w-4 text-amber-400"/> Web Surface Mapping
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/70">
-                {resultUrls.length ? resultUrls.map((url: any, idx: number) => (
-                  <div key={`url-${idx}`} className="px-4 py-2.5 text-[11px] font-mono text-slate-300 break-all">
-                    {safeString(url)}
-                  </div>
-                )) : <div className="p-5 text-xs text-slate-600">Chưa có URL nào được lập bản đồ.</div>}
-              </div>
-              {resultJsLinks.length > 0 && (
-                <div className="border-t border-slate-800 p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Client-side resources ({resultJsLinks.length})</p>
-                  <div className="max-h-28 overflow-y-auto space-y-1">
-                    {resultJsLinks.map((url: any, idx: number) => (
-                      <p key={`js-${idx}`} className="text-[10px] font-mono text-slate-400 break-all">{safeString(url)}</p>
-                    ))}
-                  </div>
+            {/* 4. LIVE SECURITY CONTROLS / ASSURANCE MATRIX */}
+            <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#1C1C1C]">
+                <div>
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-white" />
+                    Ma Trận Kiểm Soát An Ninh (19 Controls)
+                  </h3>
+                  <p className="text-[11px] text-[#888888]">
+                    Đánh giá độc lập 4 trạng thái kỹ thuật (PASS, FAIL, INCONCLUSIVE, NOT TESTED)
+                  </p>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border border-white/[0.08] bg-slate-950/70 shadow-xl">
-            <CardHeader className="pb-3 border-b border-slate-800">
-              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-orange-400"/> Exposed Application Endpoints
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/70">
-                {exposedEndpoints.length ? exposedEndpoints.map((item: any, idx: number) => (
-                  <div key={`exposed-${idx}`} className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge className="text-[9px] font-mono border border-orange-500/30 bg-orange-950/20 text-orange-300">
-                        {safeString(item.method) || "GET"}
-                      </Badge>
-                      {item.status_code != null && <span className="text-[10px] font-mono text-slate-500">HTTP {String(item.status_code)}</span>}
-                    </div>
-                    <p className="mt-1.5 text-[11px] font-mono text-slate-200 break-all">
-                      {safeString(item.endpoint || item.url || item.raw)}
-                    </p>
-                  </div>
-                )) : <div className="p-5 text-xs text-slate-600">Chưa phát hiện endpoint ứng dụng bổ sung.</div>}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Security Control Assurance Matrix & Stage Timeline */}
-        {assuranceMatrix?.stages_summary && (
-          <StageTimeline
-            stages={assuranceMatrix.stages_summary}
-            isScanning={isScanning}
-          />
-        )}
-
-        {assuranceMatrix?.coverage_summary && (
-          <CoverageSummary
-            coverage={assuranceMatrix.coverage_summary}
-            onOpenWhatChecked={() => setIsWhatCheckedOpen(true)}
-          />
-        )}
-
-        {assuranceMatrix?.controls && (
-          <AssuranceMatrix
-            controls={assuranceMatrix.controls}
-          />
-        )}
-
-        {/* DAG 7 Steps */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-          {nodeArray.map((n) => {
-            const Icon = n.icon;
-            const isDone = n.status === "completed";
-            const isRun = n.status === "running";
-            return (
-              <div
-                key={n.id}
-                className={`p-2.5 rounded-xl border flex flex-col justify-between transition-all ${
-                  isDone
-                    ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-400"
-                    : isRun
-                    ? "bg-cyan-950/30 border-cyan-500/50 text-cyan-300 ring-1 ring-cyan-500/30"
-                    : "bg-slate-950/40 border-slate-800 text-slate-500"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <Icon className="h-4 w-4"/>
-                  {isDone ? (
-                    <Check className="h-3 w-3 text-emerald-400"/>
-                  ) : isRun ? (
-                    <LoaderCircle className="h-3 w-3 text-cyan-400 animate-spin"/>
-                  ) : (
-                    <span className="text-[10px] font-mono">{n.step}</span>
-                  )}
-                </div>
-                <div className="mt-2">
-                  <p className="text-xs font-bold truncate text-slate-200">{n.label}</p>
-                  <p className="text-[10px] text-slate-400 truncate">{n.sublabel}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* AI Advice & Vuln List */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-4">
-            <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
-              <CardHeader className="pb-3 border-b border-slate-800">
-                <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-rose-400"/> Danh Sách Lỗ Hổng Chi Tiết
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="divide-y divide-slate-800 max-h-96 overflow-y-auto">
-                  {vulnerabilities.length === 0 ? (
-                    <div className="p-8 text-center text-xs text-slate-500 font-mono">
-                      Chưa có lỗ hổng nào được phát hiện trong phiên này.
-                    </div>
-                  ) : (
-                    vulnerabilities.map((v) => (
-                      <div key={v.id} className="p-3.5 hover:bg-slate-900/40 flex items-start justify-between gap-3 text-xs">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <Badge className="text-[9px] font-mono px-1.5 py-0" variant={v.severity === "CRITICAL" || v.severity === "HIGH" ? "danger" : "default"}>
-                              {v.severity}
-                            </Badge>
-                            <span className="font-bold text-slate-200">{v.title}</span>
-                          </div>
-                          <p className="font-mono text-[11px] text-slate-400 break-all">{v.endpoint}</p>
-                          {v.cve && <p className="text-[10px] font-mono text-amber-300">{v.cve}</p>}
-                          {v.description && <p className="text-[11px] text-slate-500 leading-relaxed">{v.description}</p>}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {(humanSummary || riskNotes.length > 0 || secretsSummary) && (
-              <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl">
-                <CardHeader className="pb-3 border-b border-slate-800">
-                  <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                    <KeyRound className="h-4 w-4 text-violet-400"/> Assessment Evidence
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-4 space-y-4 text-xs">
-                  {humanSummary && <div className="text-slate-300 leading-relaxed">{parseMarkdown(humanSummary)}</div>}
-                  {riskNotes.length > 0 && (
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Risk notes</p>
-                      <div className="space-y-1">
-                        {riskNotes.map((note: any, idx: number) => <p key={`risk-${idx}`} className="text-slate-400">• {safeString(note)}</p>)}
-                      </div>
-                    </div>
-                  )}
-                  {secretsSummary && (
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Sensitive data assessment</p>
-                      <div className="text-slate-300">{parseMarkdown(secretsSummary)}</div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {logicFindingCount > 0 && (
-              <Card className="border border-rose-500/20 bg-rose-950/10 shadow-xl">
-                <CardHeader className="pb-3 border-b border-rose-500/20">
-                  <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                    <ShieldAlert className="h-4 w-4 text-rose-400"/> Lỗ Hổng Business Logic (Stage 6B)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-4 space-y-4 text-xs">
-                  {logicResults.idor_bola?.flagged && (
-                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-rose-300">Insecure Direct Object Reference (IDOR / BOLA)</span>
-                        <Badge variant="danger" className="text-[9px]">CRITICAL</Badge>
-                      </div>
-                      <p className="font-mono text-[11px] text-slate-300">{logicResults.idor_bola.request?.endpoint}</p>
-                      <p className="text-slate-400">
-                        Evidence: Baseline HTTP {logicResults.idor_bola.baseline?.status} vs Swapped HTTP {logicResults.idor_bola.swapped?.status} (Similarity: {Math.round((logicResults.idor_bola.swapped?.size_similarity_ratio || 0) * 100)}%)
-                      </p>
-                    </div>
-                  )}
-                  {logicResults.race_condition?.flagged && (
-                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-rose-300">Race Condition / Concurrent Execution Flaw</span>
-                        <Badge variant="danger" className="text-[9px]">CRITICAL</Badge>
-                      </div>
-                      <p className="font-mono text-[11px] text-slate-300">{logicResults.race_condition.endpoint || logicResults.race_condition.race_endpoint}</p>
-                      <p className="text-slate-400">
-                        Evidence: {logicResults.race_condition.success_count} / {logicResults.race_condition.total_requests} concurrent requests succeeded (Expected limit: {logicResults.race_condition.action_limit})
-                      </p>
-                    </div>
-                  )}
-                  {logicResults.workflow_bypass?.flagged && (
-                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-rose-300">Workflow Step Bypass</span>
-                        <Badge variant="danger" className="text-[9px]">CRITICAL</Badge>
-                      </div>
-                      <p className="font-mono text-[11px] text-slate-300">{logicResults.workflow_bypass.final_call?.endpoint}</p>
-                      <p className="text-slate-400">
-                        Evidence: Final step executed directly (HTTP {logicResults.workflow_bypass.final_call?.status}) without prerequisite steps: {JSON.stringify(logicResults.workflow_bypass.prerequisite_endpoints || [])}
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {aiAssessment && (
-              <Card className="border border-cyan-500/20 bg-cyan-950/10 shadow-xl">
-                <CardHeader className="pb-3 border-b border-cyan-500/10 flex flex-row items-center justify-between">
-                  <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-cyan-400"/> AI Risk Assessment
-                  </CardTitle>
-                  {scanContext?.aiSource === "gemini" ? (
-                    <Badge variant="default" className="bg-cyan-500/20 text-cyan-300 border-cyan-500/40 text-[9px]">
-                      Gemini AI Analysis
-                    </Badge>
-                  ) : scanContext?.aiSource === "rule_fallback" ? (
-                    <Badge variant="warning" className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[9px]">
-                      Rule-Based Fallback
-                    </Badge>
-                  ) : (
-                    <Badge variant="muted" className="bg-slate-800 text-slate-400 text-[9px]">
-                      AI Feature Locked
-                    </Badge>
-                  )}
-                </CardHeader>
-                <CardContent className="p-4 text-xs leading-relaxed">
-                  {parseMarkdown(aiAssessment)}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* AI Action Advice Card */}
-            <AiAnalysisCard aiSummary={rawActionAdvice} target={target} userTier={userTier}/>
-          </div>
-
-          {/* Copilot Chat Card */}
-          <div className="lg:col-span-1">
-            <Card className="border border-white/[0.08] bg-slate-950/80 shadow-xl flex flex-col h-[520px]">
-              <CardHeader className="pb-3 border-b border-slate-800 flex flex-row items-center justify-between">
-                <CardTitle className="text-xs font-bold text-white flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-cyan-400"/> ADQ Security Copilot
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 p-3 overflow-y-auto space-y-3 text-xs">
-                {copilotMessages.map((m, idx) => (
-                  <div
-                    key={idx}
-                    className={`p-3 rounded-xl ${
-                      m.sender === "user"
-                        ? "bg-cyan-950/40 border border-cyan-500/30 text-cyan-200 ml-4"
-                        : "bg-slate-900 border border-slate-800 text-slate-300 mr-2"
-                    }`}
-                  >
-                    {m.sender === "copilot" ? parseMarkdown(m.text) : m.text}
-                  </div>
-                ))}
-                {copilotLoading && (
-                  <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center gap-2 text-slate-400 text-xs">
-                    <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-400"/> Copilot đang suy nghĩ...
-                  </div>
-                )}
-                <div ref={chatBottomRef} />
-              </CardContent>
-              <div className="p-3 border-t border-slate-800 flex gap-2">
-                <Input onChange={(e) => setCopilotInput(e.target.value)} value={copilotInput}
-                  onKeyDown={(e) => e.key === "Enter" && handleCopilotSend()}
-                  placeholder="Hỏi về bản vá hoặc phân tích..."
-                  className="bg-slate-900 border-slate-800 text-xs h-8 text-slate-100"
-                />
-                <Button onClick={() => handleCopilotSend()}
+                <Button
                   size="sm"
-                  disabled={copilotLoading || !copilotInput.trim()}
-                  className="h-8 px-3 bg-cyan-600 hover:bg-cyan-500 text-white"
+                  variant="outline"
+                  onClick={() => setIsWhatCheckedOpen(true)}
+                  className="h-7 text-[11px] font-mono border-[#242424] bg-[#141414] text-[#A3A3A3] hover:text-white rounded"
                 >
-                  <Send className="h-3.5 w-3.5"/>
+                  Quy Trình Kiểm Tra
                 </Button>
               </div>
-            </Card>
-          </div>
-        </div>
 
-        {/* Modal Xác Nhận Ghi Đè */}
-        <RescanConfirmModal isOpen={showRescanModal} onClose={() => setShowRescanModal(false)}
+              <AssuranceMatrix controls={controlsList} />
+            </div>
+
+            {/* 5. LIVE ACTIVITY FEED */}
+            {activityFeed.length > 0 && (
+              <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 space-y-2.5">
+                <div className="flex items-center justify-between pb-2 border-b border-[#1C1C1C]">
+                  <h4 className="text-xs font-bold text-white font-mono uppercase flex items-center gap-2">
+                    <Activity className="h-3.5 w-3.5 text-white" />
+                    Nhật Ký Hoạt Động Thời Gian Thực
+                  </h4>
+                  <span className="text-[10px] font-mono text-[#666666]">Real-time Event Stream</span>
+                </div>
+                <div className="space-y-1.5 font-mono text-xs">
+                  {activityFeed.map((act) => (
+                    <div
+                      key={act.id}
+                      className="flex items-start gap-2.5 py-1 px-2 rounded bg-[#050505] border border-[#141414]"
+                    >
+                      <span className="text-[10px] text-[#666666] shrink-0 mt-0.5">{act.time}</span>
+                      <span
+                        className={`text-[11px] flex-1 ${
+                          act.type === "error"
+                            ? "text-[#EF4444]"
+                            : act.type === "warning"
+                            ? "text-[#EAB308]"
+                            : act.type === "success"
+                            ? "text-[#22C55E]"
+                            : "text-[#A3A3A3]"
+                        }`}
+                      >
+                        {act.message}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 6. FINDINGS LIST */}
+            {vulnerabilities.length > 0 && (
+              <div className="rounded-xl border border-[#242424] bg-[#0A0A0A] p-4 sm:p-5 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-[#1C1C1C]">
+                  <h4 className="text-xs sm:text-sm font-bold text-white font-mono uppercase flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-[#EF4444]" />
+                    Phát Hiện Vi Phạm An Ninh ({vulnerabilities.length})
+                  </h4>
+                </div>
+                <div className="space-y-2">
+                  {vulnerabilities.map((v) => (
+                    <div
+                      key={v.id}
+                      className="rounded-lg border border-[#EF4444]/30 bg-[#050505] p-3 text-xs space-y-1"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-white font-mono">{v.title}</span>
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]">
+                          {v.severity}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-[#888888] font-mono truncate">{v.endpoint}</div>
+                      {v.description && <p className="text-[11px] text-[#A3A3A3] mt-1">{v.description}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 7. CONSOLIDATED AI RISK ASSESSMENT (SINGLE AI PRESENTATION) */}
+            <AiAnalysisCard userTier={userTier} aiSummary={aiSummary} target={target} isScanning={isScanning} />
+          </div>
+        )}
+
+        {/* MODALS */}
+        <RescanConfirmModal
+          isOpen={showRescanModal}
+          onClose={() => setShowRescanModal(false)}
           onConfirm={handleConfirmRescan}
           onCreateNewSession={handleCreateNewSession}
         />
 
-        {/* Modal "What ADQ Checked" */}
-        {assuranceMatrix?.controls && assuranceMatrix?.scope_limitations && (
-          <WhatADQCheckedModal
-            isOpen={isWhatCheckedOpen}
-            onClose={() => setIsWhatCheckedOpen(false)}
-            controls={assuranceMatrix.controls}
-            scopeLimitations={assuranceMatrix.scope_limitations}
-          />
-        )}
+        <WhatADQCheckedModal
+          isOpen={isWhatCheckedOpen}
+          onClose={() => setIsWhatCheckedOpen(false)}
+          controls={assuranceMatrix?.controls || []}
+          scopeLimitations={assuranceMatrix?.scope_limitations || []}
+        />
       </div>
     </DashboardShell>
   );
@@ -1509,8 +878,8 @@ function ScanLandingContent() {
 
 export default function ScanPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#020617]" />}>
-      <ScanLandingContent/>
+    <Suspense fallback={<div className="min-h-screen bg-[#050505]" />}>
+      <ScanLandingContent />
     </Suspense>
   );
 }
