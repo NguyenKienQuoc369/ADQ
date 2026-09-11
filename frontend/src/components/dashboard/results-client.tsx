@@ -19,7 +19,7 @@ type ExportFormat = "json" | "html" | "markdown";
 
 export function ResultsClient() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [data, setData] = useState<Awaited<ReturnType<typeof getScanResults>>>([]);
   const [selectedScanId, setSelectedScanId] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -27,27 +27,28 @@ export function ResultsClient() {
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [decodedMap, setDecodedMap] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    let active = true;
-    getScanResults()
-      .then((response) => {
-        if (!active) return;
-        setData(response);
-        setSelectedScanId(response[0]?.id ?? "");
-      })
-      .catch((err) => {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : "Không thể tải kết quả scan.");
-      })
-      .finally(() => {
-        if (!active) return;
-        setLoading(false);
-      });
+  const loadScans = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await getScanResults();
+      setData(response);
+      setSelectedScanId((prev) => prev || response[0]?.id || "");
+    } catch (err: any) {
+      setError(err instanceof Error ? err.message : "Không thể tải kết quả scan.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => {
-      active = false;
-    };
-  }, []);
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    loadScans();
+  }, [authLoading, user]);
 
   const selectedScan = useMemo(() => data.find((item) => item.id === selectedScanId) ?? data[0] ?? null, [data, selectedScanId]);
 
@@ -109,6 +110,17 @@ export function ResultsClient() {
 
             {loading ? (
               Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-md bg-[#111111]" />)
+            ) : error ? (
+              <div className="rounded-md border border-rose-950/40 bg-rose-950/10 p-6 text-center space-y-3">
+                <p className="text-xs text-rose-400 font-mono">{error}</p>
+                <Button
+                  onClick={loadScans}
+                  variant="outline"
+                  className="h-8 text-xs bg-neutral-900 hover:bg-neutral-800 text-white border-neutral-700"
+                >
+                  Thử lại
+                </Button>
+              </div>
             ) : data.length ? (
               <>
                 <Select

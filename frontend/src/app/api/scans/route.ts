@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getPrismaClient } from "@/lib/prisma";
-import { syncAdminUserFromAuthUser } from "@/lib/admin";
+import { getAuthenticatedUserFromRequest, syncAdminUserFromAuthUser } from "@/lib/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -9,10 +9,9 @@ function normalizeDomain(input: string) {
   return input.trim().replace(/^https?:\/\//, "").split("/")[0];
 }
 
-export async function GET() {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) {
+export async function GET(request: Request) {
+  const authUser = await getAuthenticatedUserFromRequest(request);
+  if (!authUser) {
     return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
@@ -65,9 +64,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) {
+  const authUser = await getAuthenticatedUserFromRequest(req);
+  if (!authUser) {
     return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
@@ -82,7 +80,7 @@ export async function POST(req: Request) {
   }
 
   // 1. Lấy thông tin tài khoản người dùng từ DB
-  const userRecord = await syncAdminUserFromAuthUser(data.user);
+  const userRecord = await syncAdminUserFromAuthUser(authUser);
 
   let currentTier = userRecord.packageTier;
   const isExpired = userRecord.planExpiresAt ? new Date(userRecord.planExpiresAt) < new Date() : false;
@@ -147,17 +145,23 @@ export async function POST(req: Request) {
     "http://127.0.0.1:8000";
 
   try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+    let token = authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : undefined;
+    if (!token) {
+      try {
+        const supabase = await createSupabaseServerClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        token = session?.access_token;
+      } catch {}
+    }
 
     const backendResponse = await fetch(`${backendUrl}/api/scan`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(session?.access_token
-          ? { Authorization: `Bearer ${session.access_token}` }
-          : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({
         target,

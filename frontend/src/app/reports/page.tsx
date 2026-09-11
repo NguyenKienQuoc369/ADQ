@@ -5,36 +5,39 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FileText, Download, Shield, LoaderCircle, ArrowRight, ExternalLink } from "lucide-react";
 
+import { useAuth } from "@/components/providers/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { getScanResults, ScanResult } from "@/lib/api";
 
 export default function ReportsPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [jobs, setJobs] = useState<ScanResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    getScanResults()
-      .then((res) => {
-        if (!active) return;
-        setJobs(res);
-      })
-      .catch((err) => {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : "Không thể tải danh sách phiên rà quét.");
-      })
-      .finally(() => {
-        if (!active) return;
-        setLoading(false);
-      });
+  const loadJobs = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getScanResults();
+      setJobs(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể tải danh sách phiên rà quét.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => {
-      active = false;
-    };
-  }, []);
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    loadJobs();
+  }, [authLoading, user]);
 
   const exportJson = (scan: ScanResult) => {
     const blob = new Blob([JSON.stringify(scan, null, 2)], { type: "application/json" });

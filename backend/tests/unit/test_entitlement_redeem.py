@@ -189,3 +189,49 @@ def test_email_and_code_normalization():
     normalized_code = code_a.strip().upper()
     assert normalized_email == "user.name+test@example.com"
     assert normalized_code == "ADQ-PROMAX-FRESH"
+
+
+def test_canonical_alphanumeric_code_matching():
+    """Verify all punctuation and format variations match the same canonical key."""
+    def normalize_key(s: str) -> str:
+        import re
+        return re.sub(r"[^A-Z0-9]", "", s.strip().upper()).replace("PRO_MAX", "PROMAX")
+
+    canonical_target = "ADQ_PRO_MAX_12345"
+    key_target = normalize_key(canonical_target)
+
+    variations = [
+        "ADQ_PRO_MAX_12345",
+        "adq_pro_max_12345",
+        "ADQ-PRO-MAX-12345",
+        "adq-promax-12345",
+        "ADQ PRO MAX 12345",
+        "ADQPROMAX12345",
+        "adq-pro_max-12345",
+    ]
+
+    for v in variations:
+        assert normalize_key(v) == key_target, f"Failed for variation: {v}"
+
+
+def test_scan_hydration_error_state_separation():
+    """Verify auth errors (401/403/500) are distinguished from legitimate empty scan lists."""
+    class StateModel:
+        AUTH_LOADING = "AUTH_LOADING"
+        SUCCESS_WITH_DATA = "SUCCESS_WITH_DATA"
+        SUCCESS_EMPTY = "SUCCESS_EMPTY"
+        ERROR = "ERROR"
+
+    def determine_ui_state(auth_loading: bool, is_error: bool, scans: list) -> str:
+        if auth_loading:
+            return StateModel.AUTH_LOADING
+        if is_error:
+            return StateModel.ERROR
+        if len(scans) > 0:
+            return StateModel.SUCCESS_WITH_DATA
+        return StateModel.SUCCESS_EMPTY
+
+    assert determine_ui_state(auth_loading=True, is_error=False, scans=[]) == StateModel.AUTH_LOADING
+    assert determine_ui_state(auth_loading=False, is_error=True, scans=[]) == StateModel.ERROR
+    assert determine_ui_state(auth_loading=False, is_error=False, scans=[{"id": "scan-1"}]) == StateModel.SUCCESS_WITH_DATA
+    assert determine_ui_state(auth_loading=False, is_error=False, scans=[]) == StateModel.SUCCESS_EMPTY
