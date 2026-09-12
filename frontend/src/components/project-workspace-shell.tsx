@@ -7,25 +7,20 @@ import {
   Folder,
   Shield,
   Zap,
-  Bot,
   History,
   LayoutDashboard,
   CheckCircle2,
   AlertCircle,
-  ExternalLink,
   ChevronDown,
   ArrowLeft,
-  LoaderCircle,
 } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { getProjectById, getProjects, getTargetVerificationStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface ProjectWorkspaceShellProps {
   children: React.ReactNode;
-  activeTab?: "overview" | "scan" | "stress" | "copilot" | "history";
+  activeTab?: "overview" | "scan" | "stress" | "history";
   targetUrlOverride?: string;
   isVerifiedOverride?: boolean;
 }
@@ -123,15 +118,13 @@ export function ProjectWorkspaceShell({
   const projectName = project?.projectDetail?.title || project?.name || "Project";
   const verifiedState = isVerifiedOverride !== undefined ? isVerifiedOverride : isVerified;
 
-  // Determine current active tab
+  // Determine current active tab (Copilot is no longer a project tab)
   const currentTab =
     activeTab ||
     (pathname.includes("/scan")
       ? "scan"
       : pathname.includes("/stress-test")
       ? "stress"
-      : pathname.includes("/copilot")
-      ? "copilot"
       : pathname.includes("/history") || pathname.includes("/results")
       ? "history"
       : "overview");
@@ -140,7 +133,7 @@ export function ProjectWorkspaceShell({
     <DashboardShell area="dashboard">
       <div className="flex flex-col space-y-5 w-full">
         {/* Project Header Bar */}
-        <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 sm:p-5 shadow-sm">
+        <div className="rounded-lg border border-neutral-200 dark:border-[#222222] bg-white dark:bg-[#000000] p-4 sm:p-5 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             {/* Left: Project Selector & Info */}
             <div className="flex items-start sm:items-center gap-3">
@@ -148,16 +141,16 @@ export function ProjectWorkspaceShell({
                 <button
                   type="button"
                   onClick={() => setShowProjectPicker(!showProjectPicker)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-[#262626] bg-[#0a0a0a] hover:bg-[#141414] text-white transition text-xs font-semibold cursor-pointer group"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-neutral-300 dark:border-[#262626] bg-neutral-100 dark:bg-[#0a0a0a] hover:bg-neutral-200 dark:hover:bg-[#141414] text-neutral-900 dark:text-white transition text-xs font-semibold cursor-pointer group shadow-sm"
                 >
-                  <Folder className="h-3.5 w-3.5 text-neutral-400 group-hover:text-white" />
+                  <Folder className="h-3.5 w-3.5 text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-900 dark:group-hover:text-white" />
                   <span className="max-w-[180px] truncate">{projectName}</span>
                   <ChevronDown className="h-3 w-3 text-neutral-500" />
                 </button>
 
                 {/* Dropdown switch project */}
                 {showProjectPicker && (
-                  <div className="absolute top-full left-0 mt-1.5 w-64 rounded-md border border-[#262626] bg-[#0a0a0a] p-1 shadow-2xl z-50">
+                  <div className="absolute top-full left-0 mt-1.5 w-64 rounded-md border border-neutral-200 dark:border-[#262626] bg-white dark:bg-[#0a0a0a] p-1 shadow-2xl z-50">
                     <p className="px-2.5 py-1 text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
                       Chuyển đổi Project
                     </p>
@@ -178,29 +171,27 @@ export function ProjectWorkspaceShell({
                                   ? `/scan?projectId=${p.id}`
                                   : currentTab === "stress"
                                   ? `/stress-test?projectId=${p.id}`
-                                  : currentTab === "copilot"
-                                  ? `/copilot?projectId=${p.id}`
                                   : `/dashboard/projects/${p.id}/history`
                               );
                             }}
                             className={cn(
                               "w-full text-left px-2.5 py-1.5 rounded text-xs transition flex items-center justify-between cursor-pointer",
                               isCurrent
-                                ? "bg-white text-black font-semibold"
-                                : "text-neutral-300 hover:bg-neutral-900 hover:text-white"
+                                ? "bg-neutral-900 text-white dark:bg-white dark:text-black font-semibold"
+                                : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 hover:text-neutral-900 dark:hover:text-white"
                             )}
                           >
                             <span className="truncate">{pName}</span>
-                            {isCurrent && <CheckCircle2 className="h-3.5 w-3.5 text-black shrink-0 ml-1" />}
+                            {isCurrent && <CheckCircle2 className="h-3.5 w-3.5 text-white dark:text-black shrink-0 ml-1" />}
                           </button>
                         );
                       })}
                     </div>
-                    <div className="border-t border-[#222222] mt-1 pt-1">
+                    <div className="border-t border-neutral-200 dark:border-[#222222] mt-1 pt-1">
                       <Link
                         href="/dashboard"
                         onClick={() => setShowProjectPicker(false)}
-                        className="block w-full text-center px-2 py-1 text-[11px] text-neutral-400 hover:text-white transition"
+                        className="block w-full text-center px-2 py-1 text-[11px] text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition"
                       >
                         + Tạo hoặc quản lý Projects
                       </Link>
@@ -212,18 +203,18 @@ export function ProjectWorkspaceShell({
               {/* Target & Verification state */}
               {targetDomain && (
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-mono text-neutral-300 bg-[#0a0a0a] px-2 py-1 rounded border border-[#222222] flex items-center gap-1.5">
+                  <span className="text-xs font-mono text-neutral-700 dark:text-neutral-300 bg-neutral-100 dark:bg-[#0a0a0a] px-2 py-1 rounded border border-neutral-200 dark:border-[#222222] flex items-center gap-1.5">
                     <span>Target:</span>
-                    <strong className="text-white">{targetDomain}</strong>
+                    <strong className="text-neutral-900 dark:text-white">{targetDomain}</strong>
                   </span>
 
                   {verifiedState ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-400 bg-emerald-950/30 border border-emerald-500/30 px-2 py-0.5 rounded">
-                      <CheckCircle2 className="h-3 w-3" /> Đã xác minh quyền sở hữu
+                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-500/30 px-2 py-0.5 rounded font-semibold">
+                      <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> Đã xác minh quyền sở hữu
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-amber-400 bg-amber-950/30 border border-amber-500/30 px-2 py-0.5 rounded">
-                      <AlertCircle className="h-3 w-3" /> Chưa xác minh
+                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-500/30 px-2 py-0.5 rounded font-semibold">
+                      <AlertCircle className="h-3 w-3 text-amber-600 dark:text-amber-400" /> Chưa xác minh
                     </span>
                   )}
                 </div>
@@ -234,7 +225,7 @@ export function ProjectWorkspaceShell({
             <div className="flex items-center gap-2">
               <Link
                 href="/dashboard"
-                className="text-xs text-neutral-400 hover:text-white flex items-center gap-1 transition px-2 py-1 rounded hover:bg-neutral-900"
+                className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white flex items-center gap-1 transition px-2 py-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-900"
               >
                 <ArrowLeft className="h-3 w-3" /> Danh sách Dự án
               </Link>
@@ -242,14 +233,14 @@ export function ProjectWorkspaceShell({
           </div>
 
           {/* Project Navigation Tabs */}
-          <div className="border-t border-[#222222] mt-4 pt-3 flex flex-wrap items-center gap-1">
+          <div className="border-t border-neutral-200 dark:border-[#222222] mt-4 pt-3 flex flex-wrap items-center gap-1">
             <Link
               href={currentProjectId ? `/dashboard/projects/${currentProjectId}` : "/dashboard"}
               className={cn(
                 "h-8 px-3 text-xs font-medium rounded-md flex items-center gap-1.5 transition select-none cursor-pointer",
                 currentTab === "overview"
-                  ? "bg-white text-black font-semibold shadow-sm"
-                  : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"
+                  ? "bg-neutral-900 text-white dark:bg-white dark:text-black font-semibold shadow-sm"
+                  : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-900/60"
               )}
             >
               <LayoutDashboard className="h-3.5 w-3.5" /> <span>Tổng quan</span>
@@ -260,8 +251,8 @@ export function ProjectWorkspaceShell({
               className={cn(
                 "h-8 px-3 text-xs font-medium rounded-md flex items-center gap-1.5 transition select-none cursor-pointer",
                 currentTab === "scan"
-                  ? "bg-white text-black font-semibold shadow-sm"
-                  : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"
+                  ? "bg-neutral-900 text-white dark:bg-white dark:text-black font-semibold shadow-sm"
+                  : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-900/60"
               )}
             >
               <Shield className="h-3.5 w-3.5" /> <span>Scan</span>
@@ -272,23 +263,11 @@ export function ProjectWorkspaceShell({
               className={cn(
                 "h-8 px-3 text-xs font-medium rounded-md flex items-center gap-1.5 transition select-none cursor-pointer",
                 currentTab === "stress"
-                  ? "bg-white text-black font-semibold shadow-sm"
-                  : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"
+                  ? "bg-neutral-900 text-white dark:bg-white dark:text-black font-semibold shadow-sm"
+                  : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-900/60"
               )}
             >
               <Zap className="h-3.5 w-3.5" /> <span>Stress Test</span>
-            </Link>
-
-            <Link
-              href={currentProjectId ? `/copilot?projectId=${currentProjectId}` : "/copilot"}
-              className={cn(
-                "h-8 px-3 text-xs font-medium rounded-md flex items-center gap-1.5 transition select-none cursor-pointer",
-                currentTab === "copilot"
-                  ? "bg-white text-black font-semibold shadow-sm"
-                  : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"
-              )}
-            >
-              <Bot className="h-3.5 w-3.5" /> <span>Copilot</span>
             </Link>
 
             <Link
@@ -296,8 +275,8 @@ export function ProjectWorkspaceShell({
               className={cn(
                 "h-8 px-3 text-xs font-medium rounded-md flex items-center gap-1.5 transition select-none cursor-pointer",
                 currentTab === "history"
-                  ? "bg-white text-black font-semibold shadow-sm"
-                  : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"
+                  ? "bg-neutral-900 text-white dark:bg-white dark:text-black font-semibold shadow-sm"
+                  : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-900/60"
               )}
             >
               <History className="h-3.5 w-3.5" /> <span>Lịch sử</span>

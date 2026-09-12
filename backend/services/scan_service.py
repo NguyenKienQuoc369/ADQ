@@ -276,17 +276,28 @@ class ScanService:
         stress_job_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Interactive context-aware Copilot chat with conversation persistence in Redis.
+        Interactive context-aware Copilot chat with conversation persistence,
+        session-bound cross-chat memory, and strict multi-tenant authorization in Redis.
         """
         try:
             from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
             copilot = ADQSecurityCopilot()
 
+            context_type = "PRODUCT_HELP"
+            context_id = None
+            target_name = "Hướng dẫn ADQ"
+
             scan_ctx = None
             if scan_job_id:
                 scan_job = ScanService.get_job_status(scan_job_id)
                 if scan_job:
+                    # Tenant authorization check for scan session
+                    if scan_job.get("user_id") and str(scan_job.get("user_id")) != user_id:
+                        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập phiên Scan này.")
                     scan_ctx = copilot.build_scan_summary_context(scan_job)
+                    context_type = "SCAN"
+                    context_id = scan_job_id
+                    target_name = scan_job.get("target") or "Scan Session"
 
             stress_ctx = None
             if stress_job_id:
@@ -296,9 +307,27 @@ class ScanService:
                     from services.stress_dispatch_service import StressDispatchService
                 stress_job = StressDispatchService.get_stress_job_state(stress_job_id)
                 if stress_job:
+                    # Tenant authorization check for stress session
+                    if stress_job.get("user_id") and str(stress_job.get("user_id")) != user_id:
+                        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập phiên Stress Test này.")
                     stress_ctx = copilot.build_stress_summary_context(stress_job)
+                    context_type = "STRESS"
+                    context_id = stress_job_id
+                    target_name = stress_job.get("target_url") or "Stress Test Session"
 
-            # Load recent message history
+            # Retrieve session memory (strictly isolated to user_id + context_type + context_id)
+            session_memory = []
+            mem_key = None
+            if context_id and redis_client:
+                mem_key = f"copilot_memory:{user_id}:{context_type}:{context_id}"
+                try:
+                    raw_mems = redis_client.lrange(mem_key, 0, -1) or []
+                    for rm in raw_mems:
+                        session_memory.append(json.loads(rm))
+                except Exception:
+                    pass
+
+            # Load recent message history for this conversation
             active_conv_id = conv_id or f"conv_{uuid.uuid4().hex[:12]}"
             history = []
             if redis_client and conv_id:
@@ -314,6 +343,8 @@ class ScanService:
                 scan_context=scan_ctx,
                 stress_context=stress_ctx,
                 history=history,
+                session_memory=session_memory,
+                context_type=context_type,
             )
 
             text_output = ai_res.get("text") or "Copilot đã xử lý yêu cầu nhưng không có phản hồi văn bản."
@@ -328,21 +359,42 @@ class ScanService:
                 redis_client.rpush(msg_key, json.dumps(user_msg, ensure_ascii=False), json.dumps(asst_msg, ensure_ascii=False))
                 redis_client.expire(msg_key, 604800)  # 7 days
 
-                # Update conversation list
+                # Record key memory for session
+                if mem_key:
+                    try:
+                        mem_record = {
+                            "id": f"mem_{uuid.uuid4().hex[:8]}",
+                            "source_conversation_id": active_conv_id,
+                            "context_type": context_type,
+                            "context_id": context_id,
+                            "memory_type": "AI_SUMMARY",
+                            "topic": prompt[:60],
+                            "summary": text_output[:120],
+                            "created_at": now_ts,
+                        }
+                        redis_client.rpush(mem_key, json.dumps(mem_record, ensure_ascii=False))
+                        redis_client.ltrim(mem_key, -20, -1)
+                        redis_client.expire(mem_key, 604800)
+                    except Exception:
+                        pass
+
+                # Update conversation metadata
                 conv_meta = {
                     "id": active_conv_id,
                     "title": prompt[:40] + ("..." if len(prompt) > 40 else ""),
+                    "context_type": context_type,
+                    "context_id": context_id,
+                    "target": target_name,
                     "scan_job_id": scan_job_id,
                     "stress_job_id": stress_job_id,
                     "updated_at": now_ts,
                 }
                 convs_key = f"copilot_convs:{user_id}"
-                # Update or prepend in list
                 existing = redis_client.get(f"copilot_conv_meta:{user_id}:{active_conv_id}")
                 if not existing:
                     redis_client.lpush(convs_key, active_conv_id)
                     redis_client.ltrim(convs_key, 0, 49)
-                redis_client.set(f"copilot_conv_meta:{user_id}:{active_conv_id}", json.dumps(conv_meta), ex=604800)
+                redis_client.set(f"copilot_conv_meta:{user_id}:{active_conv_id}", json.dumps(conv_meta, ensure_ascii=False), ex=604800)
 
             return {
                 "ok": True,
@@ -351,6 +403,8 @@ class ScanService:
                 "model": ai_res.get("model", "ADQ Security Copilot"),
                 "status": ai_res.get("status", "SUCCESS"),
             }
+        except HTTPException:
+            raise
         except Exception as exc:
             return {
                 "ok": False,
@@ -371,7 +425,7 @@ class ScanService:
                 if raw_meta:
                     convs.append(json.loads(raw_meta))
                 else:
-                    convs.append({"id": cid, "title": "Hội thoại mới", "updated_at": time.time()})
+                    convs.append({"id": cid, "title": "Hội thoại mới", "context_type": "PRODUCT_HELP", "updated_at": time.time()})
             return convs
         except Exception:
             return []

@@ -1,15 +1,28 @@
 import { NextResponse } from "next/server";
 import { getPrismaClient } from "@/lib/prisma";
+import { getAuthenticatedUserFromRequest } from "@/lib/admin";
+import { isProjectAuthorized } from "@/lib/tenant-isolation";
 
 const prisma = getPrismaClient();
 
-export async function GET(_: Request, { params }: { params: Promise<{ projectId: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
   try {
+    const authUser = await getAuthenticatedUserFromRequest(req);
+    if (!authUser) {
+      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
+
     const { projectId } = await params;
-    const detail = await prisma.projectDetail.findUnique({
-      where: { projectId },
+    const project = await prisma.target.findUnique({
+      where: { id: projectId },
+      include: { projectDetail: true },
     });
 
+    if (!project || !isProjectAuthorized(authUser, project)) {
+      return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
+    }
+
+    const detail = project.projectDetail;
     return NextResponse.json({ ok: true, detail });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 });
@@ -18,15 +31,24 @@ export async function GET(_: Request, { params }: { params: Promise<{ projectId:
 
 export async function POST(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
   try {
+    const authUser = await getAuthenticatedUserFromRequest(req);
+    if (!authUser) {
+      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
+
     const { projectId } = await params;
     const body = await req.json();
 
-    const project = await prisma.target.findUnique({ where: { id: projectId } });
-    if (!project) {
+    const project = await prisma.target.findUnique({
+      where: { id: projectId },
+      include: { projectDetail: true },
+    });
+
+    if (!project || !isProjectAuthorized(authUser, project)) {
       return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
     }
 
-    const currentDetail = await prisma.projectDetail.findUnique({ where: { projectId } });
+    const currentDetail = project.projectDetail;
     const currentSummary = (currentDetail?.summary as Record<string, any>) || {};
 
     const updatedSummary = {
@@ -35,6 +57,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
       ...(body.findings ? { findings: body.findings } : {}),
       ...(body.stressTest ? { stressTest: body.stressTest } : {}),
       ...(body.apkAudit ? { apkAudit: body.apkAudit } : {}),
+      userId: authUser.id,
+      userEmail: (authUser.email ?? "").toLowerCase().trim(),
     };
 
     const detail = await prisma.projectDetail.upsert({

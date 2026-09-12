@@ -264,7 +264,7 @@ export default function ProjectHistoryPage() {
                       <span>•</span>
                       <span>p95: {st.metrics?.p95_latency || "0ms"}</span>
                       <span>•</span>
-                      <span>Error: {st.metrics?.error_rate?.toFixed(1) || "0.0"}%</span>
+                      <span>Error: {typeof st.metrics?.error_rate === "number" ? st.metrics.error_rate.toFixed(1) : (st.metrics?.error_rate || "0.0")}%</span>
                     </div>
                   </div>
 

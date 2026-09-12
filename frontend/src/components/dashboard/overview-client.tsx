@@ -286,25 +286,13 @@ export function OverviewClient() {
             <p className="mt-1 text-[11px] text-neutral-500">DAST, OWASP & Secrets</p>
           </div>
 
-          <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 hover:border-[#333333] transition">
+          <div className="rounded-lg border border-neutral-200 dark:border-[#222222] bg-white dark:bg-[#000000] p-4 hover:border-neutral-300 dark:hover:border-[#333333] transition shadow-sm">
             <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-500">Đã Hoàn Tất Rà Soát</span>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-emerald-400">{stats.activeCompleted}</span>
+              <span className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">{stats.activeCompleted}</span>
               <span className="text-[11px] text-neutral-500 font-mono">phiên</span>
             </div>
             <p className="mt-1 text-[11px] text-neutral-500">Sẵn sàng bằng chứng PoC</p>
-          </div>
-        </div>
-
-        {/* Pilot Advisory Notice */}
-        <div className="rounded-lg border border-[#222222] bg-[#0a0a0a] px-4 py-3 text-xs text-neutral-400 flex items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span className="px-1.5 py-0.5 rounded border border-neutral-700 bg-neutral-800 text-[10px] font-mono text-neutral-300 font-semibold">
-              PILOT
-            </span>
-            <p className="text-xs text-neutral-400 leading-normal">
-              ADQ đang được triển khai thử nghiệm pilot. Hệ thống và API được tối ưu liên tục; vui lòng kiểm tra kết quả trước khi đưa vào môi trường thực tế.
-            </p>
           </div>
         </div>
 

@@ -863,20 +863,40 @@ CẤU TRÚC ĐẦU RA BẮT BUỘC (Sử dụng đúng các tiêu đề Markdown
         scan_context: Optional[Dict[str, Any]] = None,
         stress_context: Optional[Dict[str, Any]] = None,
         history: Optional[List[Dict[str, str]]] = None,
+        session_memory: Optional[List[Dict[str, Any]]] = None,
+        context_type: str = "PRODUCT_HELP",
     ) -> Dict[str, Any]:
         """
         Generates context-grounded interactive response from ADQ Security Copilot.
-        Separates user prompt, system instructions, and ADQ telemetry context.
+        Strictly enforces Product Help Registry, Session Memory, and Raw Evidence Precedence.
         """
+        try:
+            try:
+                from backend.core.ai_copilot.product_help_registry import get_product_help_summary
+            except ImportError:
+                from core.ai_copilot.product_help_registry import get_product_help_summary
+            product_help_text = get_product_help_summary()
+        except Exception:
+            product_help_text = "ADQ Platform Features: Scan (/scan), Stress Test (/stress-test), Reports (/reports), APK Audit (/apk-audit), Copilot (/copilot), Billing & Redeem (/dashboard/billing), Settings (/settings)."
+
         masked_prompt = self.masker.mask_text(prompt)
 
         context_blocks = []
         if scan_context:
-            context_blocks.append(f"### DỮ LIỆU SCAN ĐÃ XÁC THỰC:\n{json.dumps(scan_context, ensure_ascii=False, indent=2)}")
+            context_blocks.append(f"### [RAW EVIDENCE] DỮ LIỆU PHIÊN SCAN ĐÃ XÁC THỰC:\n{json.dumps(scan_context, ensure_ascii=False, indent=2)}")
         if stress_context:
-            context_blocks.append(f"### DỮ LIỆU STRESS TEST ĐÃ XÁC THỰC:\n{json.dumps(stress_context, ensure_ascii=False, indent=2)}")
+            context_blocks.append(f"### [RAW EVIDENCE] DỮ LIỆU PHIÊN STRESS TEST ĐÃ XÁC THỰC:\n{json.dumps(stress_context, ensure_ascii=False, indent=2)}")
 
-        context_text = "\n\n".join(context_blocks) if context_blocks else "Không có ngữ cảnh scan/stress bổ sung."
+        context_text = "\n\n".join(context_blocks) if context_blocks else "Chế độ: Hướng dẫn sử dụng ADQ (Không có phiên Scan/Stress nào được gắn)."
+
+        memory_text = ""
+        if session_memory and len(session_memory) > 0:
+            mem_lines = []
+            for mem in session_memory[-5:]:
+                mem_type = mem.get("memory_type", "AI_SUMMARY")
+                topic = mem.get("topic") or mem.get("summary") or ""
+                mem_lines.append(f"- [{mem_type}] {topic}")
+            memory_text = f"### [SESSION MEMORY] BỘ NHỚ CÁC CUỘC TRÒ CHUYỆN TRƯỚC TRONG CÙNG PHIÊN NÀY:\n" + "\n".join(mem_lines)
 
         history_text = ""
         if history:
@@ -887,30 +907,37 @@ CẤU TRÚC ĐẦU RA BẮT BUỘC (Sử dụng đúng các tiêu đề Markdown
                 turns.append(f"{role}: {content}")
             history_text = "### LỊCH SỬ HỘI THOẠI GẦN NHẤT:\n" + "\n".join(turns)
 
-        full_prompt = f"""Bạn là ADQ Security Copilot - Trợ lý Trí tuệ Nhân tạo An ninh của Nền tảng ADQ.
-Nhiệm vụ của bạn là giải đáp câu hỏi của người dùng, phân tích kết quả bảo mật / hiệu năng, và hướng dẫn giải pháp kỹ thuật chính xác.
+        full_prompt = f"""Bạn là ADQ Security Copilot - Trợ lý Trí tuệ Nhân tạo An ninh & Hướng dẫn Nền tảng ADQ Platform.
+Nhiệm vụ của bạn là giải đáp câu hỏi của người dùng, hướng dẫn tính năng ADQ chính xác theo Product Help Registry, và phân tích kỹ thuật phiên Scan/Stress Test khi được đính kèm.
 
-NGỮ CẢNH DỮ LIỆU KỸ THUẬT (ĐÃ ĐƯỢC LÀM SẠCH VÀ BẢO VỆ):
+HỆ THỐNG KIẾN THỨC TÍNH NĂNG ADQ (PRODUCT HELP REGISTRY):
+{product_help_text}
+
+NGỮ CẢNH DỮ LIỆU KỸ THUẬT PHIÊN HIỆN TẠI:
 {context_text}
+
+{memory_text}
 
 {history_text}
 
 CÂU HỎI / YÊU CẦU CỦA NGƯỜI DÙNG:
 {masked_prompt}
 
-QUY TẮC BẮT BUỘC:
+QUY TẮC BẮT BUỘC (ZERO-HALLUCINATION & EVIDENCE PRIORITY):
 1. DANH TÍNH: Bạn là ADQ Security Copilot. Tuyệt đối không nhắc đến bất kỳ bên thứ ba hay nhà phát triển AI nào khác.
-2. CHỐNG ẢO GIÁC: Chỉ khẳng định các số liệu (RPS, latency, port, URL, lỗ hổng) có trong ngữ cảnh. Nếu không có dữ liệu, hãy nói rõ: 'ADQ chưa có đủ dữ liệu để kết luận.'
-3. PHÂN ĐỊNH RÕ RÀNG: Phân biệt rõ giữa 'Bằng chứng ADQ ghi nhận' (facts) và 'Giả thuyết / Phân tích nguy cơ' (hypotheses).
-4. KHẮC PHỤC LỖ HỔNG (REMEDIATION): Khi người dùng hỏi về cách khắc phục, hãy cung cấp hướng dẫn rõ ràng và đoạn mã vá (code block / diff) hoặc cấu hình nếu phù hợp.
-5. NGÔN NGỮ: Tiếng Việt tự nhiên, gãy gọn, bảo toàn các thuật ngữ kỹ thuật tiếng Anh phổ biến (Scan, Stress Test, URL, API, endpoint, port, service, request, response, latency, p95, p99, RPS, WAF, CORS, IDOR, SQL Injection, XSS, token, header, cookie).
+2. THỨ TỰ ƯU TIÊN BẰNG CHỨNG (EVIDENCE PRIORITY):
+   - RAW SCAN/STRESS EVIDENCE có độ ưu tiên cao nhất, vượt trên SESSION MEMORY và suy đoán cũ.
+   - Nếu bộ nhớ lịch sử nhắc tới một thông tin (ví dụ port 3306) nhưng dữ liệu phiên hiện tại KHÔNG có, bạn KHÔNG ĐƯỢC khẳng định nó tồn tại, mà phải nói rõ: "Cuộc trò chuyện trước có nhắc tới, nhưng dữ liệu của phiên hiện tại không ghi nhận."
+3. HƯỚNG DẪN SẢN PHẨM (PRODUCT HELP): Chỉ hướng dẫn dựa trên các route/nút/tính năng thật trong PRODUCT HELP REGISTRY (/dashboard, /scan, /stress-test, /reports, /apk-audit, /copilot, /dashboard/billing, /settings). Nếu câu hỏi về tính năng không có trong registry, trả lời: "ADQ hiện chưa có đủ thông tin để hướng dẫn chính xác phần này."
+4. KHẮC PHỤC LỖ HỔNG (REMEDIATION): Cung cấp hướng dẫn rõ ràng, nguyên nhân gốc rễ và gợi ý cấu hình/mã vá nếu phù hợp.
+5. NGÔN NGỮ: Tiếng Việt tự nhiên, ngắn gọn, chuẩn xác, giữ nguyên các thuật ngữ tiếng Anh phổ biến (Scan, Stress Test, URL, API, endpoint, port, service, request, response, latency, p95, p99, RPS, WAF, CORS, IDOR, SQL Injection, XSS, token, header, cookie).
 
 HÃY TRẢ LỜI NGAY:
 """
 
         system_instruction = (
             "Bạn là ADQ Security Copilot - Trợ lý An ninh Thông tin và Tối ưu Hiệu năng của ADQ Platform. "
-            "Bạn đưa ra câu trả lời trực diện, chính xác dựa trên bằng chứng kỹ thuật và giải thích dễ hiểu."
+            "Bạn đưa ra câu trả lời trực diện, chính xác dựa trên bằng chứng kỹ thuật và hướng dẫn sử dụng sản phẩm."
         )
 
         res = self._call_gemini_api(full_prompt, system_instruction=system_instruction, enable_tools=False)

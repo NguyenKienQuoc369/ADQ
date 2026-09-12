@@ -59,8 +59,8 @@ function MaintenanceContent() {
                   : "RECOVERY MODE"}
               </Badge>
 
-              <Badge className="border border-cyan-500/20 bg-cyan-500/10 text-cyan-300">
-                ADQ PILOT
+              <Badge className="border border-neutral-700 bg-neutral-800 text-neutral-200">
+                ADQ SECURITY PLATFORM
               </Badge>
             </div>
 

@@ -83,42 +83,32 @@ html.light .bg-\[\#000000\] {
   background-color: #ffffff !important;
 }
 
-html.light .bg-\[\#000000\]\/80 {
-  background-color: rgba(255, 255, 255, 0.85) !important;
+html.light .bg-\[\#000000\]\/80,
+html.light .bg-\[\#000000\]\/85,
+html.light .bg-\[\#000000\]\/90,
+html.light .bg-\[\#000000\]\/95 {
+  background-color: rgba(255, 255, 255, 0.92) !important;
 }
 
-html.light .bg-\[\#000000\]\/90 {
-  background-color: rgba(255, 255, 255, 0.95) !important;
-}
-
-html.light .bg-\[\#0a0a0a\] {
-  background-color: #f8fafc !important;
-}
-
+html.light .bg-\[\#0a0a0a\],
+html.light .bg-\[\#0A0A0A\],
+html.light .bg-\[\#050505\],
+html.light .bg-\[\#0F0F0F\],
 html.light .bg-\[\#111111\] {
-  background-color: #f1f5f9 !important;
-}
-
-html.light .bg-neutral-900 {
   background-color: #f8fafc !important;
 }
 
-html.light .bg-neutral-800 {
-  background-color: #f1f5f9 !important;
-}
-
-html.light .border-\[\#222222\] {
+html.light .border-\[\#222222\],
+html.light .border-\[\#242424\],
+html.light .border-\[\#262626\],
+html.light .border-\[\#141414\],
+html.light .border-\[\#1C1C1C\],
+html.light .border-\[\#1F1F1F\],
+html.light .border-\[\#333333\] {
   border-color: #e2e8f0 !important;
 }
 
-html.light .border-\[\#333333\] {
-  border-color: #cbd5e1 !important;
-}
-
-html.light .border-neutral-700 {
-  border-color: #cbd5e1 !important;
-}
-
+html.light .border-neutral-700,
 html.light .border-neutral-800 {
   border-color: #e2e8f0 !important;
 }

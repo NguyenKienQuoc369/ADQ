@@ -25,6 +25,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ scanId: 
     return NextResponse.json({ ok: false, error: "Không tìm thấy scan." }, { status: 404 });
   }
 
+  const { isDomainAuthorized } = await import("@/lib/tenant-isolation");
+  const isAuthorized = await isDomainAuthorized(authUser, job.targetDomain);
+  if (!isAuthorized) {
+    return NextResponse.json({ ok: false, error: "Không tìm thấy scan." }, { status: 404 });
+  }
+
   return NextResponse.json({
     ok: true,
     scan: {

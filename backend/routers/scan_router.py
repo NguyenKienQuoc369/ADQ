@@ -219,6 +219,24 @@ def start_scan(req: ScanRequest, user: Dict[str, Any] = Depends(get_current_user
         message="Scan job queued successfully" if not skip_ai else "Scan job queued (Free tier: AI Analysis skipped)",
     )
 
+def authorize_scan_job_access(job: Optional[Dict[str, Any]], user: Dict[str, Any]) -> None:
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Scan job not found",
+        )
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    job_user_id = job.get("user_id")
+    if job_user_id and str(job_user_id) != user_id:
+        app_metadata = user.get("app_metadata") or {}
+        role = str(app_metadata.get("role") or user.get("role") or "").upper()
+        if role != "ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bạn không có quyền truy cập tiến trình quét này."
+            )
+
+
 @router.get("/scan/{job_id}/endpoints")
 def get_scan_endpoints_route(
     job_id: str,
@@ -230,12 +248,7 @@ def get_scan_endpoints_route(
         from core.engine.db import get_scan_endpoints
 
     job = ScanService.get_job_status(job_id)
-
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Scan job not found",
-        )
+    authorize_scan_job_access(job, user)
 
     endpoints = get_scan_endpoints(job_id)
 
@@ -251,6 +264,7 @@ def get_scan_endpoints_route(
 def get_scan_status(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     tier = get_user_tier(user)
     job = ScanService.get_job_status(job_id, user_tier=tier)
+    authorize_scan_job_access(job, user)
     
     if job and isinstance(job, dict):
         job = dict(job)
@@ -268,6 +282,7 @@ def get_scan_status(job_id: str, user: Dict[str, Any] = Depends(get_current_user
 def get_scan_assurance(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     tier = get_user_tier(user)
     job = ScanService.get_job_status(job_id, user_tier=tier)
+    authorize_scan_job_access(job, user)
     assurance = job.get("assurance_matrix")
     if not assurance:
         try:
@@ -288,6 +303,8 @@ def get_or_generate_ai_assessment(
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     tier = get_user_tier(user)
+    job = ScanService.get_job_status(job_id, user_tier=tier)
+    authorize_scan_job_access(job, user)
     return ScanService.get_or_generate_scan_ai_assessment(job_id, user_tier=tier, force_refresh=True)
 
 
@@ -297,6 +314,8 @@ def get_cached_ai_assessment(
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     tier = get_user_tier(user)
+    job = ScanService.get_job_status(job_id, user_tier=tier)
+    authorize_scan_job_access(job, user)
     return ScanService.get_or_generate_scan_ai_assessment(job_id, user_tier=tier, force_refresh=False)
 
 
@@ -560,8 +579,7 @@ async def stream_scan_job_events(job_id: str, user: Dict[str, Any] = Depends(get
     """
     tier = get_user_tier(user)
     initial_check = ScanService.get_job_status(job_id, user_tier=tier)
-    if not initial_check:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tiến trình quét an ninh.")
+    authorize_scan_job_access(initial_check, user)
 
     async def sse_scan_relay():
         pubsub = None

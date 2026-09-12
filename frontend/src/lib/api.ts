@@ -447,9 +447,6 @@ export async function getScanJobStatus(jobId: string): Promise<any> {
   return requestJson<any>(`/api/scan/${encodeURIComponent(jobId)}`);
 }
 
-export const getScanJob = getScanJobStatus;
-export type ScanJobDetails = any;
-
 export async function getScanAssurance(
   jobId: string
 ): Promise<{ ok: boolean; job_id: string; assurance: AssuranceMatrix }> {
@@ -930,8 +927,6 @@ export async function getTargetVerificationStatus(targetUrl: string) {
   });
 }
 
-export const getVerificationStatus = getTargetVerificationStatus;
-
 export async function startTargetVerification(targetUrl: string) {
   return requestJson<{ ok: boolean; target: string; verification_token: string; meta_tag: string; expires_in: number; verified: boolean }>("/api/verification/start", {
     method: "POST",
@@ -954,6 +949,10 @@ export async function checkStressVerification(targetUrl: string) {
   return checkTargetVerification(targetUrl);
 }
 
+export const getVerificationStatus = getTargetVerificationStatus;
+export const getScanJob = getScanJobStatus;
+export type ScanJobDetails = any;
+
 export async function verifyBypass(payload: { target_url: string; bypass_code: string; waf_type: string }) {
   return requestJson<{ ok: boolean; is_valid: boolean; status_no_bypass: number; status_with_bypass: number; message: string }>("/api/stress/verify-bypass", {
     method: "POST",
@@ -972,10 +971,11 @@ export interface StressJobState {
   duration_sec?: number;
   target_rps?: number;
   waf_type?: string;
-  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED" | string;
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
   phase?: string;
-  verdict?: string;
   progress?: number;
+  verdict?: string;
+  events?: Array<{ time: string; message: string; type?: string }>;
   metrics?: {
     total_requests?: number;
     target_requests?: number;
@@ -986,21 +986,18 @@ export interface StressJobState {
     status_500_crashed?: number;
     other_status?: number;
     rps?: number;
-    avg_latency?: string;
     p50_latency?: string;
     p95_latency?: string;
     p99_latency?: string;
-    error_rate?: number;
+    avg_latency?: string;
+    error_rate?: number | string;
     timeouts?: number;
-    [key: string]: any;
   };
-  events?: Array<{ time: string; message: string }>;
   created_at?: number;
   started_at?: number | null;
   finished_at?: number | null;
   error_safe?: string | null;
   done?: boolean;
-  is_done?: boolean;
 }
 
 export async function createStressJob(payload: {

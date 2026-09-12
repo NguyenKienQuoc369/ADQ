@@ -24,7 +24,18 @@ export async function GET(request: Request) {
   }
 
   const prisma = getPrismaClient();
+  const { getUserAuthorizedDomains } = await import("@/lib/tenant-isolation");
+  const authorizedDomains = await getUserAuthorizedDomains(authUser);
+
+  if (authorizedDomains.length === 0) {
+    console.log(`trace=${traceId} route=scans auth=yes user_id=${authUser.id} authorized_domains=0 db_count=0 returned=0 status=200`);
+    return NextResponse.json({ ok: true, scans: [] }, { headers: traceHeaders });
+  }
+
   const jobs = await prisma.scanJob.findMany({
+    where: {
+      targetDomain: { in: authorizedDomains },
+    },
     orderBy: { createdAt: "desc" },
     take: 50,
     include: {
@@ -128,11 +139,28 @@ export async function POST(req: Request) {
     }
   }
 
-  // 3. Khởi tạo Scan Job
+  // 3. Khởi tạo Scan Job gắn liền với quyền sở hữu của người dùng
+  const userEmail = (authUser.email ?? "").toLowerCase().trim();
+  const userId = authUser.id;
+
   const targetRecord = await prisma.target.upsert({
     where: { domain: target },
     update: { updatedAt: new Date() },
-    create: { domain: target },
+    create: {
+      domain: target,
+      projectDetail: {
+        create: {
+          title: target,
+          module: "scan",
+          status: "ACTIVE",
+          summary: {
+            domain: target,
+            userEmail,
+            userId,
+          },
+        },
+      },
+    },
   });
 
   const scanId = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
