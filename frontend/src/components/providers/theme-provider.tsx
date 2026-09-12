@@ -2,73 +2,54 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-export type Theme = "dark" | "light";
+export type Theme = "dark";
 
 type ThemeContextValue = {
-  theme: Theme;
+  theme: "dark";
   mounted: boolean;
-  setTheme: (theme: Theme) => void;
+  setTheme: (theme: string) => void;
   toggleTheme: () => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function applyTheme(theme: Theme) {
+function enforceDarkTheme() {
   if (typeof document === "undefined") return;
-  document.documentElement.dataset.theme = theme;
-  if (theme === "light") {
-    document.documentElement.classList.remove("dark");
-    document.documentElement.classList.add("light");
-    document.documentElement.style.colorScheme = "light";
-  } else {
-    document.documentElement.classList.remove("light");
-    document.documentElement.classList.add("dark");
-    document.documentElement.style.colorScheme = "dark";
+  try {
+    localStorage.removeItem("adq_theme");
+  } catch {
+    // ignore
   }
-}
-
-function getInitialTheme(): Theme {
-  if (typeof window === "undefined") return "dark";
-  const stored = localStorage.getItem("adq_theme") as Theme | null;
-  if (stored === "light" || stored === "dark") {
-    return stored;
-  }
-  return "dark";
+  document.documentElement.dataset.theme = "dark";
+  document.documentElement.classList.remove("light");
+  document.documentElement.classList.add("dark");
+  document.documentElement.style.colorScheme = "dark";
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const initial = getInitialTheme();
-    setThemeState(initial);
-    applyTheme(initial);
+    enforceDarkTheme();
     setMounted(true);
   }, []);
 
-  const setTheme = useCallback((nextTheme: Theme) => {
-    setThemeState(nextTheme);
-    applyTheme(nextTheme);
-    try {
-      localStorage.setItem("adq_theme", nextTheme);
-    } catch {
-      // ignore
-    }
+  const setTheme = useCallback((_nextTheme: string) => {
+    enforceDarkTheme();
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  }, [setTheme, theme]);
+    enforceDarkTheme();
+  }, []);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
-      theme,
+      theme: "dark",
       mounted,
       setTheme,
       toggleTheme,
     }),
-    [mounted, setTheme, theme, toggleTheme],
+    [mounted, setTheme, toggleTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -83,4 +64,3 @@ export function useTheme() {
 
   return context;
 }
-

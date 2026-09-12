@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { UserAvatar, getCanonicalDisplayName, getCanonicalPackageTier } from "@/components/ui/user-avatar";
 import { cn, maskEmail } from "@/lib/utils";
 
@@ -75,7 +74,9 @@ function DashboardShellContent({
   area: ShellArea;
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -89,15 +90,15 @@ function DashboardShellContent({
 
   // Content for sidebar navigation
   const sidebarNavContent = (
-    <div className="flex h-full flex-col justify-between p-4 bg-neutral-50 dark:bg-[#000000] text-neutral-900 dark:text-[#ededed]">
+    <div className="flex h-full flex-col justify-between p-4 bg-[#000000] text-[#ededed]">
       <div className="space-y-6">
         {/* Brand & Logo Header */}
         <Link
           href="/dashboard"
           onClick={() => setMobileOpen(false)}
-          className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-neutral-200/50 dark:hover:bg-neutral-900/40 transition group"
+          className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-[#111111] transition group"
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 dark:border-[#222222] bg-white dark:bg-[#0a0a0a] p-1 shadow-sm">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#222222] bg-[#0a0a0a] p-1 shadow-sm">
             <Image
               src="/logo.png"
               alt="ADQ logo"
@@ -108,11 +109,11 @@ function DashboardShellContent({
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-sm tracking-tight text-neutral-900 dark:text-white group-hover:text-neutral-700 dark:group-hover:text-neutral-200 transition">
+              <span className="font-bold text-sm tracking-tight text-white group-hover:text-neutral-200 transition">
                 ADQ SECURITY
               </span>
             </div>
-            <p className="text-[10px] font-mono text-neutral-500 dark:text-neutral-400">
+            <p className="text-[10px] font-mono text-neutral-400">
               {canonicalTier.replace("_", " ")} Plan
             </p>
           </div>
@@ -122,7 +123,7 @@ function DashboardShellContent({
         <div className="space-y-5">
           {navGroups.map((group) => (
             <div key={group.title} className="space-y-1">
-              <p className="px-2.5 text-[10px] font-mono uppercase tracking-wider text-neutral-500 dark:text-neutral-500 font-semibold">
+              <p className="px-2.5 text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-semibold">
                 {group.title}
               </p>
               <div className="space-y-0.5 pt-1">
@@ -140,12 +141,12 @@ function DashboardShellContent({
                       className={cn(
                         "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-xs font-medium transition select-none cursor-pointer",
                         active
-                          ? "bg-neutral-900 text-white dark:bg-white dark:text-black font-semibold shadow-sm"
-                          : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/60 dark:hover:bg-neutral-900/60"
+                          ? "active-sidebar-link bg-white text-black font-semibold shadow-sm"
+                          : "text-neutral-400 hover:text-white hover:bg-[#111111]"
                       )}
                     >
-                      <Icon className={cn("h-4 w-4 shrink-0", active ? "text-white dark:text-black" : "text-neutral-500 dark:text-neutral-400")} />
-                      <span className={active ? "font-semibold" : ""}>{item.label}</span>
+                      <Icon className={cn("h-4 w-4 shrink-0", active ? "text-black stroke-black" : "text-neutral-400")} />
+                      <span className={active ? "font-semibold text-black" : ""}>{item.label}</span>
                     </Link>
                   );
                 })}
@@ -156,27 +157,27 @@ function DashboardShellContent({
       </div>
 
       {/* Sidebar Footer: Compact Plan / Quota Card & User profile */}
-      <div className="border-t border-neutral-200 dark:border-[#222222] pt-3 space-y-3">
+      <div className="border-t border-[#222222] pt-3 space-y-3">
         {/* Compact Plan / Quota Card */}
         {area !== "admin" && (
-          <div className="rounded-md border border-neutral-200 dark:border-[#222222] bg-white dark:bg-[#0a0a0a] p-3 text-xs space-y-2 shadow-sm">
+          <div className="rounded-md border border-[#222222] bg-[#0a0a0a] p-3 text-xs space-y-2 shadow-sm">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-neutral-900 dark:text-white flex items-center gap-1.5">
-                <Crown className="h-3.5 w-3.5 text-amber-500 dark:text-neutral-300" />
+              <span className="font-semibold text-white flex items-center gap-1.5">
+                <Crown className="h-3.5 w-3.5 text-neutral-300" />
                 <span>{canonicalTier.replace("_", " ")}</span>
               </span>
               <Link
                 href="/dashboard/billing"
-                className="text-[10px] text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition underline"
+                className="text-[10px] text-neutral-400 hover:text-white transition underline"
               >
                 Chi tiết
               </Link>
             </div>
 
-            <div className="space-y-1 text-[11px] text-neutral-600 dark:text-neutral-400 font-mono">
+            <div className="space-y-1 text-[11px] text-neutral-400 font-mono">
               <div className="flex items-center justify-between">
                 <span>Stress Test:</span>
-                <span className="text-neutral-900 dark:text-neutral-200">
+                <span className="text-neutral-200">
                   {canonicalTier === "PRO_MAX"
                     ? "10 / ngày"
                     : canonicalTier === "PRO"
@@ -186,13 +187,13 @@ function DashboardShellContent({
               </div>
               <div className="flex items-center justify-between">
                 <span>Scan:</span>
-                <span className="text-neutral-900 dark:text-neutral-200">
+                <span className="text-neutral-200">
                   {canonicalTier === "FREE" ? "1 lượt" : "Không giới hạn"}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Copilot:</span>
-                <span className="text-neutral-900 dark:text-neutral-200">
+                <span className="text-neutral-200">
                   {canonicalTier === "PRO_MAX" ? "Có sẵn" : "Gói PRO MAX"}
                 </span>
               </div>
@@ -201,7 +202,7 @@ function DashboardShellContent({
         )}
 
         {/* User Card */}
-        <div className="flex items-center justify-between px-2 py-1.5 rounded-md bg-white dark:bg-[#0a0a0a] border border-neutral-200 dark:border-[#222222] shadow-sm">
+        <div className="flex items-center justify-between px-2 py-1.5 rounded-md bg-[#0a0a0a] border border-[#222222] shadow-sm">
           <Link
             href="/settings"
             onClick={() => setMobileOpen(false)}
@@ -210,10 +211,10 @@ function DashboardShellContent({
           >
             <UserAvatar user={user} displayName={userDisplayName} size="sm" />
             <div className="truncate">
-              <p className="text-xs font-medium text-neutral-900 dark:text-white truncate group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition">
+              <p className="text-xs font-medium text-white truncate group-hover:text-neutral-300 transition">
                 {userDisplayName}
               </p>
-              <p className="text-[10px] font-mono text-neutral-500 dark:text-neutral-400 truncate">
+              <p className="text-[10px] font-mono text-neutral-400 truncate">
                 {maskEmail(user?.email)}
               </p>
             </div>
@@ -222,34 +223,29 @@ function DashboardShellContent({
             type="button"
             onClick={() => logout()}
             title="Đăng xuất"
-            className="p-1.5 text-neutral-500 hover:text-rose-500 dark:text-neutral-400 dark:hover:text-rose-400 transition cursor-pointer shrink-0 ml-1"
+            className="p-1.5 text-neutral-400 hover:text-rose-400 transition cursor-pointer shrink-0 ml-1"
           >
             <LogOut className="h-3.5 w-3.5" />
           </button>
-        </div>
-
-        {/* Theme Toggle Button */}
-        <div className="px-1 flex justify-center">
-          <ThemeToggle />
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-white dark:bg-[#000000] text-neutral-900 dark:text-[#ededed] font-sans selection:bg-neutral-900 selection:text-white dark:selection:bg-white dark:selection:text-black">
+    <div className="min-h-screen bg-[#000000] text-[#ededed] font-sans selection:bg-white selection:text-black">
       {/* Desktop Left Sidebar */}
-      <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 z-30 border-r border-neutral-200 dark:border-[#222222] bg-neutral-50 dark:bg-[#000000]">
+      <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 z-30 border-r border-[#222222] bg-[#000000]">
         {sidebarNavContent}
       </aside>
 
       {/* Mobile Top Navigation Bar */}
-      <header className="mobile-header-bar md:hidden sticky top-0 z-40 flex h-14 items-center justify-between border-b border-neutral-200 dark:border-[#222222] bg-white/90 dark:bg-[#000000]/90 px-4 backdrop-blur-md">
+      <header className="mobile-header-bar md:hidden sticky top-0 z-40 flex h-14 items-center justify-between border-b border-[#222222] bg-[#000000]/90 px-4 backdrop-blur-md">
         <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="p-1.5 text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white cursor-pointer"
+            className="p-1.5 text-neutral-400 hover:text-white cursor-pointer"
             aria-label="Toggle menu"
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -262,15 +258,14 @@ function DashboardShellContent({
               height={26}
               className="h-6.5 w-6.5 object-contain"
             />
-            <span className="font-bold text-xs tracking-tight text-neutral-900 dark:text-white">ADQ SECURITY</span>
+            <span className="font-bold text-xs tracking-tight text-white">ADQ SECURITY</span>
           </Link>
         </div>
 
         <div className="flex items-center gap-2">
-          <ThemeToggle />
           <Link
             href="/settings"
-            className="rounded-full hover:ring-1 hover:ring-neutral-400 dark:hover:ring-white transition"
+            className="rounded-full hover:ring-1 hover:ring-white transition"
             title="Cài đặt tài khoản"
           >
             <UserAvatar user={user} displayName={userDisplayName} size="sm" />
@@ -278,7 +273,7 @@ function DashboardShellContent({
           <button
             type="button"
             onClick={() => logout()}
-            className="p-1.5 text-neutral-500 hover:text-rose-500 dark:text-neutral-400 dark:hover:text-rose-400 cursor-pointer"
+            className="p-1.5 text-neutral-400 hover:text-rose-400 cursor-pointer"
           >
             <LogOut className="h-4 w-4" />
           </button>
@@ -292,7 +287,7 @@ function DashboardShellContent({
             className="fixed inset-0 bg-black/70 backdrop-blur-sm"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="fixed inset-y-0 left-0 w-72 bg-neutral-50 dark:bg-[#000000] border-r border-neutral-200 dark:border-[#222222] shadow-2xl">
+          <div className="fixed inset-y-0 left-0 w-72 bg-[#000000] border-r border-[#222222] shadow-2xl">
             {sidebarNavContent}
           </div>
         </div>
@@ -310,7 +305,7 @@ function DashboardShellContent({
 
 export function DashboardShell(props: { area: ShellArea; children: React.ReactNode }) {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-white dark:bg-[#000000]" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[#000000]" />}>
       <DashboardShellContent {...props} />
     </Suspense>
   );

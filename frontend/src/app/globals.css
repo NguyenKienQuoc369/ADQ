@@ -21,24 +21,6 @@
   --green-glow: rgba(16, 185, 129, 0.12);
 }
 
-html.light,
-body.light {
-  color-scheme: light;
-  --background: #ffffff;
-  --background-elevated: #ffffff;
-  --background-muted: #f8fafc;
-  --background-strong: #f1f5f9;
-  --foreground: #09090b;
-  --foreground-soft: #475569;
-  --foreground-muted: #64748b;
-  --line: #e2e8f0;
-  --line-strong: #cbd5e1;
-  --accent: #0f172a;
-  --accent-soft: rgba(15, 23, 42, 0.06);
-  --accent-strong: #0f172a;
-  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.06);
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -67,242 +49,77 @@ body::selection {
   color: #000000;
 }
 
-/* Light Mode Overrides */
-html.light,
-html.light body {
-  background-color: #ffffff !important;
-  color: #09090b !important;
-}
-
-html.light body::selection {
-  background-color: #09090b !important;
-  color: #ffffff !important;
-}
-
-html.light .bg-\[\#000000\] {
-  background-color: #ffffff !important;
-}
-
-html.light .bg-\[\#000000\]\/80,
-html.light .bg-\[\#000000\]\/85,
-html.light .bg-\[\#000000\]\/90,
-html.light .bg-\[\#000000\]\/95 {
-  background-color: rgba(255, 255, 255, 0.92) !important;
-}
-
-html.light .bg-\[\#0a0a0a\],
-html.light .bg-\[\#0A0A0A\],
-html.light .bg-\[\#050505\],
-html.light .bg-\[\#0F0F0F\],
-html.light .bg-\[\#111111\] {
-  background-color: #f8fafc !important;
-}
-
-html.light .border-\[\#222222\],
-html.light .border-\[\#242424\],
-html.light .border-\[\#262626\],
-html.light .border-\[\#141414\],
-html.light .border-\[\#1C1C1C\],
-html.light .border-\[\#1F1F1F\],
-html.light .border-\[\#333333\] {
-  border-color: #e2e8f0 !important;
-}
-
-html.light .border-neutral-700,
-html.light .border-neutral-800 {
-  border-color: #e2e8f0 !important;
-}
-
-html.light .divide-\[\#222222\] > :not([hidden]) ~ :not([hidden]) {
-  border-color: #e2e8f0 !important;
-}
-
-html.light .text-white,
-html.light .text-\[\#ededed\],
-html.light .text-slate-50,
-html.light .text-slate-100,
-html.light .text-slate-200 {
-  color: #09090b !important;
-}
-
-html.light .text-neutral-200,
-html.light .text-slate-300 {
-  color: #1e293b !important;
-}
-
-html.light .text-neutral-300,
-html.light .text-slate-400 {
-  color: #334155 !important;
-}
-
-html.light .text-neutral-400,
-html.light .text-slate-500 {
-  color: #64748b !important;
-}
-
-html.light .text-neutral-500,
-html.light .text-slate-600 {
-  color: #94a3b8 !important;
-}
-
-/* Hover text in light mode */
-html.light .hover\:text-white:hover,
-html.light .hover\:text-neutral-200:hover,
-html.light .hover\:text-slate-200:hover {
-  color: #09090b !important;
-}
-
-/* Slate backgrounds & borders in light mode */
-html.light .bg-slate-950,
-html.light .bg-slate-950\/40,
-html.light .bg-slate-950\/50,
-html.light .bg-slate-950\/60,
-html.light .bg-slate-950\/80 {
-  background-color: #f8fafc !important;
-}
-
-html.light .bg-slate-900,
-html.light .bg-slate-900\/40,
-html.light .bg-slate-900\/60,
-html.light .bg-slate-900\/80 {
-  background-color: #f1f5f9 !important;
-}
-
-html.light .border-slate-800,
-html.light .border-slate-700 {
-  border-color: #e2e8f0 !important;
-}
-
-/* Inputs & controls in light mode */
-html.light input:not([type="checkbox"]):not([type="radio"]),
-html.light textarea,
-html.light select {
-  background-color: #ffffff !important;
-  color: #09090b !important;
-  border-color: #cbd5e1 !important;
-}
-
-html.light input::placeholder,
-html.light textarea::placeholder {
-  color: #94a3b8 !important;
-}
-
-html.light input:focus,
-html.light textarea:focus,
-html.light select:focus {
-  border-color: #09090b !important;
-}
-
-/* Primary buttons in light mode */
-html.light .bg-white.text-black {
-  background-color: #09090b !important;
-  color: #ffffff !important;
-}
-
-html.light .bg-white.text-black:hover,
-html.light .hover\:bg-neutral-200:hover {
-  background-color: #27272a !important;
-  color: #ffffff !important;
-}
-
-html.light .hover\:bg-neutral-800:hover {
-  background-color: #e2e8f0 !important;
-}
-
-html.light .hover\:bg-neutral-900:hover,
-html.light .hover\:bg-neutral-900\/40:hover,
-html.light .hover\:bg-neutral-900\/60:hover {
-  background-color: #f1f5f9 !important;
-}
-
-html.light .hover\:border-neutral-700:hover,
-html.light .hover\:border-neutral-600:hover {
-  border-color: #94a3b8 !important;
-}
-
-/* Modal overlay in light mode */
-html.light .bg-black\/80,
-html.light .bg-black\/70 {
-  background-color: rgba(15, 23, 42, 0.45) !important;
-}
-
 /* ======================================================== */
-/* CRITICAL: SIDEBAR & TOOL TABS ACTIVE COLOR FIXES         */
+/* ADQ AUTHENTICATED APP — DARK-ONLY THEME SYSTEM           */
 /* ======================================================== */
 
-/* 1. DARK MODE: Active sidebar link MUST have PURE BLACK text & icon on WHITE bg */
-html:not(.light) .active-sidebar-link,
-body:not(.light) .active-sidebar-link {
+/* Active sidebar link: pure black text and icon on white bg */
+.active-sidebar-link {
   background-color: #ffffff !important;
   color: #000000 !important;
+  font-weight: 600 !important;
 }
 
-html:not(.light) .active-sidebar-link *,
-body:not(.light) .active-sidebar-link * {
+.active-sidebar-link *,
+.active-sidebar-link svg {
   color: #000000 !important;
   stroke: #000000 !important;
+  fill: none !important;
 }
 
-/* 2. DARK MODE: Active tool tab MUST have PURE BLACK text on WHITE bg */
-html:not(.light) .active-tool-tab,
-body:not(.light) .active-tool-tab {
+/* Active tool tab: pure black text and icon on white bg */
+.active-tool-tab {
   background-color: #ffffff !important;
   color: #000000 !important;
+  font-weight: 600 !important;
 }
 
-html:not(.light) .active-tool-tab *,
-body:not(.light) .active-tool-tab * {
+.active-tool-tab *,
+.active-tool-tab svg {
   color: #000000 !important;
   stroke: #000000 !important;
+  fill: none !important;
 }
 
-/* 3. LIGHT MODE: Active sidebar link MUST have PURE WHITE text & icon on BLACK bg */
-html.light .active-sidebar-link,
-body.light .active-sidebar-link {
-  background-color: #09090b !important;
-  color: #ffffff !important;
+/* Tool sticky header */
+.tool-sticky-header {
+  background-color: rgba(0, 0, 0, 0.85) !important;
+  border-color: #222222 !important;
 }
 
-html.light .active-sidebar-link *,
-body.light .active-sidebar-link * {
-  color: #ffffff !important;
-  stroke: #ffffff !important;
+/* Tool switcher bar */
+.tool-switcher-bar {
+  background-color: #0a0a0a !important;
+  border-color: #262626 !important;
 }
 
-/* 4. LIGHT MODE: Active tool tab MUST have PURE WHITE text on BLACK bg */
-html.light .active-tool-tab,
-body.light .active-tool-tab {
-  background-color: #09090b !important;
-  color: #ffffff !important;
+.tool-back-btn {
+  background-color: #0a0a0a !important;
+  border-color: #262626 !important;
+  color: #ededed !important;
 }
 
-html.light .active-tool-tab *,
-body.light .active-tool-tab * {
-  color: #ffffff !important;
-  stroke: #ffffff !important;
+/* Native form controls & inputs dark styling */
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  color-scheme: dark;
 }
 
-/* 5. LIGHT MODE: Tool sticky header & mobile header MUST be white translucent */
-html.light .tool-sticky-header,
-html.light .bg-\[\#000000\]\/85,
-html.light .bg-\[\#000000\]\/80,
-html.light .bg-\[\#000000\]\/90,
-html.light .bg-\[\#000000\]\/95,
-html.light .mobile-header-bar {
-  background-color: rgba(255, 255, 255, 0.88) !important;
-  border-color: #e2e8f0 !important;
-}
-
-/* 6. LIGHT MODE: Tool switcher pill container & buttons */
-html.light .tool-switcher-bar {
-  background-color: #f1f5f9 !important;
-  border-color: #e2e8f0 !important;
-}
-
-html.light .tool-back-btn {
-  background-color: #f1f5f9 !important;
-  border-color: #e2e8f0 !important;
-  color: #09090b !important;
+/* Dark Autofill behavior */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ededed !important;
+  -webkit-box-shadow: 0 0 0px 1000px #0a0a0a inset !important;
+  box-shadow: 0 0 0px 1000px #0a0a0a inset !important;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
 

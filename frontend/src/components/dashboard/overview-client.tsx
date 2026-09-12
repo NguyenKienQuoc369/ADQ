@@ -286,10 +286,10 @@ export function OverviewClient() {
             <p className="mt-1 text-[11px] text-neutral-500">DAST, OWASP & Secrets</p>
           </div>
 
-          <div className="rounded-lg border border-neutral-200 dark:border-[#222222] bg-white dark:bg-[#000000] p-4 hover:border-neutral-300 dark:hover:border-[#333333] transition shadow-sm">
+          <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 hover:border-[#333333] transition">
             <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-500">Đã Hoàn Tất Rà Soát</span>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">{stats.activeCompleted}</span>
+              <span className="text-2xl font-bold font-mono text-emerald-400">{stats.activeCompleted}</span>
               <span className="text-[11px] text-neutral-500 font-mono">phiên</span>
             </div>
             <p className="mt-1 text-[11px] text-neutral-500">Sẵn sàng bằng chứng PoC</p>
