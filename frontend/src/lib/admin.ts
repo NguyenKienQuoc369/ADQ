@@ -29,6 +29,15 @@ export function normaliseStatus(value?: string | null): AppStatus {
   return "ACTIVE";
 }
 
+/**
+ * Daily Web Scan Limit per Package Tier:
+ * - FREE: 2 web scans / day
+ * - PRO: Unlimited (999,999) web scans / day
+ * - PRO_MAX: Unlimited (999,999) web scans / day
+ *
+ * NOTE: Daily STRESS TEST quotas are authoritatively governed by backend Redis
+ * (FREE: 0/locked, PRO: 1/day, PRO_MAX: 10/day) and CANNOT be overridden by this field.
+ */
 export function getDailyLimitForPackage(packageTier: AppPackageTier) {
   if (packageTier === "PRO" || packageTier === "PRO_MAX") return 999999;
   return 2;

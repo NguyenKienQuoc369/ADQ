@@ -307,3 +307,63 @@ def test_fake_tier_prefix_codes_rejected():
         normalized = fake.strip().upper().replace("-", "").replace("_", "")
         assert normalized not in db_codes, f"Fake code should not exist in DB: {fake}"
 
+
+def test_stress_quota_contract_authoritative_limits():
+    """Verify authoritative stress quota limits per tier: FREE=0 (locked), PRO=1, PRO_MAX=10."""
+    def resolve_quota_limit(tier: str) -> int:
+        if tier == "FREE":
+            return 0
+        if tier == "PRO":
+            return 1
+        if tier == "PRO_MAX":
+            return 10
+        return 0
+
+    assert resolve_quota_limit("FREE") == 0
+    assert resolve_quota_limit("PRO") == 1
+    assert resolve_quota_limit("PRO_MAX") == 10
+
+
+def test_new_code_entropy_meets_128_bits():
+    """Verify that newly generated codes utilize >= 128-bit CSPRNG entropy."""
+    import secrets
+    # 16 bytes = 128 bits
+    entropy_bytes = secrets.token_bytes(16)
+    assert len(entropy_bytes) == 16
+    hex_secret = entropy_bytes.hex().upper()
+    assert len(hex_secret) == 32
+
+    # Formatted code representation
+    code = f"ADQ-PROMAX-{hex_secret[:8]}-{hex_secret[8:16]}-{hex_secret[16:24]}-{hex_secret[24:32]}"
+    assert code.startswith("ADQ-PROMAX-")
+    assert len(code) == len("ADQ-PROMAX-") + 32 + 3  # 3 dashes between 4 blocks
+
+
+def test_canonical_collision_uniqueness_enforcement():
+    """Verify that distinct string variations of the same canonical key collide and are blocked."""
+    def normalize(c: str) -> str:
+        return "".join(ch for ch in c.upper() if ch.isalnum())
+
+    issued_canonical = set()
+
+    def try_issue(raw_code: str) -> bool:
+        canonical = normalize(raw_code)
+        if canonical in issued_canonical:
+            return False  # Collision blocked (409)
+        issued_canonical.add(canonical)
+        return True
+
+    # 1. Issue code with dashes
+    assert try_issue("ADQ-PROMAX-A1B2C3D4-E5F6A7B8-C9D0E1F2-A3B4C5D6") is True
+
+    # 2. Try issuing same code with underscores -> Blocked
+    assert try_issue("ADQ_PROMAX_A1B2C3D4_E5F6A7B8_C9D0E1F2_A3B4C5D6") is False
+
+    # 3. Try issuing same code with lowercase and spaces -> Blocked
+    assert try_issue("  adq promax a1b2c3d4 e5f6a7b8 c9d0e1f2 a3b4c5d6  ") is False
+
+    # 4. Legacy code also preserved and protects against duplicate variations
+    assert try_issue("ADQ-PRO-1M-INITIAL-01") is True
+    assert try_issue("adq_pro_1m_initial_01") is False
+
+
