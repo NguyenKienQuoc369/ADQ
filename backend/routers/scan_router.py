@@ -741,6 +741,17 @@ async def stream_stress_job_events(job_id: str, user: Dict[str, Any] = Depends(g
                 except Exception:
                     pass
 
+    return StreamingResponse(
+        sse_relay(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
 @router.get("/scan/{job_id}/stream")
 async def stream_scan_job_events(job_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     """

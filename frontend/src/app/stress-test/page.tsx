@@ -60,7 +60,7 @@ function cleanBaseUrl(raw: string): string {
 }
 
 function minConcurrency(rps: number): number {
-  return Math.min(50, Math.max(5, Math.floor(rps * 0.3)));
+  return Math.min(100, Math.max(5, Math.floor(rps * 0.4)));
 }
 
 function StressTestContent() {
@@ -75,9 +75,9 @@ function StressTestContent() {
   const entitlements = getEntitlements(userTier);
   const isFreeTier = userTier === "FREE" || entitlements.stressDailyLimit === 0;
 
-  // Maximum allowed limits by tier
-  const maxRequestsAllowed = userTier === "PRO_MAX" ? 5000 : userTier === "PRO" ? 1000 : 0;
-  const maxRpsAllowed = userTier === "PRO_MAX" ? 150 : userTier === "PRO" ? 100 : 0;
+  // Maximum scalable allowed limits by tier
+  const maxRequestsAllowed = userTier === "PRO_MAX" ? 25000 : userTier === "PRO" ? 5000 : 0;
+  const maxRpsAllowed = userTier === "PRO_MAX" ? 300 : userTier === "PRO" ? 150 : 0;
 
   // Form Configuration State
   const [targetUrl, setTargetUrl] = useState(initialTarget || "https://");
@@ -120,7 +120,7 @@ function StressTestContent() {
   const [isStopping, setIsStopping] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Real-time chart telemetry history
+  // Real-time chart telemetry history (Dual-series: RPS & Latency)
   const [telemetryHistory, setTelemetryHistory] = useState<
     Array<{ time: string; rps: number; latencyMs: number; errorRate: number }>
   >([]);
@@ -182,7 +182,7 @@ function StressTestContent() {
     };
   }, [targetUrl]);
 
-  // Load initial or restored Job State
+  // Load initial or restored Job State and Stream Continuous SSE Events
   useEffect(() => {
     if (!activeJobId) return;
 
@@ -196,6 +196,21 @@ function StressTestContent() {
           setJobState(snapshot);
           if (snapshot.target_url) setTargetUrl(snapshot.target_url);
           if (snapshot.endpoint) setEndpointPath(snapshot.endpoint);
+
+          // Seed initial chart point if metrics present
+          if (snapshot.metrics) {
+            const initialLat = parseInt(String(snapshot.metrics.p95_latency || snapshot.metrics.avg_latency || 0), 10) || 0;
+            const nowTime = new Date().toLocaleTimeString("vi-VN", { hour12: false });
+            setTelemetryHistory((prev) => {
+              if (prev.length > 0) return prev;
+              return [{
+                time: nowTime,
+                rps: Number(snapshot.metrics?.rps || 0),
+                latencyMs: initialLat,
+                errorRate: Number(snapshot.metrics?.error_rate || 0),
+              }];
+            });
+          }
         }
       } catch (err: any) {
         console.error("Failed to fetch stress snapshot:", err);
@@ -204,7 +219,7 @@ function StressTestContent() {
 
     fetchSnapshot();
 
-    // Stream SSE events
+    // Stream SSE events continuously
     streamStressJob(
       activeJobId,
       (chunk) => {
@@ -216,7 +231,7 @@ function StressTestContent() {
             const nowTime = new Date().toLocaleTimeString("vi-VN", { hour12: false });
             const latVal = parseInt(String(metrics.p95_latency || metrics.avg_latency || 0), 10) || 0;
             setTelemetryHistory((hist) => [
-              ...hist.slice(-30),
+              ...hist.slice(-60),
               {
                 time: nowTime,
                 rps: Number(metrics.rps || 0),
@@ -229,7 +244,9 @@ function StressTestContent() {
         });
       },
       abortCtrl.signal
-    ).catch(() => {});
+    ).catch((err) => {
+      console.warn("Stress stream connection notice:", err);
+    });
 
     return () => {
       isMounted = false;
@@ -426,6 +443,15 @@ function StressTestContent() {
     return formattedEp === "/" ? origin : `${origin}${formattedEp}`;
   }, [jobState?.target_url, targetUrl, jobState?.endpoint, endpointPath]);
 
+  // Scalable request presets
+  const requestPresets = userTier === "PRO_MAX"
+    ? [450, 1000, 5000, 10000, 25000]
+    : [300, 1000, 2500, 5000];
+
+  const rpsPresets = userTier === "PRO_MAX"
+    ? [30, 50, 100, 200, 300]
+    : [30, 50, 100, 150];
+
   return (
     <ProjectWorkspaceShell
       activeTab="stress"
@@ -444,7 +470,7 @@ function StressTestContent() {
               </Badge>
             </div>
             <p className="mt-1 text-xs text-neutral-400">
-              Kiểm thử tải Layer 7 theo số lượng request cố định (Fixed Request Count) & quan sát độ ổn định hệ thống.
+              Kiểm thử tải Layer 7 theo số lượng request cố định (Fixed Request Count) & quan sát độ ổn định hệ thống thời gian thực.
             </p>
           </div>
 
@@ -799,60 +825,83 @@ function StressTestContent() {
               </CardContent>
             </Card>
 
-            {/* Load Profile Configuration */}
+            {/* Scalable Load Profile Configuration */}
             <Card className="border-[#242424] bg-[#0A0A0A]">
               <CardHeader className="pb-3 border-b border-[#242424]">
-                <CardTitle className="text-sm font-semibold text-white">Cấu Hình Tải (Fixed Request Count)</CardTitle>
+                <CardTitle className="text-sm font-semibold text-white flex items-center justify-between">
+                  <span>Cấu Hình Tải Mở Rộng</span>
+                  <Badge className="bg-[#111111] text-[10px] text-neutral-400 border border-[#242424]">
+                    Max {maxRequestsAllowed.toLocaleString()} reqs • {maxRpsAllowed} RPS
+                  </Badge>
+                </CardTitle>
               </CardHeader>
               <CardContent className="p-5 space-y-4">
                 {/* Total Requests (Authoritative Hard Target) */}
                 <div>
-                  <div className="flex justify-between text-xs">
+                  <div className="flex justify-between text-xs items-center">
                     <span className="text-neutral-300 font-medium">Tổng request mục tiêu</span>
-                    <span className="font-mono text-white font-bold">{totalRequests} reqs</span>
+                    <span className="font-mono text-white font-bold">{totalRequests.toLocaleString()} reqs</span>
                   </div>
-                  <div className="mt-2 grid grid-cols-4 gap-1.5">
-                    {[100, 300, 450, 1000].map((reqs) => (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {requestPresets.map((reqs) => (
                       <button
                         key={reqs}
                         type="button"
                         onClick={() => setTotalRequests(reqs)}
                         disabled={reqs > maxRequestsAllowed}
-                        className={`h-8 rounded border text-xs font-mono transition ${
+                        className={`h-7 px-2.5 rounded border text-xs font-mono transition ${
                           totalRequests === reqs
                             ? "border-white bg-white text-black font-semibold"
                             : "border-[#242424] bg-[#050505] text-neutral-400 hover:text-white"
                         } ${reqs > maxRequestsAllowed ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
                       >
-                        {reqs}
+                        {reqs >= 1000 ? `${reqs / 1000}k` : reqs}
                       </button>
                     ))}
                   </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={maxRequestsAllowed}
+                    value={totalRequests}
+                    onChange={(e) => setTotalRequests(Math.min(maxRequestsAllowed, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                    className="mt-2 h-8 font-mono text-xs border-[#242424] bg-[#050505] text-white focus:border-white"
+                    placeholder={`Nhập số request (tối đa ${maxRequestsAllowed})`}
+                  />
                 </div>
 
                 {/* Target RPS (Pacing Target) */}
                 <div>
-                  <div className="flex justify-between text-xs">
+                  <div className="flex justify-between text-xs items-center">
                     <span className="text-neutral-300 font-medium">Target RPS (Tốc độ pacing)</span>
                     <span className="font-mono text-white font-bold">{targetRps} RPS</span>
                   </div>
-                  <div className="mt-2 grid grid-cols-4 gap-1.5">
-                    {[10, 30, 50, 100].map((rps) => (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {rpsPresets.map((rps) => (
                       <button
                         key={rps}
                         type="button"
                         onClick={() => setTargetRps(rps)}
                         disabled={rps > maxRpsAllowed}
-                        className={`h-8 rounded border text-xs font-mono transition ${
+                        className={`h-7 px-2.5 rounded border text-xs font-mono transition ${
                           targetRps === rps
                             ? "border-white bg-white text-black font-semibold"
                             : "border-[#242424] bg-[#050505] text-neutral-400 hover:text-white"
                         } ${rps > maxRpsAllowed ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
                       >
-                        {rps}
+                        {rps} RPS
                       </button>
                     ))}
                   </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={maxRpsAllowed}
+                    value={targetRps}
+                    onChange={(e) => setTargetRps(Math.min(maxRpsAllowed, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                    className="mt-2 h-8 font-mono text-xs border-[#242424] bg-[#050505] text-white focus:border-white"
+                    placeholder={`Nhập RPS (tối đa ${maxRpsAllowed})`}
+                  />
                 </div>
 
                 {/* Estimated Nominal Duration Display */}
@@ -866,7 +915,7 @@ function StressTestContent() {
                     <span className="font-mono text-white font-semibold">{minConcurrency(targetRps)} workers</span>
                   </div>
                   <p className="text-[10px] text-neutral-500 pt-1">
-                    * Engine sẽ đảm bảo bắn đủ toàn bộ <strong>{totalRequests} requests</strong> mục tiêu.
+                    * Engine đảm bảo phân phối đủ <strong>{totalRequests.toLocaleString()} requests</strong> mục tiêu.
                   </p>
                 </div>
 
@@ -889,7 +938,7 @@ function StressTestContent() {
                   ) : (
                     <>
                       <Play className="h-4 w-4 mr-2 fill-current" />
-                      Bắt Đầu Stress Test ({totalRequests} reqs)
+                      Bắt Đầu Stress Test ({totalRequests.toLocaleString()} reqs)
                     </>
                   )}
                 </Button>
@@ -919,7 +968,7 @@ function StressTestContent() {
                     }`}
                   >
                     {currentStatus === "RUNNING"
-                      ? "ĐANG TEST"
+                      ? "ĐANG TEST (LIVE)"
                       : currentStatus === "QUEUED"
                       ? "ĐANG CHỜ"
                       : currentStatus === "COMPLETED"
@@ -932,7 +981,7 @@ function StressTestContent() {
                 <p className="mt-1 text-xs text-neutral-400">
                   Job ID: <span className="font-mono text-neutral-300">{activeJobId}</span> • Mục tiêu:{" "}
                   <span className="font-mono text-white font-medium">
-                    {configuredTarget} requests
+                    {configuredTarget.toLocaleString()} requests
                   </span>{" "}
                   với Target RPS: <span className="font-mono text-white font-medium">{jobState?.target_rps || targetRps}</span> (Dự kiến: ~{jobState?.nominal_duration_sec || nominalDurationSec}s)
                 </p>
@@ -1068,50 +1117,97 @@ function StressTestContent() {
 
             {/* 4. Live Charts & Response Distribution */}
             <div className="grid gap-6 md:grid-cols-3">
-              {/* Telemetry Chart */}
+              {/* Dual-Series Real-Time Telemetry Chart (RPS & Latency) */}
               <Card className="border-[#242424] bg-[#0A0A0A] md:col-span-2">
                 <CardHeader className="pb-2 border-b border-[#242424] flex flex-row items-center justify-between">
-                  <CardTitle className="text-xs font-mono font-semibold text-white uppercase">
-                    Biểu Đồ Tải & Latency Thời Gian Thực
+                  <CardTitle className="text-xs font-mono font-semibold text-white uppercase flex items-center gap-2">
+                    <span>Biểu Đồ Tải & Latency Thời Gian Thực</span>
+                    {isRunning && <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />}
                   </CardTitle>
-                  <span className="text-[10px] font-mono text-neutral-400">Đơn vị: RPS & ms</span>
+                  <div className="flex items-center gap-3 text-[10px] font-mono">
+                    <span className="flex items-center gap-1 text-neutral-300">
+                      <span className="h-2 w-2 rounded-full bg-white" />
+                      RPS ({currentMetrics.rps || 0})
+                    </span>
+                    <span className="flex items-center gap-1 text-purple-400">
+                      <span className="h-2 w-2 rounded-full bg-purple-400" />
+                      p95 ({currentMetrics.p95_latency || "0ms"})
+                    </span>
+                  </div>
                 </CardHeader>
                 <CardContent className="p-4">
-                  {telemetryHistory.length < 2 ? (
+                  {telemetryHistory.length === 0 ? (
                     <div className="h-44 flex items-center justify-center text-xs text-neutral-500">
-                      {isRunning ? "Đang thu thập telemetry điểm tải..." : "Không có đủ điểm đo telemetry để vẽ biểu đồ."}
+                      {isRunning ? "Đang thu thập telemetry điểm tải trực tiếp..." : "Chưa có dữ liệu telemetry."}
                     </div>
                   ) : (
-                    <div className="h-44 w-full">
-                      <svg className="h-full w-full overflow-visible" viewBox="0 0 500 150">
-                        <line x1="0" y1="30" x2="500" y2="30" stroke="#1A1A1A" strokeDasharray="3 3" />
-                        <line x1="0" y1="75" x2="500" y2="75" stroke="#1A1A1A" strokeDasharray="3 3" />
-                        <line x1="0" y1="120" x2="500" y2="120" stroke="#1A1A1A" strokeDasharray="3 3" />
+                    <div className="h-44 w-full relative">
+                      {/* Real-time Dual SVG Line Chart */}
+                      {(() => {
+                        const rpsVals = telemetryHistory.map((d) => d.rps);
+                        const latVals = telemetryHistory.map((d) => d.latencyMs);
+                        const maxRPS = Math.max(10, Math.ceil(Math.max(...rpsVals, 1) * 1.2));
+                        const maxLat = Math.max(50, Math.ceil(Math.max(...latVals, 1) * 1.2));
+                        const n = telemetryHistory.length;
 
-                        {(() => {
-                          const maxLat = Math.max(100, ...telemetryHistory.map((d) => d.latencyMs));
-                          const points = telemetryHistory
-                            .map((d, i) => {
-                              const x = (i / (telemetryHistory.length - 1)) * 500;
-                              const y = 140 - (d.latencyMs / maxLat) * 120;
-                              return `${x},${y}`;
-                            })
-                            .join(" ");
-                          return (
-                            <>
-                              <polyline fill="none" stroke="#F5F5F5" strokeWidth="2" points={points} />
-                              {telemetryHistory.map((d, i) => {
-                                const x = (i / (telemetryHistory.length - 1)) * 500;
-                                const y = 140 - (d.latencyMs / maxLat) * 120;
-                                return <circle key={i} cx={x} cy={y} r="2.5" fill="#FFFFFF" />;
-                              })}
-                            </>
-                          );
-                        })()}
-                      </svg>
+                        const rpsPoints = telemetryHistory
+                          .map((d, i) => {
+                            const x = n > 1 ? (i / (n - 1)) * 460 + 20 : 250;
+                            const y = 135 - (d.rps / maxRPS) * 115;
+                            return `${x},${y}`;
+                          })
+                          .join(" ");
+
+                        const latPoints = telemetryHistory
+                          .map((d, i) => {
+                            const x = n > 1 ? (i / (n - 1)) * 460 + 20 : 250;
+                            const y = 135 - (d.latencyMs / maxLat) * 115;
+                            return `${x},${y}`;
+                          })
+                          .join(" ");
+
+                        return (
+                          <svg className="h-full w-full overflow-visible" viewBox="0 0 500 150">
+                            {/* Horizontal Grid lines */}
+                            <line x1="20" y1="20" x2="480" y2="20" stroke="#1A1A1A" strokeDasharray="3 3" />
+                            <line x1="20" y1="75" x2="480" y2="75" stroke="#1A1A1A" strokeDasharray="3 3" />
+                            <line x1="20" y1="135" x2="480" y2="135" stroke="#1A1A1A" />
+
+                            {/* Left Y-Axis Scale (RPS) */}
+                            <text x="5" y="24" fill="#A3A3A3" fontSize="9" fontFamily="monospace">{maxRPS}</text>
+                            <text x="5" y="79" fill="#737373" fontSize="9" fontFamily="monospace">{Math.round(maxRPS / 2)}</text>
+                            <text x="5" y="138" fill="#525252" fontSize="9" fontFamily="monospace">0</text>
+
+                            {/* Right Y-Axis Scale (Latency ms) */}
+                            <text x="485" y="24" fill="#C084FC" fontSize="9" fontFamily="monospace">{maxLat}ms</text>
+                            <text x="485" y="79" fill="#9333EA" fontSize="9" fontFamily="monospace">{Math.round(maxLat / 2)}ms</text>
+                            <text x="485" y="138" fill="#6B21A8" fontSize="9" fontFamily="monospace">0ms</text>
+
+                            {/* RPS Line (White/Cyan) */}
+                            {n > 1 && (
+                              <polyline fill="none" stroke="#FFFFFF" strokeWidth="2.5" points={rpsPoints} />
+                            )}
+                            {telemetryHistory.map((d, i) => {
+                              const x = n > 1 ? (i / (n - 1)) * 460 + 20 : 250;
+                              const y = 135 - (d.rps / maxRPS) * 115;
+                              return <circle key={`rps-${i}`} cx={x} cy={y} r="2.5" fill="#FFFFFF" />;
+                            })}
+
+                            {/* Latency Line (Purple) */}
+                            {n > 1 && (
+                              <polyline fill="none" stroke="#C084FC" strokeWidth="2" strokeDasharray="2 1" points={latPoints} />
+                            )}
+                            {telemetryHistory.map((d, i) => {
+                              const x = n > 1 ? (i / (n - 1)) * 460 + 20 : 250;
+                              const y = 135 - (d.latencyMs / maxLat) * 115;
+                              return <circle key={`lat-${i}`} cx={x} cy={y} r="2" fill="#C084FC" />;
+                            })}
+                          </svg>
+                        );
+                      })()}
                       <div className="mt-2 flex justify-between text-[10px] font-mono text-neutral-500">
-                        <span>Bắt đầu</span>
-                        <span>Điểm đo gần nhất: {currentMetrics.p95_latency || "0ms"} (p95)</span>
+                        <span>Bắt đầu: {telemetryHistory[0]?.time || "--:--:--"}</span>
+                        <span>Mẫu đo: {telemetryHistory.length} điểm • Mới nhất: {telemetryHistory[telemetryHistory.length - 1]?.time || "--:--:--"}</span>
                       </div>
                     </div>
                   )}
@@ -1197,12 +1293,12 @@ function StressTestContent() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded bg-[#050505] border border-[#1F1F1F]">
                     <div>
                       <span className="text-[10px] text-neutral-500 uppercase font-mono block">Tổng Request Mục Tiêu</span>
-                      <span className="text-sm font-mono font-bold text-white">{configuredTarget} reqs</span>
+                      <span className="text-sm font-mono font-bold text-white">{configuredTarget.toLocaleString()} reqs</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-neutral-500 uppercase font-mono block">Đã Gửi Thành Công</span>
+                      <span className="text-[10px] text-neutral-500 uppercase font-mono block">Đã Gửi Thực Tế</span>
                       <span className="text-sm font-mono font-bold text-emerald-400">
-                        {currentMetrics.total_requests || 0} / {configuredTarget}
+                        {(currentMetrics.total_requests || 0).toLocaleString()} / {configuredTarget.toLocaleString()}
                       </span>
                     </div>
                     <div>
@@ -1221,7 +1317,7 @@ function StressTestContent() {
 
                   <p>
                     Hệ thống đã phân phối đầy đủ{" "}
-                    <strong className="text-white font-mono">{currentMetrics.total_requests} requests</strong> đến endpoint{" "}
+                    <strong className="text-white font-mono">{(currentMetrics.total_requests || 0).toLocaleString()} requests</strong> đến endpoint{" "}
                     <strong className="text-white font-mono">{jobState?.endpoint || endpointPath}</strong> với tốc độ trung bình đạt{" "}
                     <strong className="text-white font-mono">{currentMetrics.rps} RPS</strong>. Latency p95 đạt{" "}
                     <strong className="text-white font-mono">{currentMetrics.p95_latency}</strong> và tỷ lệ lỗi là{" "}
