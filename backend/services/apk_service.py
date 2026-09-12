@@ -103,6 +103,9 @@ class APKService:
     def cancel_job(self, job_id: str) -> bool:
         return apk_queue.request_cancel(job_id)
 
+    def get_user_history(self, user_id: str) -> list:
+        return apk_queue.get_user_history(user_id)
+
 
 # Global singleton instance of APKService
 apk_service = APKService()

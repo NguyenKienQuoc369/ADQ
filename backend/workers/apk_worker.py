@@ -50,9 +50,13 @@ class APKWorker:
             if apk_queue.redis_client is None:
                 raise ConnectionError(f"FATAL: APKWorker cannot connect to Redis at {apk_queue.redis_url}")
 
-        # Register OS signal handlers for graceful shutdown
-        signal.signal(signal.SIGINT, self._handle_signal)
-        signal.signal(signal.SIGTERM, self._handle_signal)
+        # Register OS signal handlers for graceful shutdown if running in main thread
+        if threading.current_thread() is threading.main_thread():
+            try:
+                signal.signal(signal.SIGINT, self._handle_signal)
+                signal.signal(signal.SIGTERM, self._handle_signal)
+            except Exception as e:
+                logger.warning(f"Could not register signal handler: {e}")
 
         heartbeat_counter = 0
         while self.running:

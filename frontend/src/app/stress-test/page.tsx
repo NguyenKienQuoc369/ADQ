@@ -12,13 +12,17 @@ import {
   ArrowRight,
   Bot,
   CheckCircle2,
+  Globe,
   History,
+  KeyRound,
   LoaderCircle,
   Play,
+  RefreshCw,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
   StopCircle,
+  Target,
   Zap,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -28,6 +32,8 @@ import {
   getStressJob,
   stopStressJob,
   getStressHistory,
+  getStressEndpoints,
+  verifyBypass,
   streamStressJob,
   getVerificationStatus,
   getProjectById,
@@ -37,11 +43,11 @@ import {
 type StressPhase = "PREPARE" | "RAMP UP" | "STEADY LOAD" | "COOLDOWN" | "COMPLETE";
 
 const PHASES: Array<{ id: StressPhase; name: string; desc: string }> = [
-  { id: "PREPARE", name: "PREPARE", desc: "Chuẩn bị" },
-  { id: "RAMP UP", name: "RAMP UP", desc: "Tăng tải" },
-  { id: "STEADY LOAD", name: "STEADY LOAD", desc: "Duy trì tải" },
-  { id: "COOLDOWN", name: "COOLDOWN", desc: "Giảm tải" },
-  { id: "COMPLETE", name: "COMPLETE", desc: "Hoàn tất" },
+  { id: "PREPARE", name: "PREPARE", desc: "Chuẩn bị & Kết nối" },
+  { id: "RAMP UP", name: "RAMP UP", desc: "Tăng tải ban đầu" },
+  { id: "STEADY LOAD", name: "STEADY LOAD", desc: "Duy trì tải mục tiêu" },
+  { id: "COOLDOWN", name: "COOLDOWN", desc: "Giảm tải & Hoàn tất" },
+  { id: "COMPLETE", name: "COMPLETE", desc: "Báo cáo tổng kết" },
 ];
 
 function cleanBaseUrl(raw: string): string {
@@ -51,6 +57,10 @@ function cleanBaseUrl(raw: string): string {
     cleaned = `https://${cleaned}`;
   }
   return cleaned.replace(/\/+$/, "");
+}
+
+function minConcurrency(rps: number): number {
+  return Math.min(50, Math.max(5, Math.floor(rps * 0.3)));
 }
 
 function StressTestContent() {
@@ -65,24 +75,39 @@ function StressTestContent() {
   const entitlements = getEntitlements(userTier);
   const isFreeTier = userTier === "FREE" || entitlements.stressDailyLimit === 0;
 
+  // Maximum allowed limits by tier
+  const maxRequestsAllowed = userTier === "PRO_MAX" ? 5000 : userTier === "PRO" ? 1000 : 0;
+  const maxRpsAllowed = userTier === "PRO_MAX" ? 150 : userTier === "PRO" ? 100 : 0;
+
   // Form Configuration State
   const [targetUrl, setTargetUrl] = useState(initialTarget || "https://");
   const [endpointPath, setEndpointPath] = useState("/");
-  const [durationSec, setDurationSec] = useState<number>(userTier === "PRO_MAX" ? 30 : 15);
-  const [targetRps, setTargetRps] = useState<number>(userTier === "PRO_MAX" ? 100 : 50);
+  const [totalRequests, setTotalRequests] = useState<number>(userTier === "PRO_MAX" ? 450 : 300);
+  const [targetRps, setTargetRps] = useState<number>(30);
 
-  // Hydrate target from project if not set in query
-  useEffect(() => {
-    if (!projectId || initialTarget) return;
-    getProjectById(projectId)
-      .then((proj) => {
-        const rawTarget = proj?.projectDetail?.summary?.domain || proj?.domain || "";
-        if (rawTarget) {
-          setTargetUrl(cleanBaseUrl(rawTarget));
-        }
-      })
-      .catch(() => {});
-  }, [projectId, initialTarget]);
+  // Derived nominal duration
+  const nominalDurationSec = useMemo(() => {
+    return Math.max(1, Math.ceil(totalRequests / Math.max(1, targetRps)));
+  }, [totalRequests, targetRps]);
+
+  // Endpoint Discovery State
+  const [discoveredEndpoints, setDiscoveredEndpoints] = useState<
+    Array<{ path: string; status?: number; title?: string; source?: string }>
+  >([]);
+  const [isLoadingEndpoints, setIsLoadingEndpoints] = useState(false);
+  const [endpointDiscoveryAttempted, setEndpointDiscoveryAttempted] = useState(false);
+
+  // Authorized Test Credential State
+  const [bypassCode, setBypassCode] = useState("");
+  const [wafType, setWafType] = useState("standard");
+  const [isVerifyingBypass, setIsVerifyingBypass] = useState(false);
+  const [bypassVerifyResult, setBypassVerifyResult] = useState<{
+    ok: boolean;
+    is_valid: boolean;
+    status_no_bypass: number;
+    status_with_bypass: number;
+    message: string;
+  } | null>(null);
 
   // Target Verification State
   const [isVerifyingTarget, setIsVerifyingTarget] = useState(false);
@@ -104,6 +129,29 @@ function StressTestContent() {
   const [showHistory, setShowHistory] = useState(false);
   const [historyList, setHistoryList] = useState<StressJobState[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Hydrate target from project if not set in query
+  useEffect(() => {
+    if (!projectId || initialTarget) return;
+    getProjectById(projectId)
+      .then((proj) => {
+        const rawTarget = proj?.projectDetail?.summary?.domain || proj?.domain || "";
+        if (rawTarget) {
+          const cleaned = cleanBaseUrl(rawTarget);
+          setTargetUrl(cleaned);
+        }
+      })
+      .catch(() => {});
+  }, [projectId, initialTarget]);
+
+  // Target scoped reset: clear endpoints and credentials when target changes
+  const handleTargetUrlChange = (newUrl: string) => {
+    setTargetUrl(newUrl);
+    setDiscoveredEndpoints([]);
+    setEndpointDiscoveryAttempted(false);
+    setBypassCode("");
+    setBypassVerifyResult(null);
+  };
 
   // Check target verification status
   useEffect(() => {
@@ -127,7 +175,7 @@ function StressTestContent() {
       }
     };
 
-    const timer = setTimeout(checkTarget, 600);
+    const timer = setTimeout(checkTarget, 500);
     return () => {
       active = false;
       clearTimeout(timer);
@@ -147,6 +195,7 @@ function StressTestContent() {
         if (isMounted && snapshot) {
           setJobState(snapshot);
           if (snapshot.target_url) setTargetUrl(snapshot.target_url);
+          if (snapshot.endpoint) setEndpointPath(snapshot.endpoint);
         }
       } catch (err: any) {
         console.error("Failed to fetch stress snapshot:", err);
@@ -167,7 +216,7 @@ function StressTestContent() {
             const nowTime = new Date().toLocaleTimeString("vi-VN", { hour12: false });
             const latVal = parseInt(String(metrics.p95_latency || metrics.avg_latency || 0), 10) || 0;
             setTelemetryHistory((hist) => [
-              ...hist.slice(-25),
+              ...hist.slice(-30),
               {
                 time: nowTime,
                 rps: Number(metrics.rps || 0),
@@ -209,6 +258,53 @@ function StressTestContent() {
     if (next) void loadHistory();
   };
 
+  // Discover Endpoints Handler
+  const handleDiscoverEndpoints = async () => {
+    const cleanOrigin = cleanBaseUrl(targetUrl);
+    if (!cleanOrigin) return;
+    setIsLoadingEndpoints(true);
+    setEndpointDiscoveryAttempted(true);
+    try {
+      const res = await getStressEndpoints(cleanOrigin);
+      if (res?.endpoints && Array.isArray(res.endpoints)) {
+        setDiscoveredEndpoints(res.endpoints);
+      } else {
+        setDiscoveredEndpoints([]);
+      }
+    } catch (err: any) {
+      console.error("Discover endpoints error:", err);
+      setDiscoveredEndpoints([]);
+    } finally {
+      setIsLoadingEndpoints(false);
+    }
+  };
+
+  // Verify Bypass / Authorized Credential Handler
+  const handleVerifyBypass = async () => {
+    const cleanOrigin = cleanBaseUrl(targetUrl);
+    if (!cleanOrigin || !bypassCode.trim()) return;
+    setIsVerifyingBypass(true);
+    setBypassVerifyResult(null);
+    try {
+      const res = await verifyBypass({
+        target_url: cleanOrigin,
+        bypass_code: bypassCode.trim(),
+        waf_type: wafType,
+      });
+      setBypassVerifyResult(res);
+    } catch (err: any) {
+      setBypassVerifyResult({
+        ok: false,
+        is_valid: false,
+        status_no_bypass: 0,
+        status_with_bypass: 0,
+        message: err?.message || "Lỗi kiểm tra credential.",
+      });
+    } finally {
+      setIsVerifyingBypass(false);
+    }
+  };
+
   // Start Stress Test Handler
   const handleStartStress = async () => {
     const cleanOrigin = cleanBaseUrl(targetUrl);
@@ -225,17 +321,29 @@ function StressTestContent() {
       return;
     }
 
+    if (totalRequests <= 0 || totalRequests > maxRequestsAllowed) {
+      setErrorMessage(`Số lượng request phải từ 1 đến ${maxRequestsAllowed} cho gói ${userTier}.`);
+      return;
+    }
+
+    if (targetRps <= 0 || targetRps > maxRpsAllowed) {
+      setErrorMessage(`Target RPS phải từ 1 đến ${maxRpsAllowed} RPS cho gói ${userTier}.`);
+      return;
+    }
+
     setErrorMessage(null);
     setIsStarting(true);
     setTelemetryHistory([]);
 
     try {
-      const totalReqs = targetRps * durationSec;
+      const formattedEndpoint = endpointPath.trim().startsWith("/") ? endpointPath.trim() : `/${endpointPath.trim()}`;
       const res = await createStressJob({
         target_url: cleanOrigin,
-        target_requests: totalReqs,
-        duration: `${durationSec}s`,
-        waf_type: "standard",
+        endpoint: formattedEndpoint,
+        target_requests: totalRequests,
+        duration: `${nominalDurationSec}s`,
+        waf_type: wafType,
+        bypass_code: bypassCode.trim(),
       });
 
       if (res?.job_id) {
@@ -268,6 +376,7 @@ function StressTestContent() {
     setActiveJobId(null);
     setJobState(null);
     setTelemetryHistory([]);
+    setErrorMessage(null);
     router.push("/stress-test");
   };
 
@@ -278,17 +387,8 @@ function StressTestContent() {
   const isCancelled = currentStatus === "CANCELLED";
   const isFailed = currentStatus === "FAILED";
 
-  const currentPhase: StressPhase = useMemo(() => {
-    if (jobState?.phase) return jobState.phase as StressPhase;
-    if (isCompleted || isCancelled || isFailed) return "COMPLETE";
-    if (currentStatus === "QUEUED") return "PREPARE";
-    const prog = jobState?.progress || 0;
-    if (prog < 15) return "RAMP UP";
-    if (prog < 85) return "STEADY LOAD";
-    return "COOLDOWN";
-  }, [jobState, currentStatus, isCompleted, isCancelled, isFailed]);
-
-  const metrics = jobState?.metrics || {
+  const configuredTarget = jobState?.configured_requests || jobState?.target_requests || totalRequests;
+  const currentMetrics = jobState?.metrics || {
     total_requests: 0,
     rps: 0,
     avg_latency: "0ms",
@@ -304,7 +404,27 @@ function StressTestContent() {
     other_status: 0,
   };
 
-  const stabilityVerdict = jobState?.verdict || (isCompleted ? (Number(metrics.error_rate) === 0 ? "ỔN ĐỊNH" : Number(metrics.error_rate) < 5 ? "CÓ DẤU HIỆU GIẢM HIỆU NĂNG" : "KHÔNG ỔN ĐỊNH") : null);
+  const currentPhase: StressPhase = useMemo(() => {
+    if (jobState?.phase) return jobState.phase as StressPhase;
+    if (isCompleted || isCancelled || isFailed) return "COMPLETE";
+    if (currentStatus === "QUEUED") return "PREPARE";
+    const attempts = currentMetrics.total_requests || 0;
+    const prog = (attempts / Math.max(1, configuredTarget)) * 100;
+    if (attempts === 0) return "PREPARE";
+    if (prog < 15) return "RAMP UP";
+    if (prog < 85) return "STEADY LOAD";
+    if (prog < 100) return "COOLDOWN";
+    return "COMPLETE";
+  }, [jobState, currentStatus, isCompleted, isCancelled, isFailed, currentMetrics.total_requests, configuredTarget]);
+
+  const stabilityVerdict = jobState?.verdict || (isCompleted ? (Number(currentMetrics.error_rate) === 0 ? "ỔN ĐỊNH" : Number(currentMetrics.error_rate) < 5 ? "CÓ DẤU HIỆU GIẢM HIỆU NĂNG" : "KHÔNG ỔN ĐỊNH") : null);
+
+  const fullTargetDisplay = useMemo(() => {
+    const origin = cleanBaseUrl(jobState?.target_url || targetUrl);
+    const ep = (jobState?.endpoint || endpointPath).trim();
+    const formattedEp = ep.startsWith("/") ? ep : `/${ep}`;
+    return formattedEp === "/" ? origin : `${origin}${formattedEp}`;
+  }, [jobState?.target_url, targetUrl, jobState?.endpoint, endpointPath]);
 
   return (
     <ProjectWorkspaceShell
@@ -324,7 +444,7 @@ function StressTestContent() {
               </Badge>
             </div>
             <p className="mt-1 text-xs text-neutral-400">
-              Kiểm thử tải Layer 7 có kiểm soát & quan sát tính ổn định hệ thống dưới áp lực lưu lượng.
+              Kiểm thử tải Layer 7 theo số lượng request cố định (Fixed Request Count) & quan sát độ ổn định hệ thống.
             </p>
           </div>
 
@@ -358,7 +478,7 @@ function StressTestContent() {
           <Card className="border-[#242424] bg-[#0A0A0A]">
             <CardHeader className="pb-3 border-b border-[#242424]">
               <CardTitle className="text-sm font-semibold text-white flex items-center justify-between">
-                <span>Lịch Sử Các Phiên Stress Test</span>
+                <span>Lịch Sử Các Phiên Stress Test (Durable PostgreSQL History)</span>
                 {loadingHistory && <LoaderCircle className="h-4 w-4 animate-spin text-neutral-400" />}
               </CardTitle>
             </CardHeader>
@@ -377,10 +497,13 @@ function StressTestContent() {
                       }}
                     >
                       <div className="min-w-0">
-                        <p className="text-xs font-mono font-medium text-white truncate">{item.target_url}</p>
+                        <p className="text-xs font-mono font-medium text-white truncate">
+                          {item.full_target_url || `${item.target_url || ""}${item.endpoint || ""}` || item.target_url}
+                        </p>
                         <p className="text-[11px] text-neutral-500">
                           {item.created_at ? new Date(item.created_at * 1000).toLocaleString("vi-VN") : "Gần đây"} •{" "}
-                          {item.duration_sec}s • {item.target_requests} requests
+                          Đã gửi: {item.metrics?.total_requests || item.attempted_requests || 0} / {item.configured_requests || item.target_requests} reqs •{" "}
+                          RPS: {item.metrics?.rps || item.target_rps || 0} • {item.actual_duration_sec ? `${item.actual_duration_sec}s` : `${item.duration_sec}s`}
                         </p>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
@@ -424,26 +547,45 @@ function StressTestContent() {
         {!activeJobId ? (
           /* Pre-Test Configuration Screen */
           <div className="grid gap-6 md:grid-cols-3">
-            {/* Target & Authorization Card */}
-            <Card className="border-[#242424] bg-[#0A0A0A] md:col-span-2">
+            {/* Target & Endpoint Selection Card */}
+            <Card className="border-[#242424] bg-[#0A0A0A] md:col-span-2 space-y-4">
               <CardHeader className="pb-3 border-b border-[#242424]">
                 <CardTitle className="text-sm font-semibold text-white flex items-center justify-between">
-                  <span>Mục Tiêu & Xác Minh Quyền Sở Hữu</span>
+                  <span className="flex items-center gap-2">
+                    <Target className="h-4 w-4 text-white" />
+                    Mục Tiêu & Điểm Bắn Tải (Target & Endpoint)
+                  </span>
                   <Badge className="bg-[#111111] text-[10px] text-neutral-400 border border-[#242424]">
                     Gói {userTier} • Giới hạn {entitlements.stressDailyLimit} lượt/ngày
                   </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-5 space-y-4">
+              <CardContent className="p-5 space-y-5">
+                {/* Domain / Target URL */}
                 <div>
-                  <label className="text-xs font-medium text-neutral-300">Target URL (Domain hoặc Endpoint)</label>
+                  <label className="text-xs font-medium text-neutral-300">Target URL (Origin Domain)</label>
                   <div className="mt-1.5 flex gap-2">
                     <Input
                       value={targetUrl}
-                      onChange={(e) => setTargetUrl(e.target.value)}
+                      onChange={(e) => handleTargetUrlChange(e.target.value)}
                       placeholder="https://example.com"
                       className="h-9 font-mono text-xs border-[#242424] bg-[#050505] text-white focus:border-white"
                     />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isLoadingEndpoints || !targetUrl}
+                      onClick={handleDiscoverEndpoints}
+                      className="h-9 border-[#242424] bg-[#111111] hover:bg-[#1A1A1A] text-xs text-neutral-200 shrink-0 gap-1.5"
+                    >
+                      {isLoadingEndpoints ? (
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Globe className="h-3.5 w-3.5" />
+                      )}
+                      Khám phá Endpoints
+                    </Button>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
                     {isVerifyingTarget ? (
@@ -454,12 +596,12 @@ function StressTestContent() {
                     ) : isTargetVerified === true ? (
                       <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-mono">
                         <ShieldCheck className="h-4 w-4" />
-                        Đã xác minh quyền sở hữu hợp lệ
+                        Đã xác minh quyền sở hữu hợp lệ (Ownership Verified)
                       </span>
                     ) : isTargetVerified === false ? (
                       <span className="flex items-center gap-1.5 text-xs text-rose-400 font-mono">
                         <ShieldAlert className="h-4 w-4" />
-                        Chưa xác minh quyền sở hữu mục tiêu này
+                        Chưa xác minh quyền sở hữu mục tiêu này (yêu cầu thẻ meta trên trang Scan)
                       </span>
                     ) : (
                       <span className="text-xs text-neutral-500">Nhập URL để kiểm tra xác thực quyền sở hữu.</span>
@@ -467,84 +609,265 @@ function StressTestContent() {
                   </div>
                 </div>
 
+                {/* Discovered Endpoints List / Selector */}
+                {discoveredEndpoints.length > 0 ? (
+                  <div className="rounded-lg border border-[#242424] bg-[#050505] p-3 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-neutral-300">
+                        Endpoints Đã Phát Hiện ({discoveredEndpoints.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleDiscoverEndpoints}
+                        className="text-[11px] text-neutral-400 hover:text-white flex items-center gap-1 font-mono cursor-pointer"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        Làm mới
+                      </button>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto divide-y divide-[#1A1A1A]">
+                      {discoveredEndpoints.map((ep, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => setEndpointPath(ep.path)}
+                          className={`py-1.5 px-2 flex items-center justify-between text-xs font-mono rounded cursor-pointer transition ${
+                            endpointPath === ep.path
+                              ? "bg-white/10 text-white font-semibold border border-white/20"
+                              : "text-neutral-400 hover:bg-[#111111] hover:text-white"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[10px] font-bold px-1 py-0.5 rounded bg-[#151515] text-neutral-300 border border-[#2A2A2A]">
+                              GET
+                            </span>
+                            <span className="truncate">{ep.path}</span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {ep.status && (
+                              <Badge className="text-[9px] bg-neutral-900 border-[#2A2A2A] text-neutral-300">
+                                HTTP {ep.status}
+                              </Badge>
+                            )}
+                            {ep.source && (
+                              <span className="text-[9px] text-neutral-500 uppercase">{ep.source}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : endpointDiscoveryAttempted && !isLoadingEndpoints ? (
+                  <div className="p-3 rounded border border-[#242424] bg-[#050505] text-xs text-neutral-400 flex items-center justify-between">
+                    <span>Không tìm thấy endpoint tự động qua crawl. Anh có thể nhập path thủ công bên dưới.</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDiscoverEndpoints}
+                      className="h-7 border-[#242424] bg-[#111111] hover:bg-[#1A1A1A] text-[11px] text-neutral-300 shrink-0"
+                    >
+                      Thử lại
+                    </Button>
+                  </div>
+                ) : null}
+
+                {/* Endpoint Path Input */}
                 <div className="pt-2 border-t border-[#1A1A1A]">
-                  <label className="text-xs font-medium text-neutral-300">Đường dẫn Endpoint</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-neutral-300">Đường dẫn Endpoint Mục Tiêu (Path Fallback)</label>
+                    <span className="text-[11px] font-mono text-neutral-500">
+                      Mục tiêu hoàn chỉnh: <strong className="text-neutral-300">{fullTargetDisplay}</strong>
+                    </span>
+                  </div>
                   <Input
                     value={endpointPath}
                     onChange={(e) => setEndpointPath(e.target.value)}
                     placeholder="/"
                     className="mt-1.5 h-9 font-mono text-xs border-[#242424] bg-[#050505] text-white focus:border-white"
                   />
-                  <p className="mt-1 text-[11px] text-neutral-500">
-                    Mặc định bắn tải vào trang chủ hoặc endpoint API cụ thể (VD: /api/v1/health).
-                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {["/", "/robots.txt", "/api/health", "/api/v1/status", "/login", "/search"].map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setEndpointPath(p)}
+                        className={`text-[11px] font-mono px-2 py-0.5 rounded border transition ${
+                          endpointPath === p
+                            ? "border-white bg-white text-black font-semibold"
+                            : "border-[#242424] bg-[#0A0A0A] text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Authorized Test Credential Card (Bypass Verification) */}
+            <Card className="border-[#242424] bg-[#0A0A0A] md:col-span-2">
+              <CardHeader className="pb-3 border-b border-[#242424]">
+                <CardTitle className="text-sm font-semibold text-white flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-white" />
+                    Authorized Test Credential (Quyền Kiểm Thử Phê Duyệt)
+                  </span>
+                  <Badge className="bg-[#111111] text-[10px] text-neutral-400 border border-[#242424]">
+                    Tùy chọn (Optional cho WAF / Bot Guard)
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-5 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-neutral-300">Loại WAF / Cơ Chế Xác Thực</label>
+                    <select
+                      value={wafType}
+                      onChange={(e) => setWafType(e.target.value)}
+                      className="mt-1.5 w-full h-9 rounded-md border border-[#242424] bg-[#050505] px-3 text-xs text-white focus:border-white focus:outline-none font-mono"
+                    >
+                      <option value="standard">Standard Web Server / Reverse Proxy</option>
+                      <option value="vercel">Vercel Deployment Protection Bypass</option>
+                      <option value="cloudflare">Cloudflare Clearance / Custom Token</option>
+                      <option value="custom_bearer">Custom Bearer / JWT Token</option>
+                      <option value="header_cookie">Custom Header / Cookie Pair</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-neutral-300">Mã Token / Bypass Credential</label>
+                    <div className="mt-1.5 flex gap-2">
+                      <Input
+                        type="password"
+                        value={bypassCode}
+                        onChange={(e) => {
+                          setBypassCode(e.target.value);
+                          setBypassVerifyResult(null);
+                        }}
+                        placeholder="Nhập secret token, header hoặc pass..."
+                        className="h-9 font-mono text-xs border-[#242424] bg-[#050505] text-white focus:border-white"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isVerifyingBypass || !bypassCode.trim()}
+                        onClick={handleVerifyBypass}
+                        className="h-9 border-[#242424] bg-[#111111] hover:bg-[#1A1A1A] text-xs text-neutral-200 shrink-0 gap-1.5"
+                      >
+                        {isVerifyingBypass ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                        )}
+                        Xác minh
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bypass Verification Feedback Badge */}
+                {bypassVerifyResult && (
+                  <div
+                    className={`p-3 rounded border text-xs flex items-start gap-2.5 ${
+                      bypassVerifyResult.is_valid
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                        : "border-rose-500/30 bg-rose-500/10 text-rose-200"
+                    }`}
+                  >
+                    {bypassVerifyResult.is_valid ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                    )}
+                    <div className="space-y-1">
+                      <div className="font-semibold flex items-center gap-2">
+                        <span>{bypassVerifyResult.is_valid ? "Credential Hợp Lệ" : "Credential Không Khả Dụng"}</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/40 border border-current">
+                          HTTP {bypassVerifyResult.status_with_bypass}
+                        </span>
+                      </div>
+                      <p className="text-[11px] opacity-90">{bypassVerifyResult.message}</p>
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-neutral-500 leading-relaxed">
+                  Bảo mật: Credential chỉ được truyền an toàn trong phiên thực thi để điều phối bypass WAF có thẩm quyền và tuyệt đối không bao giờ được lưu trữ plain-text hay xuất hiện trong lịch sử/public API.
+                </p>
               </CardContent>
             </Card>
 
             {/* Load Profile Configuration */}
             <Card className="border-[#242424] bg-[#0A0A0A]">
               <CardHeader className="pb-3 border-b border-[#242424]">
-                <CardTitle className="text-sm font-semibold text-white">Cấu Hình Tải (Load Profile)</CardTitle>
+                <CardTitle className="text-sm font-semibold text-white">Cấu Hình Tải (Fixed Request Count)</CardTitle>
               </CardHeader>
               <CardContent className="p-5 space-y-4">
+                {/* Total Requests (Authoritative Hard Target) */}
                 <div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-neutral-300">Thời gian bắn</span>
-                    <span className="font-mono text-white font-semibold">{durationSec} giây</span>
+                    <span className="text-neutral-300 font-medium">Tổng request mục tiêu</span>
+                    <span className="font-mono text-white font-bold">{totalRequests} reqs</span>
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    {[15, 30, 60].map((sec) => (
+                  <div className="mt-2 grid grid-cols-4 gap-1.5">
+                    {[100, 300, 450, 1000].map((reqs) => (
                       <button
-                        key={sec}
+                        key={reqs}
                         type="button"
-                        onClick={() => setDurationSec(sec)}
-                        disabled={userTier === "PRO" && sec > 30}
+                        onClick={() => setTotalRequests(reqs)}
+                        disabled={reqs > maxRequestsAllowed}
                         className={`h-8 rounded border text-xs font-mono transition ${
-                          durationSec === sec
+                          totalRequests === reqs
                             ? "border-white bg-white text-black font-semibold"
                             : "border-[#242424] bg-[#050505] text-neutral-400 hover:text-white"
-                        } ${userTier === "PRO" && sec > 30 ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
+                        } ${reqs > maxRequestsAllowed ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
                       >
-                        {sec}s
+                        {reqs}
                       </button>
                     ))}
                   </div>
                 </div>
 
+                {/* Target RPS (Pacing Target) */}
                 <div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-neutral-300">Tốc độ gửi (Target RPS)</span>
-                    <span className="font-mono text-white font-semibold">{targetRps} RPS</span>
+                    <span className="text-neutral-300 font-medium">Target RPS (Tốc độ pacing)</span>
+                    <span className="font-mono text-white font-bold">{targetRps} RPS</span>
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    {[30, 50, 100].map((rps) => (
+                  <div className="mt-2 grid grid-cols-4 gap-1.5">
+                    {[10, 30, 50, 100].map((rps) => (
                       <button
                         key={rps}
                         type="button"
                         onClick={() => setTargetRps(rps)}
-                        disabled={userTier === "PRO" && rps > 100}
+                        disabled={rps > maxRpsAllowed}
                         className={`h-8 rounded border text-xs font-mono transition ${
                           targetRps === rps
                             ? "border-white bg-white text-black font-semibold"
                             : "border-[#242424] bg-[#050505] text-neutral-400 hover:text-white"
-                        } cursor-pointer`}
+                        } ${rps > maxRpsAllowed ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
                       >
-                        {rps} RPS
+                        {rps}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-[#1A1A1A] text-xs text-neutral-400 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Tổng request dự kiến:</span>
-                    <span className="font-mono text-white font-semibold">{targetRps * durationSec} reqs</span>
+                {/* Estimated Nominal Duration Display */}
+                <div className="pt-3 border-t border-[#1A1A1A] text-xs text-neutral-400 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span>Duration dự kiến:</span>
+                    <span className="font-mono text-white font-semibold">~{nominalDurationSec} giây (~{nominalDurationSec}s)</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Concurrency dự kiến:</span>
-                    <span className="font-mono text-white font-semibold">{minConcurrency(targetRps)} users</span>
+                  <div className="flex justify-between items-center">
+                    <span>Concurrency tối đa:</span>
+                    <span className="font-mono text-white font-semibold">{minConcurrency(targetRps)} workers</span>
                   </div>
+                  <p className="text-[10px] text-neutral-500 pt-1">
+                    * Engine sẽ đảm bảo bắn đủ toàn bộ <strong>{totalRequests} requests</strong> mục tiêu.
+                  </p>
                 </div>
 
                 {errorMessage && (
@@ -566,7 +889,7 @@ function StressTestContent() {
                   ) : (
                     <>
                       <Play className="h-4 w-4 mr-2 fill-current" />
-                      Bắt Đầu Stress Test
+                      Bắt Đầu Stress Test ({totalRequests} reqs)
                     </>
                   )}
                 </Button>
@@ -579,10 +902,10 @@ function StressTestContent() {
             {/* 1. Target + Status Top Banner */}
             <div className="rounded-lg border border-[#242424] bg-[#0A0A0A] p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs text-neutral-400 font-mono">Mục tiêu:</span>
                   <span className="text-sm font-bold font-mono text-white truncate">
-                    {jobState?.target_url || targetUrl}
+                    {fullTargetDisplay}
                   </span>
                   <Badge
                     className={`text-[11px] font-mono px-2 py-0.5 ${
@@ -607,11 +930,11 @@ function StressTestContent() {
                   </Badge>
                 </div>
                 <p className="mt-1 text-xs text-neutral-400">
-                  Job ID: <span className="font-mono text-neutral-300">{activeJobId}</span> • Cấu hình:{" "}
+                  Job ID: <span className="font-mono text-neutral-300">{activeJobId}</span> • Mục tiêu:{" "}
                   <span className="font-mono text-white font-medium">
-                    {jobState?.target_requests || targetRps * durationSec} requests
+                    {configuredTarget} requests
                   </span>{" "}
-                  trong <span className="font-mono text-white font-medium">{jobState?.duration_sec || durationSec}s</span>
+                  với Target RPS: <span className="font-mono text-white font-medium">{jobState?.target_rps || targetRps}</span> (Dự kiến: ~{jobState?.nominal_duration_sec || nominalDurationSec}s)
                 </p>
               </div>
 
@@ -696,49 +1019,49 @@ function StressTestContent() {
             {/* 3. Live Performance Metrics Grid */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg border border-[#242424] bg-[#0A0A0A] p-4">
-                <p className="text-[11px] font-mono text-neutral-400 uppercase">Tốc Độ Thực Tế</p>
+                <p className="text-[11px] font-mono text-neutral-400 uppercase">RPS Thực Tế Trung Bình</p>
                 <p className="mt-1 text-2xl font-bold font-mono text-white">
-                  {metrics.rps || 0}{" "}
+                  {currentMetrics.rps || 0}{" "}
                   <span className="text-xs font-normal text-neutral-400">RPS</span>
                 </p>
-                <p className="mt-0.5 text-[11px] text-neutral-500">Mục tiêu: {jobState?.target_rps || targetRps} RPS</p>
+                <p className="mt-0.5 text-[11px] text-neutral-500">Target RPS: {jobState?.target_rps || targetRps} RPS</p>
               </div>
 
               <div className="rounded-lg border border-[#242424] bg-[#0A0A0A] p-4">
                 <p className="text-[11px] font-mono text-neutral-400 uppercase">p95 Latency</p>
                 <p className="mt-1 text-2xl font-bold font-mono text-white">
-                  {metrics.p95_latency || "0ms"}
+                  {currentMetrics.p95_latency || "0ms"}
                 </p>
-                <p className="mt-0.5 text-[11px] text-neutral-500">p50: {metrics.p50_latency || "0ms"} • p99: {metrics.p99_latency || "0ms"}</p>
+                <p className="mt-0.5 text-[11px] text-neutral-500">p50: {currentMetrics.p50_latency || "0ms"} • p99: {currentMetrics.p99_latency || "0ms"}</p>
               </div>
 
               <div className="rounded-lg border border-[#242424] bg-[#0A0A0A] p-4">
                 <p className="text-[11px] font-mono text-neutral-400 uppercase">Tổng Request Đã Gửi</p>
                 <p className="mt-1 text-2xl font-bold font-mono text-white">
-                  {(metrics.total_requests || 0).toLocaleString()}{" "}
+                  {(currentMetrics.total_requests || 0).toLocaleString()}{" "}
                   <span className="text-xs font-normal text-neutral-400">
-                    / {(jobState?.target_requests || targetRps * durationSec).toLocaleString()}
+                    / {configuredTarget.toLocaleString()}
                   </span>
                 </p>
                 <div className="mt-1.5 h-1.5 w-full rounded-full bg-[#1F1F1F] overflow-hidden">
                   <div
                     className="h-full bg-white transition-all duration-300"
-                    style={{ width: `${Math.min(100, jobState?.progress || 0)}%` }}
+                    style={{ width: `${Math.min(100, ((currentMetrics.total_requests || 0) / Math.max(1, configuredTarget)) * 100)}%` }}
                   />
                 </div>
               </div>
 
               <div className="rounded-lg border border-[#242424] bg-[#0A0A0A] p-4">
-                <p className="text-[11px] font-mono text-neutral-400 uppercase">Error Rate</p>
+                <p className="text-[11px] font-mono text-neutral-400 uppercase">Tỷ Lệ Lỗi (Error Rate)</p>
                 <p
                   className={`mt-1 text-2xl font-bold font-mono ${
-                    Number(metrics.error_rate || 0) > 0 ? "text-rose-400" : "text-emerald-400"
+                    Number(currentMetrics.error_rate || 0) > 0 ? "text-rose-400" : "text-emerald-400"
                   }`}
                 >
-                  {metrics.error_rate || 0}%
+                  {currentMetrics.error_rate || 0}%
                 </p>
                 <p className="mt-0.5 text-[11px] text-neutral-500">
-                  Timeouts: {metrics.timeouts || 0} • 5xx: {metrics.status_500_crashed || 0}
+                  Timeouts: {currentMetrics.timeouts || 0} • 5xx: {currentMetrics.status_500_crashed || 0}
                 </p>
               </div>
             </div>
@@ -760,14 +1083,11 @@ function StressTestContent() {
                     </div>
                   ) : (
                     <div className="h-44 w-full">
-                      {/* Lightweight SVG Telemetry Line Chart */}
                       <svg className="h-full w-full overflow-visible" viewBox="0 0 500 150">
-                        {/* Grid lines */}
                         <line x1="0" y1="30" x2="500" y2="30" stroke="#1A1A1A" strokeDasharray="3 3" />
                         <line x1="0" y1="75" x2="500" y2="75" stroke="#1A1A1A" strokeDasharray="3 3" />
                         <line x1="0" y1="120" x2="500" y2="120" stroke="#1A1A1A" strokeDasharray="3 3" />
 
-                        {/* Latency line */}
                         {(() => {
                           const maxLat = Math.max(100, ...telemetryHistory.map((d) => d.latencyMs));
                           const points = telemetryHistory
@@ -791,7 +1111,7 @@ function StressTestContent() {
                       </svg>
                       <div className="mt-2 flex justify-between text-[10px] font-mono text-neutral-500">
                         <span>Bắt đầu</span>
-                        <span>Điểm đo gần nhất: {metrics.p95_latency || "0ms"} (p95)</span>
+                        <span>Điểm đo gần nhất: {currentMetrics.p95_latency || "0ms"} (p95)</span>
                       </div>
                     </div>
                   )}
@@ -811,7 +1131,7 @@ function StressTestContent() {
                       <span className="h-2 w-2 rounded-full bg-emerald-400" />
                       2xx Thành công
                     </span>
-                    <span className="font-mono text-white font-bold">{metrics.status_200 || 0}</span>
+                    <span className="font-mono text-white font-bold">{currentMetrics.status_200 || 0}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs">
@@ -819,7 +1139,7 @@ function StressTestContent() {
                       <span className="h-2 w-2 rounded-full bg-amber-400" />
                       403 WAF Block
                     </span>
-                    <span className="font-mono text-white font-bold">{metrics.status_403_waf_blocked || 0}</span>
+                    <span className="font-mono text-white font-bold">{currentMetrics.status_403_waf_blocked || 0}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs">
@@ -827,7 +1147,7 @@ function StressTestContent() {
                       <span className="h-2 w-2 rounded-full bg-amber-400" />
                       429 Rate Limit
                     </span>
-                    <span className="font-mono text-white font-bold">{metrics.status_429_rate_limited || 0}</span>
+                    <span className="font-mono text-white font-bold">{currentMetrics.status_429_rate_limited || 0}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs">
@@ -835,7 +1155,7 @@ function StressTestContent() {
                       <span className="h-2 w-2 rounded-full bg-rose-400" />
                       5xx Server Error
                     </span>
-                    <span className="font-mono text-white font-bold">{metrics.status_500_crashed || 0}</span>
+                    <span className="font-mono text-white font-bold">{currentMetrics.status_500_crashed || 0}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs">
@@ -843,7 +1163,7 @@ function StressTestContent() {
                       <span className="h-2 w-2 rounded-full bg-rose-400" />
                       Timeouts
                     </span>
-                    <span className="font-mono text-white font-bold">{metrics.timeouts || 0}</span>
+                    <span className="font-mono text-white font-bold">{currentMetrics.timeouts || 0}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -856,7 +1176,7 @@ function StressTestContent() {
                   <CardTitle className="text-sm font-semibold text-white flex items-center justify-between">
                     <span className="flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                      Kết Luận Đánh Giá Hiệu Năng
+                      Báo Cáo Tổng Kết Phiên Kiểm Thử Tải (Load Profile Summary)
                     </span>
                     {stabilityVerdict && (
                       <Badge
@@ -873,14 +1193,41 @@ function StressTestContent() {
                     )}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-5 text-xs text-neutral-300 leading-relaxed space-y-3">
+                <CardContent className="p-5 text-xs text-neutral-300 leading-relaxed space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded bg-[#050505] border border-[#1F1F1F]">
+                    <div>
+                      <span className="text-[10px] text-neutral-500 uppercase font-mono block">Tổng Request Mục Tiêu</span>
+                      <span className="text-sm font-mono font-bold text-white">{configuredTarget} reqs</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-neutral-500 uppercase font-mono block">Đã Gửi Thành Công</span>
+                      <span className="text-sm font-mono font-bold text-emerald-400">
+                        {currentMetrics.total_requests || 0} / {configuredTarget}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-neutral-500 uppercase font-mono block">Thời Gian Thực Tế</span>
+                      <span className="text-sm font-mono font-bold text-white">
+                        {jobState?.actual_duration_sec ? `${jobState.actual_duration_sec}s` : `~${nominalDurationSec}s`}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-neutral-500 uppercase font-mono block">Lý Do Hoàn Tất</span>
+                      <span className="text-xs font-mono font-bold text-neutral-200">
+                        {jobState?.completion_reason || "TARGET_REQUESTS_REACHED"}
+                      </span>
+                    </div>
+                  </div>
+
                   <p>
-                    Trong profile test với{" "}
-                    <strong className="text-white font-mono">{metrics.total_requests} requests</strong> (tốc độ đạt{" "}
-                    <strong className="text-white font-mono">{metrics.rps} RPS</strong>), hệ thống ghi nhận latency p95
-                    đạt <strong className="text-white font-mono">{metrics.p95_latency}</strong> và tỷ lệ lỗi là{" "}
-                    <strong className="text-white font-mono">{metrics.error_rate}%</strong>.
+                    Hệ thống đã phân phối đầy đủ{" "}
+                    <strong className="text-white font-mono">{currentMetrics.total_requests} requests</strong> đến endpoint{" "}
+                    <strong className="text-white font-mono">{jobState?.endpoint || endpointPath}</strong> với tốc độ trung bình đạt{" "}
+                    <strong className="text-white font-mono">{currentMetrics.rps} RPS</strong>. Latency p95 đạt{" "}
+                    <strong className="text-white font-mono">{currentMetrics.p95_latency}</strong> và tỷ lệ lỗi là{" "}
+                    <strong className="text-white font-mono">{currentMetrics.error_rate}%</strong>.
                   </p>
+
                   <div className="p-3 rounded bg-[#050505] border border-[#1F1F1F] text-[11px] text-neutral-400 flex items-center justify-between">
                     <span>Cần phân tích sâu nguyên nhân tăng latency hoặc tối ưu cấu hình?</span>
                     <Button
@@ -906,10 +1253,6 @@ function StressTestContent() {
       </div>
     </ProjectWorkspaceShell>
   );
-}
-
-function minConcurrency(rps: number): number {
-  return Math.min(50, Math.max(5, Math.floor(rps * 0.3)));
 }
 
 export default function StressTestPage() {

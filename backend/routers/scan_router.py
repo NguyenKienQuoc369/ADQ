@@ -10,6 +10,7 @@ from backend.schemas.scan import (
     ScanResponse,
     CopilotChatRequest,
     StressRequest,
+    VerifyBypassRequest,
     WafDetectRequest,
     StressVerificationRequest,
 )
@@ -527,6 +528,108 @@ def verify_bypass(req: VerifyBypassRequest, user: Dict[str, Any] = Depends(get_c
 
 
 
+@router.get("/stress/endpoints")
+def get_stress_endpoints(target_url: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Lightweight, non-destructive endpoint discovery for verified target.
+    Priority 1: Existing known Scan / Web Mapping data from DB.
+    Priority 2: Safe same-origin probe (/, robots.txt, sitemap.xml, safe paths).
+    """
+    tier = get_user_tier(user)
+    if tier == "FREE":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gói FREE không hỗ trợ Stress Test.")
+
+    origin, resolved_ips = resolve_and_validate_target(target_url)
+
+    # Verify target ownership
+    if not ScanService.is_stress_target_verified(user, origin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Mục tiêu chưa được xác minh quyền sở hữu qua Meta Tag."
+        )
+
+    endpoints = []
+    seen_paths = set()
+
+    def add_endpoint(path: str, status_code: int = 200, source: str = "discovery"):
+        clean_path = ("/" + str(path).strip().lstrip("/")).split("?")[0]
+        if clean_path not in seen_paths and len(clean_path) <= 256:
+            seen_paths.add(clean_path)
+            endpoints.append({
+                "method": "GET",
+                "path": clean_path,
+                "status": status_code,
+                "source": source
+            })
+
+    # Root endpoint is always available
+    add_endpoint("/", 200, source="root")
+
+    # 1. Query known Scan endpoints from PostgreSQL if present
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(origin)
+        domain = parsed.netloc.split(":")[0]
+
+        from backend.core.engine.db import get_engine
+        from sqlalchemy import text
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                    SELECT DISTINCT se.url, se.status_code
+                    FROM scan_endpoints se
+                    JOIN scan_jobs sj ON se.scan_id = sj.scan_id
+                    WHERE sj.target_domain = :domain
+                    ORDER BY se.url ASC LIMIT 50
+                """),
+                {"domain": domain}
+            ).mappings().all()
+            for r in rows:
+                raw_u = r.get("url") or ""
+                p = urlparse(raw_u).path
+                if p:
+                    add_endpoint(p, r.get("status_code") or 200, source="scan_mapping")
+    except Exception:
+        pass
+
+    # 2. If fewer than 4 endpoints, do safe lightweight probe on same origin
+    if len(endpoints) < 4:
+        try:
+            pinned_ip = resolved_ips[0]
+            from backend.core.security.ssrf_guard import is_dev_private_allowed
+            actual_verify = not is_dev_private_allowed()
+            orchestrator = StressOrchestrator()
+            s, _ = orchestrator._get_client_session({"User-Agent": "Mozilla/5.0 (ADQ-Discovery)"}, {}, pinned_ip=pinned_ip)
+
+            candidate_paths = ["/robots.txt", "/sitemap.xml", "/api", "/api/health", "/health", "/login", "/about", "/docs"]
+            for cpath in candidate_paths:
+                if len(endpoints) >= 15:
+                    break
+                try:
+                    target_probe = f"{origin}{cpath}"
+                    resp = s.get(target_probe, timeout=2.5, verify=actual_verify, allow_redirects=False)
+                    if resp.status_code in (200, 204, 301, 302, 304, 307, 308, 401, 403):
+                        add_endpoint(cpath, resp.status_code, source="lightweight_probe")
+
+                        # If robots.txt returned 200, parse Disallow / Allow paths
+                        if cpath == "/robots.txt" and resp.status_code == 200 and resp.text:
+                            for line in resp.text.splitlines()[:20]:
+                                line = line.strip()
+                                if line.lower().startswith(("disallow:", "allow:")):
+                                    parts = line.split(":", 1)
+                                    if len(parts) == 2:
+                                        rpath = parts[1].strip()
+                                        if rpath.startswith("/") and not any(ch in rpath for ch in "*$"):
+                                            add_endpoint(rpath, 200, source="robots_txt")
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    return {"ok": True, "target": origin, "endpoints": endpoints}
+
+
 try:
     from backend.services.stress_dispatch_service import StressDispatchService
 except ImportError:
@@ -539,6 +642,14 @@ def dispatch_stress_job(req: StressRequest, user: Dict[str, Any] = Depends(get_c
     """
     res = StressDispatchService.enqueue_stress_job(req, user)
     return res
+
+
+@router.get("/stress/user/history")
+@router.get("/stress/history")
+def get_stress_history(user: Dict[str, Any] = Depends(get_current_user)):
+    """Retrieves list of past stress test runs for authenticated user."""
+    user_id = str(user.get("id") or user.get("sub") or "anonymous")
+    return {"ok": True, "history": StressDispatchService.get_user_stress_history(user_id)}
 
 
 @router.get("/stress/{job_id}")
@@ -563,14 +674,6 @@ def stop_stress_job(job_id: str, user: Dict[str, Any] = Depends(get_current_user
     """Gracefully stops an active or queued stress job."""
     user_id = str(user.get("id") or user.get("sub") or "anonymous")
     return StressDispatchService.stop_stress_job(job_id, user_id)
-
-
-@router.get("/stress/user/history")
-@router.get("/stress/history")
-def get_stress_history(user: Dict[str, Any] = Depends(get_current_user)):
-    """Retrieves list of past stress test runs for authenticated user."""
-    user_id = str(user.get("id") or user.get("sub") or "anonymous")
-    return {"ok": True, "history": StressDispatchService.get_user_stress_history(user_id)}
 
 
 import asyncio

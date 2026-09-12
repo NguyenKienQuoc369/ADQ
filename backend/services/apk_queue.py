@@ -104,6 +104,8 @@ class APKQueue:
                     pipe = self.redis_client.pipeline()
                     pipe.set(f"apk:job:{job_id}", json.dumps(job_record), ex=APK_JOB_TTL)
                     pipe.lpush("apk:queue:pending", job_id)
+                    pipe.lpush(f"apk:history:{user_id}", job_id)
+                    pipe.ltrim(f"apk:history:{user_id}", 0, 49)
                     pipe.execute()
                     return True
                 except Exception as e:
@@ -331,6 +333,54 @@ class APKQueue:
                         recovered.append(jid)
 
         return recovered
+
+    def get_user_history(self, user_id: str) -> List[Dict[str, Any]]:
+        """Retrieves list of past APK audit jobs for a given user."""
+        jobs = []
+        with self._lock:
+            if self.redis_client:
+                try:
+                    job_ids = self.redis_client.lrange(f"apk:history:{user_id}", 0, 49)
+                    for jid in job_ids:
+                        job = self.get_job(jid)
+                        if job and (job.get("user_id") == user_id or job.get("owner_user_id") == user_id):
+                            res_obj = job.get("result") if isinstance(job.get("result"), dict) else {}
+                            jobs.append({
+                                "job_id": job["job_id"],
+                                "status": job["status"],
+                                "stage": job.get("stage"),
+                                "progress": job.get("progress", 0),
+                                "apk_name": job.get("apk_name"),
+                                "created_at": job.get("created_at"),
+                                "completed_at": job.get("completed_at"),
+                                "package": res_obj.get("package"),
+                                "version": res_obj.get("version"),
+                                "findings_count": len(res_obj.get("findings", [])),
+                                "error": job.get("error_safe") or job.get("error"),
+                            })
+                    return jobs
+                except Exception as e:
+                    logger.warning(f"Redis get_user_history failed ({e})")
+
+            # In memory fallback
+            for job in self._in_memory_jobs.values():
+                if job.get("user_id") == user_id or job.get("owner_user_id") == user_id:
+                    res_obj = job.get("result") if isinstance(job.get("result"), dict) else {}
+                    jobs.append({
+                        "job_id": job["job_id"],
+                        "status": job["status"],
+                        "stage": job.get("stage"),
+                        "progress": job.get("progress", 0),
+                        "apk_name": job.get("apk_name"),
+                        "created_at": job.get("created_at"),
+                        "completed_at": job.get("completed_at"),
+                        "package": res_obj.get("package"),
+                        "version": res_obj.get("version"),
+                        "findings_count": len(res_obj.get("findings", [])),
+                        "error": job.get("error_safe") or job.get("error"),
+                    })
+            jobs.sort(key=lambda j: j.get("created_at", 0), reverse=True)
+            return jobs
 
     def clear(self):
         """Clears all in-memory and Redis test state."""

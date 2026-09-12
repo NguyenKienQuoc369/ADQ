@@ -255,3 +255,18 @@ def cancel_apk_job(
         "message": "APK audit job cancelled successfully.",
     }
 
+
+@router.get("/history")
+def get_apk_history(user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Retrieves list of past APK audit jobs for the authenticated user.
+    Enforces PRO_MAX tier entitlement.
+    """
+    effective_tier = get_effective_user_tier(user)
+    if effective_tier != "PRO_MAX":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="TIER_LOCKED: APK Audit is exclusively available for active PRO_MAX accounts.",
+        )
+    user_id = str(user.get("id") or user.get("sub") or "anonymous_user")
+    return {"ok": True, "history": apk_service.get_user_history(user_id)}

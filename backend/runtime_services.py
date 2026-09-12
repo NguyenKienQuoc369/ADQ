@@ -1041,6 +1041,12 @@ def execute_stress_job(
         if not ScanService.is_stress_target_verified(user_mock, origin):
             raise Exception("Xác minh quyền sở hữu mục tiêu đã hết hạn hoặc không hợp lệ.")
 
+        raw_endpoint = str(job_data.get("endpoint") or "/").strip()
+        endpoint = raw_endpoint if raw_endpoint.startswith("/") else f"/{raw_endpoint}"
+        full_target_url = f"{origin.rstrip('/')}{endpoint}" if endpoint != "/" else origin
+        public_state["endpoint"] = endpoint
+        public_state["full_target_url"] = full_target_url
+
         # Step 3: Run StressOrchestrator streaming core
         try:
             from backend.core.stress_test.stress_orchestrator import StressOrchestrator
@@ -1049,7 +1055,7 @@ def execute_stress_job(
 
         orchestrator = StressOrchestrator()
         last_metrics = None
-        last_phase = "RAMP UP"
+        last_phase = "PREPARE"
 
         def is_cancelled():
             if redis_client:
@@ -1060,7 +1066,7 @@ def execute_stress_job(
             return False
 
         for chunk in orchestrator.stream_stress_test(
-            target_url=origin,
+            target_url=full_target_url,
             target_rps=target_rps,
             duration_sec=dur_sec,
             total_reqs=total_reqs,
@@ -1073,7 +1079,7 @@ def execute_stress_job(
             if is_cancelled():
                 break
 
-            if chunk.get("ok"):
+            if chunk.get("ok") or chunk.get("status") in ("COMPLETED", "FAILED"):
                 cur_metrics = chunk.get("metrics") or {}
                 last_metrics = cur_metrics
                 phase = chunk.get("phase") or "STEADY LOAD"
@@ -1083,23 +1089,34 @@ def execute_stress_job(
                 tot = cur_metrics.get("total_requests", 0)
                 prog = min(100, int(tot / max(1, total_reqs) * 100))
                 public_state["progress"] = prog
+                public_state["attempted_requests"] = tot
+                public_state["configured_requests"] = total_reqs
+                if chunk.get("completion_reason"):
+                    public_state["completion_reason"] = chunk.get("completion_reason")
+
                 if redis_client:
                     redis_client.set(state_key, json.dumps(public_state), ex=max(180, dur_sec + 180))
                     redis_client.publish(event_channel, json.dumps({
                         "job_id": job_id,
-                        "status": "RUNNING",
+                        "status": chunk.get("status", "RUNNING"),
                         "phase": phase,
                         "progress": prog,
                         "metrics": cur_metrics,
+                        "attempted_requests": tot,
+                        "configured_requests": total_reqs,
+                        "completion_reason": public_state.get("completion_reason"),
                         "timestamp": time.time(),
                     }))
 
         # If user cancelled during the run
         if is_cancelled():
             print(f"[{worker_id}] Stress job {job_id} CANCELLED by user.", flush=True)
+            finished_at = time.time()
             public_state["status"] = "CANCELLED"
             public_state["phase"] = "COMPLETE"
-            public_state["finished_at"] = time.time()
+            public_state["completion_reason"] = "USER_CANCELLED"
+            public_state["finished_at"] = finished_at
+            public_state["actual_duration_sec"] = round(finished_at - started_at, 2)
             try:
                 from backend.core.engine.db import save_stress_job
                 save_stress_job(public_state)
@@ -1113,10 +1130,21 @@ def execute_stress_job(
 
         # Step 4: Mark COMPLETED and publish terminal event
         finished_at = time.time()
-        public_state["status"] = "COMPLETED"
+        actual_dur = round(finished_at - started_at, 2)
+        tot_attempts = last_metrics.get("total_requests", 0) if last_metrics else 0
+        final_status = "COMPLETED" if tot_attempts >= total_reqs else public_state.get("status", "COMPLETED")
+        final_reason = public_state.get("completion_reason") or ("TARGET_REQUESTS_REACHED" if tot_attempts >= total_reqs else "RUN_FINISHED")
+
+        public_state["status"] = final_status
         public_state["phase"] = "COMPLETE"
-        public_state["progress"] = 100
+        public_state["progress"] = 100 if final_status == "COMPLETED" else min(100, int(tot_attempts / max(1, total_reqs) * 100))
         public_state["finished_at"] = finished_at
+        public_state["actual_duration_sec"] = actual_dur
+        public_state["nominal_duration_sec"] = dur_sec
+        public_state["configured_requests"] = total_reqs
+        public_state["attempted_requests"] = tot_attempts
+        public_state["completion_reason"] = final_reason
+
         if last_metrics:
             public_state["metrics"] = last_metrics
             
@@ -1134,11 +1162,16 @@ def execute_stress_job(
             redis_client.set(state_key, json.dumps(public_state), ex=86400)
             redis_client.publish(event_channel, json.dumps({
                 "job_id": job_id,
-                "status": "COMPLETED",
+                "status": final_status,
                 "phase": "COMPLETE",
-                "progress": 100,
+                "progress": public_state["progress"],
                 "metrics": public_state.get("metrics", {}),
                 "verdict": public_state.get("verdict", "ỔN ĐỊNH"),
+                "completion_reason": final_reason,
+                "configured_requests": total_reqs,
+                "attempted_requests": tot_attempts,
+                "actual_duration_sec": actual_dur,
+                "nominal_duration_sec": dur_sec,
                 "done": True,
                 "is_done": True,
                 "timestamp": finished_at,

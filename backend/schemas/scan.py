@@ -31,6 +31,7 @@ class WafDetectRequest(BaseModel):
 
 class StressRequest(BaseModel):
     target_url: str
+    endpoint: Optional[str] = "/"
     target_requests: Optional[int] = 1000
     duration: str = "5s"
     bypass_code: Optional[str] = ""
@@ -38,6 +39,11 @@ class StressRequest(BaseModel):
     custom_headers: Optional[Dict[str, str]] = None
     custom_cookies: Optional[Dict[str, str]] = None
     project_id: Optional[str] = None
+
+class VerifyBypassRequest(BaseModel):
+    target_url: str
+    bypass_code: Optional[str] = ""
+    waf_type: Optional[str] = "standard"
 
 class StressVerificationRequest(BaseModel):
     target_url: str

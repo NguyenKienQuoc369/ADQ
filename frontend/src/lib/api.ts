@@ -953,13 +953,6 @@ export const getVerificationStatus = getTargetVerificationStatus;
 export const getScanJob = getScanJobStatus;
 export type ScanJobDetails = any;
 
-export async function verifyBypass(payload: { target_url: string; bypass_code: string; waf_type: string }) {
-  return requestJson<{ ok: boolean; is_valid: boolean; status_no_bypass: number; status_with_bypass: number; message: string }>("/api/stress/verify-bypass", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
 
 
 export interface StressJobState {
@@ -967,14 +960,21 @@ export interface StressJobState {
   user_id?: string;
   tier?: string;
   target_url?: string;
+  endpoint?: string;
+  full_target_url?: string;
   target_requests?: number;
+  configured_requests?: number;
+  attempted_requests?: number;
   duration_sec?: number;
+  nominal_duration_sec?: number;
+  actual_duration_sec?: number;
   target_rps?: number;
   waf_type?: string;
   status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
   phase?: string;
   progress?: number;
   verdict?: string;
+  completion_reason?: string;
   events?: Array<{ time: string; message: string; type?: string }>;
   metrics?: {
     total_requests?: number;
@@ -1002,6 +1002,7 @@ export interface StressJobState {
 
 export async function createStressJob(payload: {
   target_url: string;
+  endpoint?: string;
   target_requests?: number;
   duration?: string | number;
   bypass_code?: string;
@@ -1010,6 +1011,7 @@ export async function createStressJob(payload: {
 }): Promise<{ ok: boolean; job_id: string; status: string; message?: string }> {
   const formattedPayload = {
     target_url: payload.target_url,
+    endpoint: payload.endpoint || "/",
     target_requests: Number(payload.target_requests ?? 1000),
     duration: typeof payload.duration === "number" ? `${payload.duration}s` : String(payload.duration || "5s"),
     bypass_code: String(payload.bypass_code || ""),
@@ -1020,6 +1022,34 @@ export async function createStressJob(payload: {
   return requestJson<{ ok: boolean; job_id: string; status: string; message?: string }>("/api/stress/jobs", {
     method: "POST",
     body: JSON.stringify(formattedPayload),
+  });
+}
+
+export async function getStressEndpoints(targetUrl: string): Promise<{ ok: boolean; endpoints: Array<{ path: string; status?: number; title?: string; source?: string }> }> {
+  return requestJson(`/api/stress/endpoints?target_url=${encodeURIComponent(targetUrl)}`, {
+    method: "GET",
+  });
+}
+
+export async function verifyBypass(payload: {
+  target_url: string;
+  bypass_code?: string;
+  waf_type?: string;
+}): Promise<{
+  ok: boolean;
+  is_valid: boolean;
+  status_no_bypass: number;
+  status_with_bypass: number;
+  message: string;
+  target: string;
+}> {
+  return requestJson("/api/stress/verify-bypass", {
+    method: "POST",
+    body: JSON.stringify({
+      target_url: payload.target_url,
+      bypass_code: payload.bypass_code || "",
+      waf_type: payload.waf_type || "standard",
+    }),
   });
 }
 
@@ -1280,5 +1310,11 @@ export async function cancelApkAuditJob(
       signal,
     }
   );
+}
+
+export async function getApkAuditHistory(): Promise<{ ok: boolean; history: ApkJobStatusResponse[] }> {
+  return requestJson("/api/apk-audit/history", {
+    method: "GET",
+  });
 }
 

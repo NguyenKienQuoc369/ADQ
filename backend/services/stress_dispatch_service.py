@@ -69,10 +69,15 @@ class StressDispatchService:
         total_reqs = req.target_requests or 1000
         total_reqs, dur_sec, target_rps = validate_stress_runtime_limits(tier, total_reqs, dur_sec)
 
-        # Gate 4: Generate Canonical Unique Job ID
+        # Gate 4: Endpoint Normalization & Full URL
+        raw_endpoint = (req.endpoint or "/").strip()
+        endpoint = raw_endpoint if raw_endpoint.startswith("/") else f"/{raw_endpoint}"
+        full_target_url = f"{origin.rstrip('/')}{endpoint}" if endpoint != "/" else origin
+
+        # Gate 5: Generate Canonical Unique Job ID
         job_id = f"stress_{uuid.uuid4().hex[:16]}"
 
-        # Gate 5: Acquire Redis Governor Reservation (with queue lease TTL)
+        # Gate 6: Acquire Redis Governor Reservation (with queue lease TTL)
         governor = StressSlotGovernor(
             redis_client=redis_client,
             user_id=user_id,
@@ -83,12 +88,14 @@ class StressDispatchService:
         governor.acquire()
 
         try:
-            # Step 6: Create initial Public Job State in Redis (Contains NO secrets/tokens)
+            # Step 7: Create initial Public Job State in Redis (Contains NO secrets/tokens)
             public_state = {
                 "job_id": job_id,
                 "user_id": user_id,
                 "tier": tier,
                 "target_url": origin,
+                "endpoint": endpoint,
+                "full_target_url": full_target_url,
                 "target_requests": total_reqs,
                 "duration_sec": dur_sec,
                 "target_rps": target_rps,
@@ -114,7 +121,7 @@ class StressDispatchService:
                     "timeouts": 0,
                 },
                 "events": [
-                    {"time": time.strftime("%H:%M:%S"), "message": "Phiên kiểm thử tải đã được khởi tạo và xếp hàng."}
+                    {"time": time.strftime("%H:%M:%S"), "message": f"Phiên kiểm thử tải cho {full_target_url} đã được khởi tạo và xếp hàng."}
                 ],
                 "created_at": time.time(),
                 "started_at": None,
@@ -138,7 +145,7 @@ class StressDispatchService:
             except Exception as e:
                 print(f"[StressDispatch] Warning: DB initial save failed: {e}", flush=True)
 
-            # Step 7: Build internal execution payload (Allowed to have execution secrets)
+            # Step 8: Build internal execution payload (Allowed to have execution secrets)
             execution_payload = {
                 "job_id": job_id,
                 "job_type": "stress_test",
@@ -146,6 +153,8 @@ class StressDispatchService:
                 "user_id": user_id,
                 "tier": tier,
                 "target_url": origin,
+                "endpoint": endpoint,
+                "full_target_url": full_target_url,
                 "target_requests": total_reqs,
                 "duration_sec": dur_sec,
                 "target_rps": target_rps,
@@ -156,7 +165,7 @@ class StressDispatchService:
                 "created_at": time.time(),
             }
 
-            # Step 8: Push to Redis Reliable Queue
+            # Step 9: Push to Redis Reliable Queue
             if redis_client:
                 redis_client.rpush(STRESS_QUEUE_NAME, json.dumps(execution_payload))
 

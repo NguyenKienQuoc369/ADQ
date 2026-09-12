@@ -25,6 +25,7 @@ import {
   Layers,
   Key,
   Info,
+  History,
 } from "lucide-react";
 import {
   getProjectById,
@@ -33,7 +34,9 @@ import {
   getApkAuditJobStatus,
   getApkAuditJobResult,
   cancelApkAuditJob,
+  getApkAuditHistory,
   ApkAuditResultPayload,
+  ApkJobStatusResponse,
   ApkFinding,
 } from "@/lib/api";
 import { RescanConfirmModal } from "@/components/scan/rescan-confirm-modal";
@@ -76,6 +79,11 @@ function ApkAuditContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
   const [showRescanModal, setShowRescanModal] = useState(false);
+
+  // History State
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyList, setHistoryList] = useState<ApkJobStatusResponse[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Polling ref
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -297,6 +305,54 @@ function ApkAuditContent() {
     }
   };
 
+  const loadHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await getApkAuditHistory();
+      if (res?.history && Array.isArray(res.history)) {
+        setHistoryList(res.history);
+      }
+    } catch (err) {
+      console.error("Failed to load APK audit history:", err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleToggleHistory = () => {
+    const next = !showHistory;
+    setShowHistory(next);
+    if (next) void loadHistory();
+  };
+
+  const selectHistoryJob = async (jobId: string) => {
+    setCurrentJobId(jobId);
+    setShowHistory(false);
+    setJobError(null);
+    clearPolling();
+    try {
+      const statusResp = await getApkAuditJobStatus(jobId);
+      const rawStatus = (statusResp.status || "").toUpperCase();
+      if (rawStatus === "COMPLETED" || rawStatus === "PARTIAL") {
+        setJobState(rawStatus === "PARTIAL" ? "partial" : "completed");
+        setJobProgress(100);
+        const resResp = await getApkAuditJobResult(jobId);
+        if (resResp.ok && resResp.result) {
+          setAnalysisResult(resResp.result);
+        }
+      } else if (rawStatus === "FAILED") {
+        setJobState("failed");
+        setJobError(statusResp.error || "Phiên kiểm toán đã thất bại trước đó.");
+      } else {
+        setJobState("queued");
+        startPolling(jobId);
+      }
+    } catch (err: any) {
+      console.error("Failed to load history job:", err);
+      setJobError(err?.message || "Không thể tải lại phiên kiểm toán.");
+    }
+  };
+
   const handleNewSession = () => {
     clearPolling();
     setFile(null);
@@ -401,6 +457,16 @@ function ApkAuditContent() {
 
           <div className="flex items-center gap-2">
             <Button
+              variant="outline"
+              size="sm"
+              onClick={handleToggleHistory}
+              className="h-8 text-xs border border-[#333333] bg-[#111111] text-neutral-300 hover:bg-neutral-800 rounded-md gap-1.5"
+            >
+              <History className="h-3.5 w-3.5" />
+              {showHistory ? "Đóng Lịch Sử" : "Lịch Sử Audit"}
+            </Button>
+
+            <Button
               className="h-8 text-xs border border-[#333333] bg-[#111111] text-white hover:bg-neutral-800 rounded-md transition"
               disabled={isSaving || isJobActive || !analysisResult}
               onClick={handleSaveSession}
@@ -427,6 +493,49 @@ function ApkAuditContent() {
             </Button>
           </div>
         </div>
+
+        {/* History Drawer */}
+        {showHistory && (
+          <div className="rounded-lg border border-[#222222] bg-[#0A0A0A] p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-[#222222] pb-2">
+              <span className="text-xs font-semibold text-white flex items-center gap-2">
+                <History className="h-3.5 w-3.5" /> Lịch Sử Các Phiên Kiểm Toán APK
+              </span>
+              {loadingHistory && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-neutral-400" />}
+            </div>
+            {historyList.length === 0 ? (
+              <p className="text-xs text-neutral-500 py-3 text-center">Chưa có phiên kiểm toán APK nào.</p>
+            ) : (
+              <div className="divide-y divide-[#1A1A1A] max-h-56 overflow-y-auto">
+                {historyList.map((item) => (
+                  <div
+                    key={item.job_id}
+                    onClick={() => selectHistoryJob(item.job_id)}
+                    className="py-2.5 px-2 flex items-center justify-between text-xs hover:bg-[#111111] rounded cursor-pointer transition"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-mono text-white font-medium truncate">Job ID: {item.job_id}</p>
+                      <p className="text-[11px] text-neutral-500">
+                        {item.created_at ? new Date(item.created_at * 1000).toLocaleString("vi-VN") : "Gần đây"} • Stage: {item.stage || item.status}
+                      </p>
+                    </div>
+                    <Badge
+                      className={`text-[10px] ${
+                        item.status === "COMPLETED"
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : item.status === "FAILED"
+                          ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                          : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                      }`}
+                    >
+                      {item.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Upload & Execution Panel */}
         <div className="rounded-lg border border-[#222222] bg-[#000000] p-6 space-y-4">

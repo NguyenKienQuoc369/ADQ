@@ -105,7 +105,7 @@ class StressOrchestrator:
         origin, resolved_ips = resolve_and_validate_target(target_url)
         pinned_ip = resolved_ips[0]
         actual_verify = not is_dev_private_allowed()
-        clean_url = origin
+        clean_url = target_url.strip() if target_url.strip().startswith(("http://", "https://")) else f"https://{target_url.strip()}"
         
         status_no_bypass = 0
         try:
@@ -179,10 +179,13 @@ class StressOrchestrator:
         latencies: List[int] = []
         sample_logs: List[Dict[str, Any]] = []
         start_time = time.time()
-        end_time = start_time + duration_sec
+        nominal_duration = max(1.0, float(total_reqs) / max(0.1, float(target_rps)))
+        hard_safety_timeout = max(30.0, nominal_duration * 2.5 + 15.0)
+        hard_safety_deadline = start_time + hard_safety_timeout
         lock = threading.Lock()
         thread_local = threading.local()
         pacer = GlobalRatePacer(target_rps)
+        dispatched_count = 0
 
         def get_worker_session():
             if not getattr(thread_local, "session", None):
@@ -219,46 +222,47 @@ class StressOrchestrator:
             }
 
         def worker_batch():
-            while time.time() < end_time:
+            nonlocal dispatched_count
+            while True:
                 with lock:
-                    if metrics["total_requests"] >= total_reqs:
+                    if dispatched_count >= total_reqs or time.time() >= hard_safety_deadline:
                         break
 
                 pacer.acquire()
 
                 with lock:
-                    if metrics["total_requests"] >= total_reqs or time.time() >= end_time:
+                    if dispatched_count >= total_reqs or time.time() >= hard_safety_deadline:
                         break
+                    dispatched_count += 1
 
                 log_entry = fire_request()
                 code = log_entry["status"]
                 lat = log_entry["latency"]
 
                 with lock:
-                    if metrics["total_requests"] < total_reqs:
-                        metrics["total_requests"] += 1
-                        latencies.append(lat)
+                    metrics["total_requests"] += 1
+                    latencies.append(lat)
 
-                        if len(sample_logs) < 80:
-                            sample_logs.append(log_entry)
+                    if len(sample_logs) < 80:
+                        sample_logs.append(log_entry)
 
-                        if code in (200, 201, 204, 304, 301, 302, 307, 308):
-                            metrics["status_200"] += 1
-                        elif code == 403:
-                            metrics["status_403_waf_blocked"] += 1
-                        elif code == 429:
-                            metrics["status_429_rate_limited"] += 1
-                        elif code >= 500:
-                            metrics["status_500_crashed"] += 1
-                        else:
-                            metrics["other_status"] += 1
+                    if code in (200, 201, 204, 304, 301, 302, 307, 308):
+                        metrics["status_200"] += 1
+                    elif code == 403:
+                        metrics["status_403_waf_blocked"] += 1
+                    elif code == 429:
+                        metrics["status_429_rate_limited"] += 1
+                    elif code >= 500:
+                        metrics["status_500_crashed"] += 1
+                    elif code == 0:
+                        metrics["timeouts"] = metrics.get("timeouts", 0) + 1
+                    else:
+                        metrics["other_status"] += 1
 
         concurrency = min(50, max(5, int(target_rps * 0.3)))
-        start_time = time.time()
-        end_time = start_time + duration_sec
         with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
             futures = [executor.submit(worker_batch) for _ in range(concurrency)]
-            concurrent.futures.wait(futures, timeout=duration_sec + 3)
+            concurrent.futures.wait(futures, timeout=hard_safety_timeout + 2)
 
         elapsed = max(0.1, time.time() - start_time)
         metrics["rps"] = round(metrics["total_requests"] / elapsed, 1)
@@ -270,11 +274,18 @@ class StressOrchestrator:
         else:
             metrics["p95_latency"] = "0ms"
 
+        tot = metrics["total_requests"]
+        completion_reason = "TARGET_REQUESTS_REACHED" if tot >= total_reqs else ("SAFETY_TIMEOUT" if time.time() >= hard_safety_deadline else "COMPLETED")
+
         return {
-            "ok": True,
+            "ok": True if tot >= total_reqs else False,
+            "completion_reason": completion_reason,
+            "configured_requests": total_reqs,
+            "attempted_requests": tot,
+            "actual_duration_sec": round(elapsed, 2),
             "metrics": metrics,
             "sample_logs": sample_logs,
-            "message": f"Hoàn tất stress test: {metrics['total_requests']} requests trong {round(elapsed, 1)}s."
+            "message": f"Hoàn tất stress test: {metrics['total_requests']}/{total_reqs} requests trong {round(elapsed, 1)}s."
         }
 
     def stream_stress_test(
@@ -302,7 +313,7 @@ class StressOrchestrator:
         pinned_ip = resolved_ips[0]
         actual_verify = not is_dev_private_allowed()
 
-        final_url, headers_dict, cookie_dict = self._prepare_request_config(origin, bypass_code, waf_type, custom_headers, custom_cookies)
+        final_url, headers_dict, cookie_dict = self._prepare_request_config(target_url, bypass_code, waf_type, custom_headers, custom_cookies)
 
         metrics = {
             "total_requests": 0,
@@ -314,17 +325,25 @@ class StressOrchestrator:
             "status_500_crashed": 0,
             "other_status": 0,
             "rps": 0.0,
+            "p50_latency": "0ms",
             "p95_latency": "0ms",
+            "p99_latency": "0ms",
+            "avg_latency": "0ms",
+            "error_rate": 0.0,
+            "timeouts": 0,
         }
 
         latencies: List[int] = []
         sample_logs: List[Dict[str, Any]] = []
         logged_count = 0
         start_time = time.time()
-        end_time = start_time + duration_sec
+        nominal_duration = max(1.0, float(total_reqs) / max(0.1, float(target_rps)))
+        hard_safety_timeout = max(30.0, nominal_duration * 2.5 + 15.0)
+        hard_safety_deadline = start_time + hard_safety_timeout
         lock = threading.Lock()
         thread_local = threading.local()
         pacer = GlobalRatePacer(target_rps)
+        dispatched_count = 0
 
         def get_worker_session():
             if not getattr(thread_local, "session", None):
@@ -361,45 +380,44 @@ class StressOrchestrator:
             }
 
         def worker_batch():
-            while time.time() < end_time:
+            nonlocal dispatched_count
+            while True:
                 with lock:
-                    if metrics["total_requests"] >= total_reqs:
+                    if dispatched_count >= total_reqs or time.time() >= hard_safety_deadline:
                         break
 
                 pacer.acquire()
 
                 with lock:
-                    if metrics["total_requests"] >= total_reqs or time.time() >= end_time:
+                    if dispatched_count >= total_reqs or time.time() >= hard_safety_deadline:
                         break
+                    dispatched_count += 1
 
                 log_entry = fire_request()
                 code = log_entry["status"]
                 lat = log_entry["latency"]
 
                 with lock:
-                    if metrics["total_requests"] < total_reqs:
-                        metrics["total_requests"] += 1
-                        latencies.append(lat)
+                    metrics["total_requests"] += 1
+                    latencies.append(lat)
 
-                        if len(sample_logs) < 100:
-                            sample_logs.append(log_entry)
+                    if len(sample_logs) < 100:
+                        sample_logs.append(log_entry)
 
-                        if code in (200, 201, 204, 304, 301, 302, 307, 308):
-                            metrics["status_200"] += 1
-                        elif code == 403:
-                            metrics["status_403_waf_blocked"] += 1
-                        elif code == 429:
-                            metrics["status_429_rate_limited"] += 1
-                        elif code >= 500:
-                            metrics["status_500_crashed"] += 1
-                        elif code == 0:
-                            metrics["timeouts"] = metrics.get("timeouts", 0) + 1
-                        else:
-                            metrics["other_status"] += 1
+                    if code in (200, 201, 204, 304, 301, 302, 307, 308):
+                        metrics["status_200"] += 1
+                    elif code == 403:
+                        metrics["status_403_waf_blocked"] += 1
+                    elif code == 429:
+                        metrics["status_429_rate_limited"] += 1
+                    elif code >= 500:
+                        metrics["status_500_crashed"] += 1
+                    elif code == 0:
+                        metrics["timeouts"] = metrics.get("timeouts", 0) + 1
+                    else:
+                        metrics["other_status"] += 1
 
         concurrency = min(50, max(5, int(target_rps * 0.3)))
-        start_time = time.time()
-        end_time = start_time + duration_sec
         stop_checker = kwargs.get("stop_checker")
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=concurrency)
         futures = [executor.submit(worker_batch) for _ in range(concurrency)]
@@ -409,15 +427,17 @@ class StressOrchestrator:
                 if stop_checker and stop_checker():
                     break
 
-                done_workers = sum(1 for f in futures if f.done())
-                is_finished = (done_workers == len(futures)) or (time.time() >= end_time + 0.5) or (metrics["total_requests"] >= total_reqs)
-
                 with lock:
+                    tot = metrics["total_requests"]
+                    done_workers = sum(1 for f in futures if f.done())
+                    is_completed_full = (tot >= total_reqs)
+                    is_timed_out = (time.time() >= hard_safety_deadline)
+                    is_finished = is_completed_full or is_timed_out or (done_workers == len(futures) and tot >= total_reqs)
+
                     now_elapsed = max(0.1, time.time() - start_time)
                     current_metrics = dict(metrics)
                     current_metrics["rps"] = round(current_metrics["total_requests"] / now_elapsed, 1)
                     
-                    tot = current_metrics["total_requests"]
                     err_count = current_metrics["status_500_crashed"] + current_metrics.get("timeouts", 0)
                     current_metrics["error_rate"] = round((err_count / max(1, tot)) * 100, 1)
 
@@ -437,13 +457,17 @@ class StressOrchestrator:
                     new_logs = sample_logs[logged_count:]
                     logged_count = len(sample_logs)
 
-                    ratio = min(1.0, now_elapsed / max(0.1, duration_sec))
-                    if ratio < 0.15:
+                    prog_ratio = tot / max(1, total_reqs)
+                    if tot == 0:
+                        phase = "PREPARE"
+                    elif prog_ratio < 0.15:
                         phase = "RAMP UP"
-                    elif ratio < 0.85:
+                    elif prog_ratio < 0.85:
                         phase = "STEADY LOAD"
-                    else:
+                    elif prog_ratio < 1.0:
                         phase = "COOLDOWN"
+                    else:
+                        phase = "COMPLETE"
 
                 if is_finished:
                     break
@@ -456,17 +480,19 @@ class StressOrchestrator:
                     "phase": phase,
                     "metrics": current_metrics,
                     "sample_logs": new_logs,
+                    "configured_requests": total_reqs,
+                    "attempted_requests": tot,
                 }
                 time.sleep(0.3)
 
-            concurrent.futures.wait(futures, timeout=1.5)
+            concurrent.futures.wait(futures, timeout=2.0)
             executor.shutdown(wait=False)
 
             elapsed = max(0.1, time.time() - start_time)
             with lock:
+                tot = metrics["total_requests"]
                 final_metrics = dict(metrics)
                 final_metrics["rps"] = round(final_metrics["total_requests"] / elapsed, 1)
-                tot = final_metrics["total_requests"]
                 err_count = final_metrics["status_500_crashed"] + final_metrics.get("timeouts", 0)
                 final_metrics["error_rate"] = round((err_count / max(1, tot)) * 100, 1)
 
@@ -485,15 +511,33 @@ class StressOrchestrator:
 
                 remaining_logs = sample_logs[logged_count:]
 
+                if tot >= total_reqs:
+                    final_status = "COMPLETED"
+                    completion_reason = "TARGET_REQUESTS_REACHED"
+                    msg = f"Hoàn tất toàn bộ {tot}/{total_reqs} requests trong {round(elapsed, 1)}s (RPS trung bình: {final_metrics['rps']})."
+                elif time.time() >= hard_safety_deadline:
+                    final_status = "FAILED"
+                    completion_reason = "SAFETY_TIMEOUT"
+                    msg = f"Quá thời gian an toàn ({round(hard_safety_timeout, 1)}s). Đã thực hiện {tot}/{total_reqs} requests."
+                else:
+                    final_status = "COMPLETED"
+                    completion_reason = "RUN_FINISHED"
+                    msg = f"Hoàn tất phiên test với {tot}/{total_reqs} requests trong {round(elapsed, 1)}s."
+
             yield {
-                "ok": True,
+                "ok": True if final_status == "COMPLETED" else False,
                 "done": True,
                 "is_done": True,
-                "status": "COMPLETED",
+                "status": final_status,
                 "phase": "COMPLETE",
+                "completion_reason": completion_reason,
+                "configured_requests": total_reqs,
+                "attempted_requests": tot,
+                "actual_duration_sec": round(elapsed, 2),
+                "nominal_duration_sec": round(nominal_duration, 2),
                 "metrics": final_metrics,
                 "sample_logs": remaining_logs,
-                "message": f"Hoàn tất stress test: {final_metrics['total_requests']} requests trong {round(elapsed, 1)}s.",
+                "message": msg,
             }
 
         except Exception as exc:
@@ -504,5 +548,8 @@ class StressOrchestrator:
                 "is_done": True,
                 "status": "FAILED",
                 "phase": "COMPLETE",
+                "completion_reason": "WORKER_FAILURE",
+                "configured_requests": total_reqs,
+                "attempted_requests": metrics.get("total_requests", 0),
                 "error": f"Stress test execution failed: {str(exc)}",
             }

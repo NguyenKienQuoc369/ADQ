@@ -58,6 +58,34 @@ def health_check():
     }
 
 
+import threading
+import logging
+
+logger = logging.getLogger(__name__)
+_apk_worker_instance = None
+
+@app.on_event("startup")
+def startup_event():
+    global _apk_worker_instance
+    try:
+        from backend.workers.apk_worker import APKWorker
+        _apk_worker_instance = APKWorker(worker_id="embedded_apk_worker_1")
+        t = threading.Thread(target=_apk_worker_instance.start, daemon=True, name="APKWorkerDaemon")
+        t.start()
+        logger.info("Embedded APKWorker daemon started successfully.")
+    except Exception as e:
+        logger.error(f"Failed to start embedded APKWorker daemon: {e}")
+
+@app.on_event("shutdown")
+def shutdown_event():
+    global _apk_worker_instance
+    if _apk_worker_instance:
+        try:
+            _apk_worker_instance.stop()
+            logger.info("Embedded APKWorker daemon stopped.")
+        except Exception:
+            pass
+
 if __name__ == "__main__":
     uvicorn.run("backend.api_server:app", host="0.0.0.0", port=settings.PORT, reload=True)
 
