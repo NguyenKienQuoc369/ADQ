@@ -52,18 +52,20 @@ export function BillingClient() {
       });
       form.reset();
     } catch (err: any) {
-      let errorText = err?.message || "Mã kích hoạt không tồn tại hoặc không hợp lệ.";
+      let errorText = err?.message || "Không thể kích hoạt mã lúc này.";
       const code = err?.code;
       if (code === "INVALID_CODE") {
         errorText = "Mã kích hoạt không tồn tại hoặc không hợp lệ.";
       } else if (code === "EXPIRED_CODE") {
-        errorText = "Mã kích hoạt đã hết hạn sử dụng.";
+        errorText = "Gói kích hoạt từ mã này đã hết hạn sử dụng.";
       } else if (code === "REVOKED") {
         errorText = "Mã kích hoạt này đã bị vô hiệu hóa.";
       } else if (code === "ALREADY_USED") {
         errorText = "Mã kích hoạt đã được sử dụng hết số lượt.";
       } else if (code === "UNAUTHORIZED") {
         errorText = "Vui lòng đăng nhập lại để thực hiện kích hoạt.";
+      } else if (code === "SERVER_ERROR") {
+        errorText = "Lỗi máy chủ hoặc cơ sở dữ liệu tạm thời. Vui lòng thử lại sau giây lát.";
       }
       setMessage({
         type: "error",

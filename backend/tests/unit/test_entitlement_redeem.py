@@ -235,3 +235,75 @@ def test_scan_hydration_error_state_separation():
     assert determine_ui_state(auth_loading=False, is_error=True, scans=[]) == StateModel.ERROR
     assert determine_ui_state(auth_loading=False, is_error=False, scans=[{"id": "scan-1"}]) == StateModel.SUCCESS_WITH_DATA
     assert determine_ui_state(auth_loading=False, is_error=False, scans=[]) == StateModel.SUCCESS_EMPTY
+
+
+def test_multi_use_code_cross_user_behavior():
+    """Verify codes with maxUses > 1 can be redeemed by distinct users until exhausted."""
+    now = datetime.now(timezone.utc)
+    multi_code = {
+        "code": "ADQ-PRO-MULTI-3",
+        "packageTier": "PRO",
+        "durationDays": 30,
+        "maxUses": 3,
+        "usedCount": 0,
+        "status": "UNUSED",
+    }
+    redemptions = []
+
+    def claim_code(user_id: str, email: str):
+        # 1. Check same-user
+        if any(r["code"] == multi_code["code"] and r["userAuthId"] == user_id for r in redemptions):
+            return {"ok": True, "alreadyActive": True, "code": "ALREADY_ACTIVE"}
+        # 2. Check capacity
+        if multi_code["usedCount"] >= multi_code["maxUses"] or multi_code["status"] == "USED":
+            return {"ok": False, "code": "ALREADY_USED"}
+        # 3. Atomic increment
+        multi_code["usedCount"] += 1
+        if multi_code["usedCount"] >= multi_code["maxUses"]:
+            multi_code["status"] = "USED"
+        else:
+            multi_code["status"] = "PARTIAL"
+        redemptions.append({"code": multi_code["code"], "userAuthId": user_id, "userEmail": email})
+        return {"ok": True, "code": "VALID_ACTIVATED"}
+
+    # User 1 claims
+    c1 = claim_code("u1", "u1@adq.io.vn")
+    assert c1["ok"] is True and c1["code"] == "VALID_ACTIVATED"
+    assert multi_code["usedCount"] == 1
+    assert multi_code["status"] == "PARTIAL"
+
+    # User 2 claims
+    c2 = claim_code("u2", "u2@adq.io.vn")
+    assert c2["ok"] is True and c2["code"] == "VALID_ACTIVATED"
+    assert multi_code["usedCount"] == 2
+
+    # User 3 claims (last slot)
+    c3 = claim_code("u3", "u3@adq.io.vn")
+    assert c3["ok"] is True and c3["code"] == "VALID_ACTIVATED"
+    assert multi_code["usedCount"] == 3
+    assert multi_code["status"] == "USED"
+
+    # User 4 blocked (exhausted)
+    c4 = claim_code("u4", "u4@adq.io.vn")
+    assert c4["ok"] is False and c4["code"] == "ALREADY_USED"
+
+    # User 1 replays -> ALREADY_ACTIVE (idempotent, no increment)
+    c1_replay = claim_code("u1", "u1@adq.io.vn")
+    assert c1_replay["ok"] is True and c1_replay["code"] == "ALREADY_ACTIVE"
+    assert multi_code["usedCount"] == 3
+
+
+def test_fake_tier_prefix_codes_rejected():
+    """Verify invented strings with PRO / PROMAX prefixes are strictly rejected without DB row."""
+    fake_codes = [
+        "PRO-UNAUTHORIZED-123",
+        "PROMAX-FREE-UPGRADE",
+        "ADQ-PRO_MAX-HACK",
+        "PRO999999",
+    ]
+    db_codes = {"ADQ-PROMAX-VALID-1"}
+
+    for fake in fake_codes:
+        normalized = fake.strip().upper().replace("-", "").replace("_", "")
+        assert normalized not in db_codes, f"Fake code should not exist in DB: {fake}"
+

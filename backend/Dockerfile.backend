@@ -22,7 +22,9 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     go install -v github.com/ffuf/ffuf/v2@latest && \
     go install -v github.com/tomnomnom/waybackurls@latest && \
     go install -v github.com/lc/subjs@latest && \
-    mv $GOPATH/bin/* /usr/local/bin/
+    mv $GOPATH/bin/* /usr/local/bin/ && \
+    rm -rf /root/go/pkg /root/.cache/go-build
+
 
 WORKDIR /app
 

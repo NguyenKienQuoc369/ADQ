@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import {
   computePlanExpiry,
   getAuthenticatedUserFromRequest,
   getDailyLimitForPackage,
   normalisePackageTier,
+  normalizeRedeemCode,
   resolveSupabaseAuthUser,
   syncAdminUserFromAuthUser,
   syncSupabaseMetadataForAdminUser,
@@ -30,8 +32,10 @@ export async function POST(request: Request) {
     }
 
     const payload = await request.json().catch(() => ({}));
-    const code = String(payload?.code ?? "").trim().toUpperCase();
-    if (!code || code.length < 3) {
+    const rawInput = String(payload?.code ?? "").trim();
+    const canonicalInput = normalizeRedeemCode(rawInput);
+
+    if (!canonicalInput || canonicalInput.length < 3) {
       console.log(`trace=${traceId} route=redeem auth=yes status=400 result=INVALID_PAYLOAD`);
       return NextResponse.json(
         { error: "Vui lòng nhập mã kích hoạt hợp lệ.", code: "INVALID_CODE" },
@@ -39,38 +43,35 @@ export async function POST(request: Request) {
       );
     }
 
+    const redeemFp = crypto.createHash("sha256").update(canonicalInput).digest("hex").slice(0, 12);
     const prisma = getPrismaClient();
     const currentRecord = await syncAdminUserFromAuthUser(authUser);
     const userEmail = String(authUser.email ?? currentRecord.email ?? "").trim().toLowerCase();
     const userAuthId = authUser.id;
 
-    // 1. Tra cứu mã trong Database với chuẩn hóa linh hoạt toàn diện (casing, spaces, PROMAX vs PRO_MAX, hyphens, alphanumeric canonicalization)
-    const normalizeKey = (s: string) =>
-      s
-        .trim()
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, "")
-        .replace(/PRO_MAX/g, "PROMAX");
+    // 1. Tra cứu mã trong Database: Thử tìm chính xác trước (indexed), sau đó fallback theo canonical normalization
+    let redeemCode = await prisma.redeemCode.findUnique({
+      where: { code: rawInput.toUpperCase() },
+    });
 
-    const targetKey = normalizeKey(code);
-
-    const allRedeemCodes = await prisma.redeemCode.findMany();
-    const redeemCode = allRedeemCodes.find(
-      (rc) =>
-        rc.code.trim().toUpperCase() === code ||
-        normalizeKey(rc.code) === targetKey ||
-        rc.code.replace(/_/g, "-").toUpperCase() === code.replace(/_/g, "-").toUpperCase()
-    );
     if (!redeemCode) {
-      console.log(`trace=${traceId} route=redeem auth=yes status=404 result=INVALID_CODE`);
+      // Fallback: Tra cứu toàn diện qua canonical normalization
+      const allRedeemCodes = await prisma.redeemCode.findMany();
+      redeemCode =
+        allRedeemCodes.find((rc) => normalizeRedeemCode(rc.code) === canonicalInput) || null;
+    }
+
+    if (!redeemCode) {
+      console.log(`trace=${traceId} fp=${redeemFp} route=redeem auth=yes status=404 result=INVALID_CODE`);
       return NextResponse.json(
         { error: "Mã kích hoạt không tồn tại hoặc không hợp lệ.", code: "INVALID_CODE" },
         { status: 404, headers: traceHeaders }
       );
     }
 
+    // 2. Kiểm tra trạng thái vô hiệu hóa (REVOKED)
     if (redeemCode.status === "REVOKED") {
-      console.log(`trace=${traceId} route=redeem auth=yes status=400 result=REVOKED`);
+      console.log(`trace=${traceId} fp=${redeemFp} route=redeem auth=yes status=400 result=REVOKED`);
       return NextResponse.json(
         { error: "Mã kích hoạt này đã bị vô hiệu hóa.", code: "REVOKED" },
         { status: 400, headers: traceHeaders }
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
 
     const packageTier = normalisePackageTier(redeemCode.packageTier);
 
-    // 2. IDEMPOTENT SAME-USER RECOVERY:
+    // 3. IDEMPOTENT SAME-USER RECOVERY:
     // Kiểm tra xem chính tài khoản này đã từng kích hoạt mã này trước đây chưa
     const existedRedemption = await prisma.redeemCodeRedemption.findFirst({
       where: {
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
 
       const isExpired = computedExpiry ? computedExpiry.getTime() <= Date.now() : false;
       if (isExpired) {
-        console.log(`trace=${traceId} route=redeem auth=yes status=400 result=EXPIRED_CODE`);
+        console.log(`trace=${traceId} fp=${redeemFp} route=redeem auth=yes status=400 result=EXPIRED_CODE`);
         return NextResponse.json(
           { error: "Gói kích hoạt từ mã này đã hết hạn sử dụng.", code: "EXPIRED_CODE" },
           { status: 400, headers: traceHeaders }
@@ -133,32 +134,77 @@ export async function POST(request: Request) {
         planExpiresAt: computedExpiry ? computedExpiry.toISOString() : null,
       }).catch(() => {});
 
-      console.log(`trace=${traceId} route=redeem auth=yes status=200 result=RECOVERED tier=${packageTier}`);
+      console.log(`trace=${traceId} fp=${redeemFp} route=redeem auth=yes status=200 result=ALREADY_ACTIVE tier=${packageTier}`);
       return NextResponse.json(
         {
           ok: true,
+          alreadyActive: true,
           recovered: true,
-          message: `Gói ${packageTier.replace("_", " ")} đã được kích hoạt trước đó.`,
+          code: "ALREADY_ACTIVE",
+          message: `Gói ${packageTier.replace("_", " ")} đã được kích hoạt trước đó trên tài khoản của bạn.`,
           user: toUserRecord(updatedUser, authUser),
         },
         { headers: traceHeaders }
       );
     }
 
-    // 3. Kiểm tra số lượt sử dụng đối với tài khoản khác
+    // 4. Kiểm tra số lượt sử dụng đối với tài khoản khác
     if (redeemCode.status === "USED" || redeemCode.usedCount >= redeemCode.maxUses) {
-      console.log(`trace=${traceId} route=redeem auth=yes status=400 result=ALREADY_USED`);
+      console.log(`trace=${traceId} fp=${redeemFp} route=redeem auth=yes status=400 result=ALREADY_USED`);
       return NextResponse.json(
         { error: "Mã kích hoạt đã được sử dụng hết số lượt.", code: "ALREADY_USED" },
         { status: 400, headers: traceHeaders }
       );
     }
 
-    // 4. Thực hiện kích hoạt mới trong Atomic Transaction
+    // 5. Thực hiện kích hoạt mới trong Atomic Transaction có bảo vệ Concurrency Guard
     const planExpiresAt = computePlanExpiry(redeemCode.durationDays, new Date());
 
-    const [updatedUser] = await prisma.$transaction([
-      prisma.adminUser.update({
+    const result = await prisma.$transaction(async (tx) => {
+      // Atomic capacity claim with conditional update
+      const claim = await tx.redeemCode.updateMany({
+        where: {
+          id: redeemCode.id,
+          status: { in: ["UNUSED", "PARTIAL"] },
+          usedCount: { lt: redeemCode.maxUses },
+        },
+        data: {
+          usedCount: { increment: 1 },
+          activatedBy: userEmail,
+        },
+      });
+
+      if (claim.count === 0) {
+        throw new Error("CAPACITY_EXHAUSTED");
+      }
+
+      // Check if new usedCount reaches maxUses, update status accordingly
+      const freshCode = await tx.redeemCode.findUnique({
+        where: { id: redeemCode.id },
+      });
+      if (freshCode && freshCode.usedCount >= freshCode.maxUses) {
+        await tx.redeemCode.update({
+          where: { id: redeemCode.id },
+          data: { status: "USED" },
+        });
+      } else if (freshCode && freshCode.usedCount > 0) {
+        await tx.redeemCode.update({
+          where: { id: redeemCode.id },
+          data: { status: "PARTIAL" },
+        });
+      }
+
+      // Create unique redemption record
+      await tx.redeemCodeRedemption.create({
+        data: {
+          redeemCodeId: redeemCode.id,
+          userAuthId,
+          userEmail,
+        },
+      });
+
+      // Update user entitlement
+      const updatedUser = await tx.adminUser.update({
         where: { id: currentRecord.id },
         data: {
           authUserId: userAuthId,
@@ -168,38 +214,25 @@ export async function POST(request: Request) {
           planExpiresAt,
           status: currentRecord.status === "LOCKED" ? "LOCKED" : "ACTIVE",
         },
-      }),
-      prisma.redeemCodeRedemption.create({
-        data: {
-          redeemCodeId: redeemCode.id,
-          userAuthId,
-          userEmail,
-        },
-      }),
-      prisma.redeemCode.update({
-        where: { id: redeemCode.id },
-        data: {
-          usedCount: { increment: 1 },
-          activatedBy: userEmail,
-          status: redeemCode.usedCount + 1 >= redeemCode.maxUses ? "USED" : "PARTIAL",
-        },
-      }),
-    ]);
+      });
 
-    // 5. Best-effort async synchronization sang Supabase Auth metadata
+      return updatedUser;
+    });
+
+    // 6. Best-effort async synchronization sang Supabase Auth metadata
     try {
       const resolvedAuthUser = await resolveSupabaseAuthUser({
-        authUserId: updatedUser.authUserId,
-        email: updatedUser.email,
+        authUserId: result.authUserId,
+        email: result.email,
       });
 
       if (resolvedAuthUser?.id) {
         await syncSupabaseMetadataForAdminUser({
           authUserId: resolvedAuthUser.id,
-          name: updatedUser.name,
-          role: updatedUser.role === "ADMIN" ? "ADMIN" : "USER",
+          name: result.name,
+          role: result.role === "ADMIN" ? "ADMIN" : "USER",
           packageTier,
-          status: updatedUser.status === "LOCKED" ? "LOCKED" : "ACTIVE",
+          status: result.status === "LOCKED" ? "LOCKED" : "ACTIVE",
           planExpiresAt: planExpiresAt ? planExpiresAt.toISOString() : null,
         });
       }
@@ -207,23 +240,32 @@ export async function POST(request: Request) {
       console.error("[redeem] Package activated but Supabase metadata sync failed:", metaErr);
     }
 
-    console.log(`trace=${traceId} route=redeem auth=yes status=200 result=ACTIVATED tier=${packageTier}`);
+    console.log(`trace=${traceId} fp=${redeemFp} route=redeem auth=yes status=200 result=VALID_ACTIVATED tier=${packageTier}`);
     return NextResponse.json(
       {
         ok: true,
-        message: `Kích hoạt ${packageTier.replace("_", " ")} thành công.`,
-        user: toUserRecord(updatedUser, authUser),
+        code: "VALID_ACTIVATED",
+        message: `Kích hoạt gói ${packageTier.replace("_", " ")} thành công.`,
+        user: toUserRecord(result, authUser),
       },
       { headers: traceHeaders }
     );
   } catch (error: any) {
+    if (error?.message === "CAPACITY_EXHAUSTED") {
+      return NextResponse.json(
+        { error: "Mã kích hoạt đã được sử dụng hết số lượt.", code: "ALREADY_USED" },
+        { status: 400, headers: traceHeaders }
+      );
+    }
     console.error(`trace=${traceId} route=redeem auth=error status=500 result=SERVER_ERROR`, error?.message);
     return NextResponse.json(
       {
-        error: error?.message ?? "Không thể kích hoạt mã nâng cấp.",
+        error: "Lỗi máy chủ khi kích hoạt mã. Vui lòng thử lại sau.",
         code: "SERVER_ERROR",
+        detail: error?.message,
       },
       { status: 500, headers: traceHeaders }
     );
   }
 }
+

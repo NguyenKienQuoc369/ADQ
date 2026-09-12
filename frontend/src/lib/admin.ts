@@ -34,6 +34,22 @@ export function getDailyLimitForPackage(packageTier: AppPackageTier) {
   return 2;
 }
 
+/**
+ * Canonical Redeem Code Normalizer
+ *
+ * 1. Trim leading/trailing whitespace, newlines, carriage returns, tabs
+ * 2. Convert to uppercase
+ * 3. Remove all non-alphanumeric characters (spaces, hyphens, underscores, dots, etc.)
+ */
+export function normalizeRedeemCode(rawCode: string | null | undefined): string {
+  if (!rawCode) return "";
+  return String(rawCode)
+    .trim()
+    .toUpperCase()
+    .replace(/[\r\n\t\s\-_.]+/g, "");
+}
+
+
 export function toUserRecord(row: any, authUser?: SupabaseUser | null) {
   const isPlanExpired = row.planExpiresAt
     ? new Date(row.planExpiresAt).getTime() <= Date.now()

@@ -35,7 +35,7 @@ def create_sample_apk_bytes(package_name="com.adq.sample", extra_java=""):
 def test_01_anonymous_create_rejected():
     app.dependency_overrides.clear()
     apk_bytes = create_sample_apk_bytes()
-    with patch.dict("os.environ", {"DEV_AUTH_BYPASS": "false"}):
+    with patch("backend.core.auth._dev_auth_enabled", return_value=False):
         resp = client.post(
             "/api/apk-audit/jobs",
             files={"file": ("test.apk", apk_bytes, "application/vnd.android.package-archive")},

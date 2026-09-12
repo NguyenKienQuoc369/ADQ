@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 
 import {
   normalisePackageTier,
@@ -9,8 +10,9 @@ import {
 import { getPrismaClient } from "@/lib/prisma";
 
 function generateRedeemCode(packageTier: "PRO" | "PRO_MAX") {
-  const seed = Math.random().toString(36).slice(2, 10).toUpperCase();
-  return `ADQ-${packageTier}-${seed}`.replaceAll("_", "");
+  const seed = crypto.randomBytes(4).toString("hex").toUpperCase();
+  const cleanTier = packageTier.replace(/_/g, "");
+  return `ADQ-${cleanTier}-${seed}`;
 }
 
 export async function GET() {
@@ -60,10 +62,11 @@ export async function POST(request: Request) {
 
     const prisma = getPrismaClient();
     const durationDays = parseDurationLabelToDays(durationLabel);
+    const generatedCode = String(payload?.code ?? "").trim().toUpperCase() || generateRedeemCode(packageTier);
 
     const row = await prisma.redeemCode.create({
       data: {
-        code: String(payload?.code ?? "").trim().toUpperCase() || generateRedeemCode(packageTier),
+        code: generatedCode,
         packageTier,
         durationLabel,
         durationDays,
@@ -75,7 +78,18 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ code: toRedeemCodeRecord(row) });
+    // Read-after-write verification to guarantee persistence in authoritative DB
+    const verified = await prisma.redeemCode.findUnique({
+      where: { id: row.id },
+    });
+    if (!verified) {
+      throw new Error("Không thể xác minh bản ghi mã sau khi lưu vào cơ sở dữ liệu.");
+    }
+
+    const maskedCode = `${generatedCode.slice(0, 4)}****${generatedCode.slice(-4)}`;
+    console.log(`[admin/redeem-codes] Successfully issued code ${maskedCode} tier=${packageTier} maxUses=${maxUses}`);
+
+    return NextResponse.json({ code: toRedeemCodeRecord(verified) });
   } catch (error: any) {
     if (error?.message === "UNAUTHORIZED") {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
@@ -89,3 +103,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error?.message ?? "Failed to create redeem code." }, { status: 500 });
   }
 }
+
