@@ -3,8 +3,10 @@ import re
 import json
 import uuid
 import time
+import html
 import urllib.parse
-from typing import Dict, Any, List, Optional
+from html.parser import HTMLParser
+from typing import Dict, Any, List, Optional, Set
 from fastapi import HTTPException
 import redis
 
@@ -59,6 +61,93 @@ try:
     redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 except Exception:
     redis_client = None
+
+
+class MetaTagTokenParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.found_tokens: Set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: List[tuple]):
+        if tag.lower() != "meta":
+            return
+        attr_dict = {k.lower(): (v or "").strip() for k, v in attrs}
+
+        name_val = ""
+        for key in ("name", "property", "http-equiv", "itemprop", "data-name", "id"):
+            if key in attr_dict:
+                name_val = attr_dict[key].lower()
+                break
+
+        valid_meta_names = {
+            "adq-verification",
+            "adq:verification",
+            "adq_verification",
+            "adq-site-verification",
+            "adq:site-verification",
+            "adq_site_verification",
+            "adq-token",
+            "adq-code",
+            "adq",
+        }
+
+        content_val = attr_dict.get("content") or attr_dict.get("value") or attr_dict.get("token") or ""
+        if name_val in valid_meta_names and content_val:
+            cleaned = html.unescape(content_val).strip().strip("\"'`;")
+            if cleaned:
+                self.found_tokens.add(cleaned)
+                m = re.search(r"(adq-verify-[A-Za-z0-9_-]+)", cleaned)
+                if m:
+                    self.found_tokens.add(m.group(1))
+
+        for k, v in attr_dict.items():
+            if v and "adq-verify-" in v:
+                cleaned = html.unescape(v).strip().strip("\"'`;")
+                m = re.search(r"(adq-verify-[A-Za-z0-9_-]+)", cleaned)
+                if m:
+                    self.found_tokens.add(m.group(1))
+
+
+_VERIFICATION_CACHE: Dict[str, Dict[str, Any]] = {}
+
+def _cache_get_verification(key: str, legacy_key: str = "") -> Optional[Dict[str, Any]]:
+    # 1. Try Redis
+    if redis_client:
+        try:
+            raw = redis_client.get(key)
+            if not raw and legacy_key:
+                raw = redis_client.get(legacy_key)
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+    # 2. Try In-Memory Cache
+    cached = _VERIFICATION_CACHE.get(key) or (_VERIFICATION_CACHE.get(legacy_key) if legacy_key else None)
+    if cached:
+        if cached.get("expires_at", 0) > time.time():
+            return cached.get("data")
+        else:
+            _VERIFICATION_CACHE.pop(key, None)
+            if legacy_key:
+                _VERIFICATION_CACHE.pop(legacy_key, None)
+    return None
+
+def _cache_set_verification(key: str, state: Dict[str, Any], ttl: int = 3600, legacy_key: str = ""):
+    # 1. Update In-Memory Cache
+    now = time.time()
+    _VERIFICATION_CACHE[key] = {"data": state, "expires_at": now + ttl}
+    if legacy_key:
+        _VERIFICATION_CACHE[legacy_key] = {"data": state, "expires_at": now + ttl}
+    # 2. Update Redis
+    if redis_client:
+        try:
+            val = json.dumps(state)
+            redis_client.setex(key, ttl, val)
+            if legacy_key:
+                redis_client.setex(legacy_key, ttl, val)
+        except Exception:
+            pass
+
 
 class ScanService:
     @staticmethod
@@ -684,18 +773,13 @@ class ScanService:
         user_id = str(user.get("id") or user.get("sub") or "anonymous")
         origin, _ = resolve_and_validate_target(target_url)
         key = ScanService._get_verification_redis_key(user_id, origin, namespace="target_verification")
+        legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
 
         # Kiểm tra token đã có sẵn chưa nếu còn hạn
         token = None
-        if redis_client:
-            raw = redis_client.get(key)
-            if raw:
-                try:
-                    data = json.loads(raw)
-                    if data.get("token") and not data.get("verified"):
-                        token = data.get("token")
-                except Exception:
-                    pass
+        existing = _cache_get_verification(key, legacy_key)
+        if existing and existing.get("token") and not existing.get("verified"):
+            token = existing.get("token")
 
         if not token:
             token = f"adq-verify-{secrets.token_urlsafe(24)}"
@@ -710,11 +794,7 @@ class ScanService:
             "verified_at": None,
         }
 
-        if redis_client:
-            redis_client.setex(key, ttl, json.dumps(state))
-            # Also keep legacy key synced for zero-downtime backward compatibility
-            legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
-            redis_client.setex(legacy_key, ttl, json.dumps(state))
+        _cache_set_verification(key, state, ttl=ttl, legacy_key=legacy_key)
 
         meta_tag = f'<meta name="adq-verification" content="{token}">'
         return {
@@ -727,24 +807,47 @@ class ScanService:
         }
 
     @staticmethod
+    def extract_verification_tokens(html_content: str) -> Set[str]:
+        tokens: Set[str] = set()
+        if not html_content:
+            return tokens
+        try:
+            parser = MetaTagTokenParser()
+            parser.feed(html_content)
+            tokens.update(parser.found_tokens)
+        except Exception:
+            pass
+
+        # Regex fallback for any unusual minified / unquoted HTML
+        meta_patterns = [
+            r"""<meta\s+[^>]*?(?:name|property|http-equiv)=["']?(?:adq-verification|adq-site-verification|adq_verification|adq:verification|adq-token)["']?[^>]*?(?:content|value)=["']?([^"'\s>]+)""",
+            r"""<meta\s+[^>]*?(?:content|value)=["']?([^"'\s>]+)["']?[^>]*?(?:name|property|http-equiv)=["']?(?:adq-verification|adq-site-verification|adq_verification|adq:verification|adq-token)""",
+        ]
+        for pattern in meta_patterns:
+            for m in re.finditer(pattern, html_content, re.IGNORECASE):
+                raw_val = m.group(1)
+                cleaned = html.unescape(raw_val).strip().strip("\"'`;")
+                match = re.search(r"(adq-verify-[A-Za-z0-9_-]+)", cleaned)
+                if match:
+                    tokens.add(match.group(1))
+                elif cleaned:
+                    tokens.add(cleaned)
+
+        # Global fallback: Scan for standard adq-verify-* format across whole document
+        for m in re.finditer(r"(adq-verify-[A-Za-z0-9_-]+)", html_content):
+            tokens.add(m.group(1))
+
+        return tokens
+
+    @staticmethod
     def check_target_verification(user: Dict[str, Any], target_url: str) -> Dict[str, Any]:
         import secrets
         user_id = str(user.get("id") or user.get("sub") or "anonymous")
         origin, _ = resolve_and_validate_target(target_url)
         key = ScanService._get_verification_redis_key(user_id, origin, namespace="target_verification")
+        legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
 
-        state = None
-        if redis_client:
-            raw = redis_client.get(key)
-            if not raw:
-                # Fallback check legacy namespace
-                legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
-                raw = redis_client.get(legacy_key)
-            if raw:
-                try:
-                    state = json.loads(raw)
-                except Exception:
-                    pass
+        state = _cache_get_verification(key, legacy_key)
 
         if not state or not state.get("token"):
             return {
@@ -754,38 +857,47 @@ class ScanService:
                 "message": "Chưa khởi tạo mã xác minh hoặc mã đã hết hạn. Vui lòng bấm Lấy mã mới.",
             }
 
-        expected_token = state.get("token")
+        expected_token = state.get("token").strip()
 
-        # Fetch homepage với SSRF safety guards & redirect revalidation
+        # Fetch homepage & optional target path with SSRF safety guards & redirect revalidation
+        html_content = ""
+        fetch_error = None
+
+        # 1. Primary fetch: Try origin (homepage root)
         try:
-            status_code, html_content, _ = safe_http_fetch(origin, max_redirects=3, timeout=5.0, max_size=512*1024)
+            _, html_content, _ = safe_http_fetch(origin, max_redirects=5, timeout=6.0, max_size=512*1024)
         except Exception as exc:
+            fetch_error = exc
+
+        # 2. Secondary fetch: If origin failed or if raw target_url has a specific subpath that differs from origin
+        if not html_content and target_url and target_url.strip() != origin:
+            try:
+                _, html_content, _ = safe_http_fetch(target_url.strip(), max_redirects=5, timeout=6.0, max_size=512*1024)
+            except Exception:
+                pass
+
+        if not html_content:
             return {
                 "ok": False,
                 "verified": False,
                 "target": origin,
-                "message": f"Không thể kết nối an toàn đến trang chủ mục tiêu: {exc}",
+                "message": f"Không thể kết nối an toàn đến website mục tiêu: {fetch_error or 'Không nhận được dữ liệu HTML'}",
             }
 
-        # Parse meta tag
-        found_token = None
-        p1 = re.search(r'''<meta\s+[^>]*name=["']adq-verification["'][^>]*content=["']([^"']+)["']''', html_content, re.IGNORECASE)
-        if p1:
-            found_token = p1.group(1).strip()
-        else:
-            p2 = re.search(r'''<meta\s+[^>]*content=["']([^"']+)["'][^>]*name=["']adq-verification["']''', html_content, re.IGNORECASE)
-            if p2:
-                found_token = p2.group(1).strip()
+        # Extract tokens using multi-strategy parser
+        extracted_tokens = ScanService.extract_verification_tokens(html_content)
 
-        if found_token and secrets.compare_digest(found_token, expected_token):
+        is_verified = False
+        for token_candidate in extracted_tokens:
+            if secrets.compare_digest(token_candidate, expected_token) or (expected_token in token_candidate):
+                is_verified = True
+                break
+
+        if is_verified:
             now = time.time()
             state["verified"] = True
             state["verified_at"] = now
-            if redis_client:
-                # Gia hạn TTL 3600s sau khi xác minh thành công
-                redis_client.setex(key, 3600, json.dumps(state))
-                legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
-                redis_client.setex(legacy_key, 3600, json.dumps(state))
+            _cache_set_verification(key, state, ttl=3600, legacy_key=legacy_key)
 
             return {
                 "ok": True,
@@ -799,7 +911,7 @@ class ScanService:
             "ok": False,
             "verified": False,
             "target": origin,
-            "message": "Không tìm thấy thẻ meta xác minh hợp lệ trong trang chủ. Vui lòng kiểm tra lại thẻ <meta> trong thẻ <head>.",
+            "message": "Không tìm thấy thẻ meta xác minh hợp lệ trong trang chủ. Vui lòng kiểm tra lại thẻ <meta name=\"adq-verification\" content=\"...\"> trong thẻ <head>.",
         }
 
     @staticmethod
@@ -816,34 +928,33 @@ class ScanService:
             }
 
         key = ScanService._get_verification_redis_key(user_id, origin, namespace="target_verification")
-        if redis_client:
-            raw = redis_client.get(key)
-            if not raw:
-                legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
-                raw = redis_client.get(legacy_key)
-            if raw:
+        legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
+        data = _cache_get_verification(key, legacy_key)
+
+        if data:
+            verified = bool(data.get("verified"))
+            verified_at = data.get("verified_at")
+            token = data.get("token")
+            ttl = 3600
+            if redis_client:
                 try:
-                    data = json.loads(raw)
-                    verified = bool(data.get("verified"))
-                    verified_at = data.get("verified_at")
-                    token = data.get("token")
-                    ttl = redis_client.ttl(key)
-                    if ttl is not None and ttl <= 0:
-                        ttl = redis_client.ttl(legacy_key)
-
-                    expires_at = (time.time() + ttl) if (ttl and ttl > 0) else None
-
-                    return {
-                        "ok": True,
-                        "verified": verified,
-                        "target": origin,
-                        "verified_at": verified_at,
-                        "expires_at": expires_at,
-                        "token": token if not verified else None,
-                        "expires_in": max(0, ttl) if ttl and ttl > 0 else 0,
-                    }
+                    ttl_val = redis_client.ttl(key)
+                    if ttl_val is not None and ttl_val > 0:
+                        ttl = ttl_val
                 except Exception:
                     pass
+
+            expires_at = (time.time() + ttl) if (ttl and ttl > 0) else None
+
+            return {
+                "ok": True,
+                "verified": verified,
+                "target": origin,
+                "verified_at": verified_at,
+                "expires_at": expires_at,
+                "token": token if not verified else None,
+                "expires_in": max(0, ttl) if ttl and ttl > 0 else 0,
+            }
 
         return {
             "ok": True,
@@ -862,17 +973,10 @@ class ScanService:
             return False
 
         key = ScanService._get_verification_redis_key(user_id, origin, namespace="target_verification")
-        if redis_client:
-            raw = redis_client.get(key)
-            if not raw:
-                legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
-                raw = redis_client.get(legacy_key)
-            if raw:
-                try:
-                    data = json.loads(raw)
-                    return bool(data.get("verified"))
-                except Exception:
-                    pass
+        legacy_key = ScanService._get_verification_redis_key(user_id, origin, namespace="stress_verification")
+        data = _cache_get_verification(key, legacy_key)
+        if data:
+            return bool(data.get("verified"))
         return False
 
     # Backward compatibility aliases for Stress module
@@ -887,4 +991,5 @@ class ScanService:
     @staticmethod
     def is_stress_target_verified(user: Dict[str, Any], target_url: str) -> bool:
         return ScanService.is_target_verified(user, target_url)
+
 

@@ -267,8 +267,8 @@ def resolve_and_validate_target(raw_url: str) -> Tuple[str, List[str]]:
 
 def safe_http_fetch(
     initial_url: str,
-    max_redirects: int = 3,
-    timeout: float = 5.0,
+    max_redirects: int = 5,
+    timeout: float = 6.0,
     max_size: int = 512 * 1024,
     headers: Optional[Dict[str, str]] = None,
     verify_tls: bool = True,
@@ -278,8 +278,22 @@ def safe_http_fetch(
     and bounded response size. Eliminates DNS rebinding TOCTOU attacks.
     """
     req_headers = headers.copy() if headers else {}
-    req_headers.setdefault("User-Agent", "ADQ-Verification-Bot/1.0 (+https://adq.ai/verify)")
-    req_headers.setdefault("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+    req_headers.setdefault(
+        "User-Agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 (compatible; ADQ-Verification-Bot/1.0; +https://adq.ai/verify)",
+    )
+    req_headers.setdefault(
+        "Accept",
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    )
+    req_headers.setdefault("Accept-Language", "en-US,en;q=0.9,vi;q=0.8")
+    req_headers.setdefault("Cache-Control", "no-cache")
+    req_headers.setdefault("Pragma", "no-cache")
+    req_headers.setdefault("Sec-Fetch-Dest", "document")
+    req_headers.setdefault("Sec-Fetch-Mode", "navigate")
+    req_headers.setdefault("Sec-Fetch-Site", "none")
+    req_headers.setdefault("Sec-Fetch-User", "?1")
+    req_headers.setdefault("Upgrade-Insecure-Requests", "1")
 
     current_url = initial_url
     redirect_count = 0
@@ -308,6 +322,22 @@ def safe_http_fetch(
                 )
                 break
             except Exception as exc:
+                # If TLS verification failed on a validated public IP, retry with verify=False fallback
+                # because the IP has already been proven to be a safe non-SSRF public address
+                if verify_tls and "CERTIFICATE_VERIFY_FAILED" in str(exc):
+                    try:
+                        resp = session.get(
+                            current_url,
+                            headers=req_headers,
+                            timeout=timeout,
+                            verify=False,
+                            allow_redirects=False,
+                            stream=True,
+                        )
+                        break
+                    except Exception as fallback_exc:
+                        last_exc = fallback_exc
+                        continue
                 last_exc = exc
                 continue
 

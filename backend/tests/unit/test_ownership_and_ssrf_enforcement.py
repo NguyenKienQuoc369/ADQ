@@ -365,3 +365,30 @@ def test_stress_verification_and_dispatch_regression(override_auth_and_redis):
             assert stress_res.status_code == 202
             assert stress_res.json()["ok"] is True
             assert stress_res.json()["status"] == "QUEUED"
+
+
+def test_meta_tag_syntax_and_framework_variants(override_auth_and_redis):
+    """Test that all common meta tag variations (adq-site-verification, Next.js, single quotes, unquoted, uppercase) verify successfully."""
+    target_origin = "https://example.com"
+    with patch("backend.core.security.ssrf_guard.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 443))]):
+        start_res = client.post("/api/verification/start", json={"target_url": target_origin})
+        token = start_res.json()["verification_token"]
+
+        variant_htmls = [
+            f'<html><head><meta name="adq-site-verification" content="{token}"></head></html>',
+            f'<html><head><meta property="adq-verification" content="{token}"></head></html>',
+            f'<html><head><meta name=\x27adq-verification\x27 content=\x27{token}\x27></head></html>',
+            f'<html><head><meta name=adq-verification content={token}></head></html>',
+            f'<html><head><META NAME="ADQ-VERIFICATION" CONTENT="{token}"></head></html>',
+            f'<html><head><meta name="adq:verification" content="{token}" /></head></html>',
+            f'<html><head><meta name="adq_verification" content="{token}" /></head></html>',
+            f'<html><head><meta name="adq-verification" content="old-token" /><meta name="adq-verification" content="{token}" /></head></html>',
+            f'<html><head><meta name="adq-verification" content="&quot;{token}&quot;" /></head></html>',
+            f'<html><head><script>window.__ADQ_TOKEN__ = "{token}";</script></head></html>',
+        ]
+
+        for mock_html in variant_htmls:
+            with patch("backend.services.scan_service.safe_http_fetch", return_value=(200, mock_html, {})):
+                check_res = client.post("/api/verification/check", json={"target_url": target_origin})
+                assert check_res.status_code == 200
+                assert check_res.json()["verified"] is True, f"Failed to verify variant: {mock_html}"
