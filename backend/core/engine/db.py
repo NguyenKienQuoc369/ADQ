@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -608,3 +609,263 @@ def get_scan_target(scan_id: str) -> Dict[str, Any]:
         "target_domain": row["target_domain"],
         "status": row["status"],
     }
+
+
+def ensure_stress_jobs_table() -> bool:
+    """
+    Tạo bảng stress_jobs nếu chưa tồn tại trong PostgreSQL.
+    """
+    try:
+        engine = get_engine()
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS stress_jobs (
+                    job_id VARCHAR(64) PRIMARY KEY,
+                    user_id VARCHAR(128) NOT NULL,
+                    tier VARCHAR(32) DEFAULT 'FREE',
+                    target_url TEXT NOT NULL,
+                    target_requests INT DEFAULT 0,
+                    duration_sec INT DEFAULT 0,
+                    target_rps INT DEFAULT 0,
+                    waf_type VARCHAR(64) DEFAULT 'standard',
+                    status VARCHAR(32) DEFAULT 'QUEUED',
+                    phase VARCHAR(32) DEFAULT 'PREPARE',
+                    progress INT DEFAULT 0,
+                    metrics JSONB,
+                    events JSONB,
+                    sample_logs JSONB,
+                    verdict VARCHAR(128),
+                    error_safe TEXT,
+                    started_at TIMESTAMP WITHOUT TIME ZONE,
+                    finished_at TIMESTAMP WITHOUT TIME ZONE,
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() AT TIME ZONE 'UTC'),
+                    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() AT TIME ZONE 'UTC')
+                );
+                CREATE INDEX IF NOT EXISTS idx_stress_jobs_user_id ON stress_jobs (user_id);
+                CREATE INDEX IF NOT EXISTS idx_stress_jobs_status ON stress_jobs (status);
+                CREATE INDEX IF NOT EXISTS idx_stress_jobs_created_at ON stress_jobs (created_at DESC);
+            """))
+        return True
+    except Exception as exc:
+        print(f"[DB] ensure_stress_jobs_table warning: {exc}", flush=True)
+        return False
+
+
+def _to_dt(val: Any) -> Optional[datetime]:
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        try:
+            return datetime.fromtimestamp(val, tz=timezone.utc).replace(tzinfo=None)
+        except Exception:
+            return None
+    if isinstance(val, str):
+        val = val.strip()
+        if not val:
+            return None
+        try:
+            dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+            return dt.replace(tzinfo=None)
+        except Exception:
+            return None
+    if isinstance(val, datetime):
+        return val.replace(tzinfo=None)
+    return None
+
+
+def save_stress_job(job_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Lưu bền vững (durable) kết quả Stress Test vào PostgreSQL.
+    """
+    job_id = str(job_data.get("job_id", "")).strip()
+    if not job_id:
+        return {"saved": False, "error": "Missing job_id"}
+
+    user_id = str(job_data.get("user_id", "anonymous"))
+    tier = str(job_data.get("tier", "FREE"))
+    target_url = str(job_data.get("target_url", ""))
+    target_requests = int(job_data.get("target_requests", 0) or 0)
+    duration_sec = int(job_data.get("duration_sec", 0) or 0)
+    target_rps = int(job_data.get("target_rps", 0) or 0)
+    waf_type = str(job_data.get("waf_type", "standard"))
+    status_val = str(job_data.get("status", "QUEUED")).upper()
+    phase = str(job_data.get("phase", "PREPARE"))
+    progress = int(job_data.get("progress", 0) or 0)
+    
+    metrics = json.dumps(job_data.get("metrics")) if job_data.get("metrics") is not None else None
+    events = json.dumps(job_data.get("events")) if job_data.get("events") is not None else None
+    sample_logs = json.dumps(job_data.get("sample_logs")) if job_data.get("sample_logs") is not None else None
+    
+    verdict = job_data.get("verdict")
+    error_safe = job_data.get("error_safe")
+
+    started_at = _to_dt(job_data.get("started_at"))
+    finished_at = _to_dt(job_data.get("finished_at"))
+    created_at = _to_dt(job_data.get("created_at")) or _now()
+    updated_at = _now()
+
+    try:
+        engine = get_engine()
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO stress_jobs (
+                        job_id, user_id, tier, target_url, target_requests, duration_sec, target_rps,
+                        waf_type, status, phase, progress, metrics, events, sample_logs, verdict,
+                        error_safe, started_at, finished_at, created_at, updated_at
+                    ) VALUES (
+                        :job_id, :user_id, :tier, :target_url, :target_requests, :duration_sec, :target_rps,
+                        :waf_type, :status, :phase, :progress, CAST(:metrics AS jsonb), CAST(:events AS jsonb), CAST(:sample_logs AS jsonb), :verdict,
+                        :error_safe, :started_at, :finished_at, :created_at, :updated_at
+                    )
+                    ON CONFLICT (job_id) DO UPDATE SET
+                        user_id = EXCLUDED.user_id,
+                        tier = EXCLUDED.tier,
+                        target_url = EXCLUDED.target_url,
+                        target_requests = EXCLUDED.target_requests,
+                        duration_sec = EXCLUDED.duration_sec,
+                        target_rps = EXCLUDED.target_rps,
+                        waf_type = EXCLUDED.waf_type,
+                        status = EXCLUDED.status,
+                        phase = EXCLUDED.phase,
+                        progress = EXCLUDED.progress,
+                        metrics = COALESCE(EXCLUDED.metrics, stress_jobs.metrics),
+                        events = COALESCE(EXCLUDED.events, stress_jobs.events),
+                        sample_logs = COALESCE(EXCLUDED.sample_logs, stress_jobs.sample_logs),
+                        verdict = COALESCE(EXCLUDED.verdict, stress_jobs.verdict),
+                        error_safe = COALESCE(EXCLUDED.error_safe, stress_jobs.error_safe),
+                        started_at = COALESCE(EXCLUDED.started_at, stress_jobs.started_at),
+                        finished_at = COALESCE(EXCLUDED.finished_at, stress_jobs.finished_at),
+                        updated_at = EXCLUDED.updated_at
+                """),
+                {
+                    "job_id": job_id,
+                    "user_id": user_id,
+                    "tier": tier,
+                    "target_url": target_url,
+                    "target_requests": target_requests,
+                    "duration_sec": duration_sec,
+                    "target_rps": target_rps,
+                    "waf_type": waf_type,
+                    "status": status_val,
+                    "phase": phase,
+                    "progress": progress,
+                    "metrics": metrics,
+                    "events": events,
+                    "sample_logs": sample_logs,
+                    "verdict": verdict,
+                    "error_safe": error_safe,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                },
+            )
+        return {"saved": True, "job_id": job_id}
+    except Exception as exc:
+        print(f"[DB] Error saving stress job {job_id}: {exc}", flush=True)
+        # Attempt self-healing table creation
+        ensure_stress_jobs_table()
+        return {"saved": False, "error": str(exc)}
+
+
+def _format_stress_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    def _parse_json(val: Any, default: Any):
+        if val is None:
+            return default
+        if isinstance(val, (dict, list)):
+            return val
+        if isinstance(val, str):
+            try:
+                return json.loads(val)
+            except Exception:
+                return default
+        return default
+
+    started_at_ts = row["started_at"].replace(tzinfo=timezone.utc).timestamp() if row.get("started_at") else None
+    finished_at_ts = row["finished_at"].replace(tzinfo=timezone.utc).timestamp() if row.get("finished_at") else None
+    created_at_ts = row["created_at"].replace(tzinfo=timezone.utc).timestamp() if row.get("created_at") else None
+
+    return {
+        "job_id": row["job_id"],
+        "user_id": row["user_id"],
+        "tier": row.get("tier", "FREE"),
+        "target_url": row.get("target_url", ""),
+        "target_requests": row.get("target_requests", 0),
+        "duration_sec": row.get("duration_sec", 0),
+        "target_rps": row.get("target_rps", 0),
+        "waf_type": row.get("waf_type", "standard"),
+        "status": row.get("status", "QUEUED"),
+        "phase": row.get("phase", "PREPARE"),
+        "progress": row.get("progress", 0),
+        "metrics": _parse_json(row.get("metrics"), {}),
+        "events": _parse_json(row.get("events"), []),
+        "sample_logs": _parse_json(row.get("sample_logs"), []),
+        "verdict": row.get("verdict"),
+        "error_safe": row.get("error_safe"),
+        "started_at": started_at_ts,
+        "finished_at": finished_at_ts,
+        "created_at": created_at_ts or time.time(),
+    }
+
+
+def get_stress_job(job_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Truy vấn thông tin Stress Test từ PostgreSQL theo job_id.
+    """
+    if not job_id:
+        return None
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT
+                        job_id, user_id, tier, target_url, target_requests, duration_sec, target_rps,
+                        waf_type, status, phase, progress, metrics, events, sample_logs, verdict,
+                        error_safe, started_at, finished_at, created_at, updated_at
+                    FROM stress_jobs
+                    WHERE job_id = :job_id
+                    LIMIT 1
+                """),
+                {"job_id": job_id},
+            ).mappings().first()
+
+        if not row:
+            return None
+
+        return _format_stress_row(dict(row))
+    except Exception as exc:
+        print(f"[DB] Error querying stress job {job_id}: {exc}", flush=True)
+        return None
+
+
+def get_stress_jobs_by_user(user_id: str, limit: int = 30) -> List[Dict[str, Any]]:
+    """
+    Truy vấn danh sách lịch sử Stress Test bền vững theo user_id từ PostgreSQL.
+    """
+    if not user_id:
+        return []
+    safe_limit = max(1, min(int(limit or 30), 100))
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                    SELECT
+                        job_id, user_id, tier, target_url, target_requests, duration_sec, target_rps,
+                        waf_type, status, phase, progress, metrics, events, sample_logs, verdict,
+                        error_safe, started_at, finished_at, created_at, updated_at
+                    FROM stress_jobs
+                    WHERE user_id = :user_id
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                """),
+                {"user_id": user_id, "limit": safe_limit},
+            ).mappings().all()
+
+        return [_format_stress_row(dict(r)) for r in rows]
+    except Exception as exc:
+        print(f"[DB] Error querying user stress jobs for {user_id}: {exc}", flush=True)
+        return []
+

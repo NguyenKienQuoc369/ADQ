@@ -1097,6 +1097,18 @@ def execute_stress_job(
         # If user cancelled during the run
         if is_cancelled():
             print(f"[{worker_id}] Stress job {job_id} CANCELLED by user.", flush=True)
+            public_state["status"] = "CANCELLED"
+            public_state["phase"] = "COMPLETE"
+            public_state["finished_at"] = time.time()
+            try:
+                from backend.core.engine.db import save_stress_job
+                save_stress_job(public_state)
+            except Exception:
+                try:
+                    from core.engine.db import save_stress_job
+                    save_stress_job(public_state)
+                except Exception:
+                    pass
             return
 
         # Step 4: Mark COMPLETED and publish terminal event
@@ -1131,6 +1143,18 @@ def execute_stress_job(
                 "is_done": True,
                 "timestamp": finished_at,
             }))
+
+        # Persist durable COMPLETED state into PostgreSQL
+        try:
+            from backend.core.engine.db import save_stress_job
+            save_stress_job(public_state)
+        except Exception:
+            try:
+                from core.engine.db import save_stress_job
+                save_stress_job(public_state)
+            except Exception:
+                pass
+
         print(f"[{worker_id}] Stress job {job_id} COMPLETED successfully.", flush=True)
 
     except Exception as exc:
@@ -1149,6 +1173,17 @@ def execute_stress_job(
                 "is_done": True,
                 "timestamp": finished_at,
             }))
+
+        # Persist durable FAILED state into PostgreSQL
+        try:
+            from backend.core.engine.db import save_stress_job
+            save_stress_job(public_state)
+        except Exception:
+            try:
+                from core.engine.db import save_stress_job
+                save_stress_job(public_state)
+            except Exception:
+                pass
 
     finally:
         renew_stop.set()

@@ -187,3 +187,31 @@ model OutgoingEmail {
 
   @@map("outgoing_emails")
 }
+
+model StressJob {
+  jobId          String    @id @map("job_id")
+  userId         String    @map("user_id")
+  tier           String    @default("FREE")
+  targetUrl      String    @map("target_url")
+  targetRequests Int       @default(0) @map("target_requests")
+  durationSec    Int       @default(0) @map("duration_sec")
+  targetRps      Int       @default(0) @map("target_rps")
+  wafType        String    @default("standard") @map("waf_type")
+  status         String    @default("QUEUED")
+  phase          String    @default("PREPARE")
+  progress       Int       @default(0)
+  metrics        Json?
+  events         Json?
+  sampleLogs     Json?     @map("sample_logs")
+  verdict        String?
+  errorSafe      String?   @map("error_safe")
+  startedAt      DateTime? @map("started_at")
+  finishedAt     DateTime? @map("finished_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("stress_jobs")
+}

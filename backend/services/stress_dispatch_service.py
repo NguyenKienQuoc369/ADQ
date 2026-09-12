@@ -14,6 +14,11 @@ try:
         parse_duration_sec,
         StressSlotGovernor,
     )
+    from backend.core.engine.db import (
+        save_stress_job,
+        get_stress_job,
+        get_stress_jobs_by_user,
+    )
 except ImportError:
     from schemas.scan import StressRequest
     from services.scan_service import ScanService, redis_client
@@ -23,6 +28,11 @@ except ImportError:
         validate_stress_runtime_limits,
         parse_duration_sec,
         StressSlotGovernor,
+    )
+    from core.engine.db import (
+        save_stress_job,
+        get_stress_job,
+        get_stress_jobs_by_user,
     )
 
 STRESS_QUEUE_NAME = "scan_queue:stress_test"
@@ -41,13 +51,8 @@ class StressDispatchService:
         tier = get_user_tier(user)
         user_id = str(user.get("id") or user.get("sub") or "anonymous")
 
-        # Gate 0: Enforce daily quota
-        try:
-            enforce_stress_quota(user)
-        except HTTPException:
-            raise
-        except Exception:
-            pass
+        # Gate 0: Enforce daily quota (strictly authoritative & fail-closed)
+        enforce_stress_quota(user)
 
         # Gate 1: SSRF Target Validation
         origin, _ = resolve_and_validate_target(req.target_url)
@@ -127,6 +132,12 @@ class StressDispatchService:
                 redis_client.lpush(hist_key, job_id)
                 redis_client.ltrim(hist_key, 0, 49)
 
+            # Persist initial job record in PostgreSQL
+            try:
+                save_stress_job(public_state)
+            except Exception as e:
+                print(f"[StressDispatch] Warning: DB initial save failed: {e}", flush=True)
+
             # Step 7: Build internal execution payload (Allowed to have execution secrets)
             execution_payload = {
                 "job_id": job_id,
@@ -156,6 +167,9 @@ class StressDispatchService:
                 "message": "Tiến trình kiểm thử tải đã được đưa vào hàng đợi xử lý.",
             }
 
+        except HTTPException:
+            governor.release()
+            raise
         except Exception as exc:
             # On enqueue failure: release governor reservation immediately
             governor.release()
@@ -171,15 +185,31 @@ class StressDispatchService:
 
     @staticmethod
     def get_stress_job_state(job_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieves sanitized public job state from Redis."""
-        if not redis_client or not job_id:
+        """
+        Retrieves sanitized public job state.
+        Checks Redis first (active / recent state).
+        Falls back to PostgreSQL (durable permanent state).
+        """
+        if not job_id:
             return None
+
+        # 1. Check Redis for active/cached state
+        if redis_client:
+            try:
+                raw = redis_client.get(f"{STRESS_JOB_KEY_PREFIX}{job_id}")
+                if raw:
+                    return json.loads(raw)
+            except Exception:
+                pass
+
+        # 2. Fallback to PostgreSQL durable record
         try:
-            raw = redis_client.get(f"{STRESS_JOB_KEY_PREFIX}{job_id}")
-            if raw:
-                return json.loads(raw)
-        except Exception:
-            pass
+            db_state = get_stress_job(job_id)
+            if db_state:
+                return db_state
+        except Exception as exc:
+            print(f"[StressDispatch] Warning: DB get failed for {job_id}: {exc}", flush=True)
+
         return None
 
     @staticmethod
@@ -231,6 +261,12 @@ class StressDispatchService:
             except Exception:
                 pass
 
+        # Persist terminal CANCELLED state to PostgreSQL
+        try:
+            save_stress_job(state)
+        except Exception as exc:
+            print(f"[StressDispatch] Warning: DB save CANCELLED state failed: {exc}", flush=True)
+
         # Release governor slot
         try:
             StressSlotGovernor.release_by_job(redis_client, user_id, job_id)
@@ -241,19 +277,44 @@ class StressDispatchService:
 
     @staticmethod
     def get_user_stress_history(user_id: str) -> List[Dict[str, Any]]:
-        """Returns the list of historical stress test job snapshots for the user."""
-        if not redis_client or not user_id:
+        """
+        Returns the list of historical stress test job snapshots for the user.
+        Merges PostgreSQL durable records with active Redis keys, sorted newest first.
+        """
+        if not user_id:
             return []
+
+        history_map: Dict[str, Dict[str, Any]] = {}
+
+        # 1. Fetch durable historical records from PostgreSQL
         try:
-            hist_key = f"{STRESS_HISTORY_KEY_PREFIX}{user_id}"
-            job_ids = redis_client.lrange(hist_key, 0, 29) or []
-            history = []
-            for jid in job_ids:
-                st = StressDispatchService.get_stress_job_state(jid)
-                if st:
-                    history.append(st)
-            return history
-        except Exception:
-            return []
+            pg_jobs = get_stress_jobs_by_user(user_id, limit=50)
+            for job in pg_jobs:
+                if job.get("job_id"):
+                    history_map[job["job_id"]] = job
+        except Exception as exc:
+            print(f"[StressDispatch] Warning: DB history query failed: {exc}", flush=True)
+
+        # 2. Fetch active / recent records from Redis
+        if redis_client:
+            try:
+                hist_key = f"{STRESS_HISTORY_KEY_PREFIX}{user_id}"
+                job_ids = redis_client.lrange(hist_key, 0, 49) or []
+                for jid in job_ids:
+                    try:
+                        raw = redis_client.get(f"{STRESS_JOB_KEY_PREFIX}{jid}")
+                        if raw:
+                            r_state = json.loads(raw)
+                            history_map[jid] = r_state
+                    except Exception:
+                        pass
+            except Exception as exc:
+                print(f"[StressDispatch] Warning: Redis history query failed: {exc}", flush=True)
+
+        # 3. Sort by created_at descending
+        merged = list(history_map.values())
+        merged.sort(key=lambda x: float(x.get("created_at") or 0), reverse=True)
+        return merged[:30]
+
 
 

@@ -27,43 +27,85 @@ from backend.core.security.stress_governor import (
 
 router = APIRouter(prefix="/api", tags=["Scans & Copilot"])
 
-# Bộ nhớ tạm theo dõi quota theo ngày cho user
+from datetime import timedelta
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None  # type: ignore
+
+# Kept for compatibility shim, but quota authority is strictly Redis
 USAGE_TRACKER: Dict[str, Dict[str, Any]] = {}
 
-def get_user_usage(user_id: str) -> Dict[str, Any]:
-    today = date.today().isoformat()
-    if redis_client:
-        try:
-            r_key = f"user_usage:{user_id}:{today}"
-            raw = redis_client.get(r_key)
-            if raw:
-                data = json.loads(raw)
-                USAGE_TRACKER[user_id] = data
-                return data
-        except Exception:
-            pass
+def get_vietnam_now() -> datetime:
+    """Returns current datetime in Asia/Ho_Chi_Minh timezone."""
+    if ZoneInfo:
+        return datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
+    return datetime.now(timezone(timedelta(hours=7)))
 
-    if user_id not in USAGE_TRACKER or USAGE_TRACKER[user_id].get("date") != today:
-        USAGE_TRACKER[user_id] = {
+def get_seconds_until_vietnam_midnight() -> int:
+    """Calculates seconds until 00:00 Asia/Ho_Chi_Minh of next day + 3600s buffer."""
+    now = get_vietnam_now()
+    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    seconds = int((tomorrow - now).total_seconds())
+    return max(3600, seconds + 3600)
+
+def get_user_usage(user_id: str) -> Dict[str, Any]:
+    """
+    Authoritative Daily Quota Tracker in Redis.
+    Fail-closed: If Redis is unavailable, raises 503 QUOTA_SERVICE_UNAVAILABLE.
+    """
+    today = get_vietnam_now().strftime("%Y-%m-%d")
+    if not redis_client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="QUOTA_SERVICE_UNAVAILABLE: Chưa thể kiểm tra lượt Stress Test lúc này. Hãy thử lại sau."
+        )
+    try:
+        r_key = f"user_usage:{user_id}:{today}"
+        raw = redis_client.get(r_key)
+        if raw:
+            return json.loads(raw)
+        return {
             "date": today,
             "scans_count": 0,
             "stress_count": 0,
-            "total_lifetime_scans": USAGE_TRACKER.get(user_id, {}).get("total_lifetime_scans", 0)
+            "total_lifetime_scans": 0,
         }
-    return USAGE_TRACKER[user_id]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"QUOTA_SERVICE_UNAVAILABLE: Lỗi kết nối máy chủ hạn mức ({str(exc)})."
+        )
 
 
-def record_user_usage_increment(user_id: str, field: str = "stress_count"):
-    today = date.today().isoformat()
-    usage = get_user_usage(user_id)
-    usage[field] = usage.get(field, 0) + 1
-    USAGE_TRACKER[user_id] = usage
-    if redis_client:
-        try:
-            r_key = f"user_usage:{user_id}:{today}"
-            redis_client.set(r_key, json.dumps(usage), ex=172800)
-        except Exception:
-            pass
+def record_user_usage_increment(user_id: str, field: str = "stress_count") -> Dict[str, Any]:
+    """
+    Authoritatively increments daily usage counter in Redis with Vietnam midnight TTL.
+    Fail-closed: If Redis is unavailable, raises 503 QUOTA_SERVICE_UNAVAILABLE.
+    """
+    today = get_vietnam_now().strftime("%Y-%m-%d")
+    if not redis_client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="QUOTA_SERVICE_UNAVAILABLE: Chưa thể ghi nhận lượt Stress Test lúc này. Hãy thử lại sau."
+        )
+    try:
+        usage = get_user_usage(user_id)
+        usage[field] = usage.get(field, 0) + 1
+        r_key = f"user_usage:{user_id}:{today}"
+        ttl = get_seconds_until_vietnam_midnight()
+        redis_client.set(r_key, json.dumps(usage), ex=ttl)
+        return usage
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"QUOTA_SERVICE_UNAVAILABLE: Lỗi lưu trữ hạn mức ({str(exc)})."
+        )
+
 
 
 def parse_iso_datetime(value: Any) -> Optional[datetime]:
