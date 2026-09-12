@@ -32,6 +32,17 @@ USAGE_TRACKER: Dict[str, Dict[str, Any]] = {}
 
 def get_user_usage(user_id: str) -> Dict[str, Any]:
     today = date.today().isoformat()
+    if redis_client:
+        try:
+            r_key = f"user_usage:{user_id}:{today}"
+            raw = redis_client.get(r_key)
+            if raw:
+                data = json.loads(raw)
+                USAGE_TRACKER[user_id] = data
+                return data
+        except Exception:
+            pass
+
     if user_id not in USAGE_TRACKER or USAGE_TRACKER[user_id].get("date") != today:
         USAGE_TRACKER[user_id] = {
             "date": today,
@@ -40,6 +51,19 @@ def get_user_usage(user_id: str) -> Dict[str, Any]:
             "total_lifetime_scans": USAGE_TRACKER.get(user_id, {}).get("total_lifetime_scans", 0)
         }
     return USAGE_TRACKER[user_id]
+
+
+def record_user_usage_increment(user_id: str, field: str = "stress_count"):
+    today = date.today().isoformat()
+    usage = get_user_usage(user_id)
+    usage[field] = usage.get(field, 0) + 1
+    USAGE_TRACKER[user_id] = usage
+    if redis_client:
+        try:
+            r_key = f"user_usage:{user_id}:{today}"
+            redis_client.set(r_key, json.dumps(usage), ex=172800)
+        except Exception:
+            pass
 
 
 def parse_iso_datetime(value: Any) -> Optional[datetime]:
@@ -149,7 +173,7 @@ def enforce_stress_quota(user: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
 
     limit = 1 if tier == "PRO" else 10
 
-    if usage["stress_count"] >= limit:
+    if usage.get("stress_count", 0) >= limit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -159,8 +183,8 @@ def enforce_stress_quota(user: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
             )
         )
 
-    usage["stress_count"] += 1
-    return tier, usage
+    record_user_usage_increment(user_id, "stress_count")
+    return tier, get_user_usage(user_id)
 
 class EndpointDiscoveryRequest(BaseModel):
     target_url: str
