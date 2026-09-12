@@ -278,6 +278,40 @@ class ScanService:
                 pass
 
         if not job_data:
+            try:
+                try:
+                    from backend.core.engine.db import get_engine
+                except ImportError:
+                    from core.engine.db import get_engine
+                from sqlalchemy import text
+                engine = get_engine()
+                with engine.connect() as conn:
+                    row = conn.execute(
+                        text("SELECT scan_id, target_domain, status FROM scan_jobs WHERE scan_id = :scan_id LIMIT 1"),
+                        {"scan_id": job_id}
+                    ).mappings().first()
+                    if row:
+                        hosts = conn.execute(
+                            text("SELECT url, ip, tech FROM scan_live_hosts WHERE scan_id = :scan_id LIMIT 50"),
+                            {"scan_id": job_id}
+                        ).mappings().all()
+                        vulns = conn.execute(
+                            text("SELECT template_id, severity, matched, cwe_id, description FROM scan_vulnerabilities WHERE scan_id = :scan_id LIMIT 100"),
+                            {"scan_id": job_id}
+                        ).mappings().all()
+                        job_data = {
+                            "id": row["scan_id"],
+                            "job_id": row["scan_id"],
+                            "target": row["target_domain"],
+                            "status": (row["status"] or "COMPLETED").upper(),
+                            "liveSubdomains": [dict(h) for h in hosts],
+                            "vulnerabilities": [dict(v) for v in vulns],
+                        }
+                        JOBS_STORAGE[job_id] = job_data
+            except Exception as e:
+                logger.debug(f"Scan DB fallback lookup error for {job_id}: {e}")
+
+        if not job_data:
             raise HTTPException(status_code=404, detail=f"Scan job '{job_id}' not found")
 
         # Defense-in-depth: Đảm bảo request metadata trả về API luôn sanitized
@@ -320,23 +354,29 @@ class ScanService:
             )
 
         job_data = ScanService.get_job_status(job_id, user_tier=user_tier)
-        
+        if job_data.get("status") != "COMPLETED":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Scan job '{job_id}' chưa hoàn thành (trạng thái: {job_data.get('status')}). Chưa thể tạo đánh giá AI."
+            )
+
+        cache_key = f"scan_ai_risk:{job_id}"
+        if not force_refresh and redis_client:
+            try:
+                cached = redis_client.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+            except Exception:
+                pass
+
         try:
             from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
             copilot = ADQSecurityCopilot()
-            ai_res = copilot.generate_scan_risk_assessment(job_data, force_refresh=force_refresh)
-            
-            if ai_res.get("status") in ("API_ERROR", "CONFIG_ERROR"):
-                raise HTTPException(
-                    status_code=502,
-                    detail=ai_res.get("error") or "Không thể tạo đánh giá AI lúc này."
-                )
-
+            ai_res = copilot.generate_scan_risk_assessment(job_data)
             return {
                 "ok": True,
                 "job_id": job_id,
-                "ai_summary": ai_res.get("text"),
-                "status": ai_res.get("status", "SUCCESS"),
+                "ai_summary": ai_res.get("text", "Đã phân tích xong rủi ro phiên Scan."),
                 "model": ai_res.get("model", "ADQ AI Engine"),
             }
         except HTTPException:
@@ -351,10 +391,11 @@ class ScanService:
             from backend.core.ai_copilot.copilot_engine import ADQSecurityCopilot
             copilot = ADQSecurityCopilot()
             raw_res = copilot.generate_copilot_response(req.prompt)
-            text = raw_res.get("text") if isinstance(raw_res, dict) else str(raw_res)
-            return {"copilot_response": text, "model": raw_res.get("model")}
-        except Exception:
-            return {"copilot_response": "Copilot ghi nhận yêu cầu của bạn."}
+            if raw_res.get("status") == "SUCCESS" and raw_res.get("text"):
+                return {"ok": True, "copilot_response": raw_res.get("text"), "model": raw_res.get("model")}
+            return {"ok": False, "copilot_response": "", "error": raw_res.get("error") or "Lỗi kết nối Copilot"}
+        except Exception as exc:
+            return {"ok": False, "copilot_response": "", "error": str(exc)}
 
     @staticmethod
     def copilot_chat_interactive(
@@ -378,15 +419,20 @@ class ScanService:
 
             scan_ctx = None
             if scan_job_id:
-                scan_job = ScanService.get_job_status(scan_job_id)
-                if scan_job:
-                    # Tenant authorization check for scan session
-                    if scan_job.get("user_id") and str(scan_job.get("user_id")) != user_id:
-                        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập phiên Scan này.")
-                    scan_ctx = copilot.build_scan_summary_context(scan_job)
-                    context_type = "SCAN"
-                    context_id = scan_job_id
-                    target_name = scan_job.get("target") or "Scan Session"
+                try:
+                    scan_job = ScanService.get_job_status(scan_job_id)
+                    if scan_job:
+                        # Tenant authorization check for scan session
+                        if scan_job.get("user_id") and str(scan_job.get("user_id")) != user_id:
+                            raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập phiên Scan này.")
+                        scan_ctx = copilot.build_scan_summary_context(scan_job)
+                        context_type = "SCAN"
+                        context_id = scan_job_id
+                        target_name = scan_job.get("target") or "Scan Session"
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Could not load scan context {scan_job_id}: {e}")
 
             stress_ctx = None
             if stress_job_id:
@@ -394,15 +440,20 @@ class ScanService:
                     from backend.services.stress_dispatch_service import StressDispatchService
                 except ImportError:
                     from services.stress_dispatch_service import StressDispatchService
-                stress_job = StressDispatchService.get_stress_job_state(stress_job_id)
-                if stress_job:
-                    # Tenant authorization check for stress session
-                    if stress_job.get("user_id") and str(stress_job.get("user_id")) != user_id:
-                        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập phiên Stress Test này.")
-                    stress_ctx = copilot.build_stress_summary_context(stress_job)
-                    context_type = "STRESS"
-                    context_id = stress_job_id
-                    target_name = stress_job.get("target_url") or "Stress Test Session"
+                try:
+                    stress_job = StressDispatchService.get_stress_job_state(stress_job_id)
+                    if stress_job:
+                        # Tenant authorization check for stress session
+                        if stress_job.get("user_id") and str(stress_job.get("user_id")) != user_id:
+                            raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập phiên Stress Test này.")
+                        stress_ctx = copilot.build_stress_summary_context(stress_job)
+                        context_type = "STRESS"
+                        context_id = stress_job_id
+                        target_name = stress_job.get("target_url") or "Stress Test Session"
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Could not load stress context {stress_job_id}: {e}")
 
             # Retrieve session memory (strictly isolated to user_id + context_type + context_id)
             session_memory = []
@@ -436,7 +487,17 @@ class ScanService:
                 context_type=context_type,
             )
 
-            text_output = ai_res.get("text") or "Copilot đã xử lý yêu cầu nhưng không có phản hồi văn bản."
+            if ai_res.get("status") != "SUCCESS" or not ai_res.get("text"):
+                err_text = ai_res.get("error") or "AI Copilot hiện chưa thể trả lời. Vui lòng thử lại sau."
+                return {
+                    "ok": False,
+                    "conv_id": active_conv_id,
+                    "error": err_text,
+                    "copilot_response": "",
+                    "status": ai_res.get("status", "ERROR"),
+                }
+
+            text_output = ai_res["text"]
 
             # Save user message & assistant message to Redis
             if redis_client:
@@ -490,7 +551,7 @@ class ScanService:
                 "conv_id": active_conv_id,
                 "copilot_response": text_output,
                 "model": ai_res.get("model", "ADQ Security Copilot"),
-                "status": ai_res.get("status", "SUCCESS"),
+                "status": "SUCCESS",
             }
         except HTTPException:
             raise
@@ -498,7 +559,8 @@ class ScanService:
             return {
                 "ok": False,
                 "conv_id": conv_id or "conv_err",
-                "copilot_response": f"Lỗi kết nối Copilot: {str(exc)}",
+                "error": f"Lỗi kết nối Copilot: {str(exc)}",
+                "copilot_response": "",
                 "status": "ERROR",
             }
 

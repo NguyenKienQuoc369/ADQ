@@ -781,35 +781,74 @@ CẤU TRÚC ĐẦU RA BẮT BUỘC (Sử dụng đúng các tiêu đề Markdown
     # =========================================================================
 
     def build_scan_summary_context(self, scan_job: Dict[str, Any]) -> Dict[str, Any]:
-        """Extracts sanitized structured summary from a Scan job."""
+        """Extracts sanitized structured summary from a Scan job, supporting multiple schema variants."""
         if not scan_job:
             return {}
-        target = scan_job.get("target") or scan_job.get("request", {}).get("target") or "target"
-        job_id = scan_job.get("id") or scan_job.get("job_id") or "scan"
+        target = scan_job.get("target") or scan_job.get("target_domain") or scan_job.get("request", {}).get("target") or "target"
+        job_id = scan_job.get("id") or scan_job.get("job_id") or scan_job.get("scan_id") or "scan"
         live_data = scan_job.get("live_data") or {}
-        raw_findings = live_data.get("nuclei_findings") or scan_job.get("vulnerabilities", {}).get("nuclei") or []
+
+        # 1. Findings extraction from all schema variants
+        raw_findings: List[Dict[str, Any]] = []
+        if live_data.get("nuclei_findings"):
+            raw_findings = live_data.get("nuclei_findings")
+        elif isinstance(scan_job.get("vulnerabilities"), list):
+            raw_findings = scan_job.get("vulnerabilities")
+        elif isinstance(scan_job.get("vulnerabilities"), dict):
+            raw_findings = scan_job.get("vulnerabilities", {}).get("nuclei") or []
+
+        # 2. Live Subdomains / Hosts
+        hosts = (
+            scan_job.get("liveSubdomains") or
+            live_data.get("subdomains") or
+            scan_job.get("live_hosts") or
+            scan_job.get("subdomains") or []
+        )
+
+        # 3. Ports & Services
+        ports = (
+            scan_job.get("portScan") or
+            live_data.get("open_ports") or
+            (scan_job.get("ports", {}).get("open") if isinstance(scan_job.get("ports"), dict) else scan_job.get("ports")) or []
+        )
+
+        # 4. URLs / Endpoints
+        crawled_urls = (
+            live_data.get("crawled_urls") or
+            (scan_job.get("urls", {}).get("combined") if isinstance(scan_job.get("urls"), dict) else scan_job.get("urls")) or
+            scan_job.get("urlHistory") or []
+        )
+
         assurance = scan_job.get("assurance_matrix") or {}
         controls = assurance.get("controls") or []
 
-        findings_summary = [
-            {
-                "title": f.get("title") or f.get("template_id"),
-                "severity": f.get("severity"),
-                "endpoint": f.get("matched") or f.get("url") or f.get("endpoint"),
-                "cwe": f.get("cwe_id") or f.get("cwe_ids"),
-            }
-            for f in raw_findings[:10]
-        ]
+        findings_summary = []
+        for f in raw_findings[:15]:
+            if isinstance(f, dict):
+                findings_summary.append({
+                    "title": f.get("title") or f.get("template_id") or f.get("name") or "Lỗ hổng bảo mật",
+                    "severity": f.get("severity", "LOW"),
+                    "endpoint": f.get("matched") or f.get("url") or f.get("endpoint") or f.get("asset") or "",
+                    "cwe": f.get("cwe_id") or f.get("cwe_ids") or "",
+                    "description": f.get("description") or f.get("info") or "",
+                })
 
-        failed_controls = [
-            {
-                "title": c.get("title_vi") or c.get("title"),
-                "status": c.get("status"),
-                "severity": c.get("severity_if_failed"),
-                "reason": c.get("reason"),
-            }
-            for c in controls if c.get("status") in ("FAIL", "INCONCLUSIVE")
-        ]
+        failed_controls = []
+        passed_controls = []
+        for c in controls:
+            if isinstance(c, dict):
+                c_title = c.get("title_vi") or c.get("title") or ""
+                if c.get("status") in ("FAIL", "INCONCLUSIVE"):
+                    failed_controls.append({
+                        "title": c_title,
+                        "status": c.get("status"),
+                        "severity": c.get("severity_if_failed"),
+                        "reason": c.get("reason"),
+                    })
+                elif c.get("status") == "PASS":
+                    passed_controls.append(c_title)
+
+        is_zero_findings = len(raw_findings) == 0
 
         ctx = {
             "type": "SCAN_CONTEXT",
@@ -818,9 +857,17 @@ CẤU TRÚC ĐẦU RA BẮT BUỘC (Sử dụng đúng các tiêu đề Markdown
             "status": scan_job.get("status", "COMPLETED"),
             "total_findings": len(raw_findings),
             "findings": findings_summary,
+            "zero_findings_confirmed": is_zero_findings,
             "failed_controls": failed_controls,
-            "open_ports": live_data.get("open_ports") or scan_job.get("ports", {}).get("open") or [],
-            "crawled_urls_count": len(live_data.get("crawled_urls") or scan_job.get("urls", {}).get("combined") or []),
+            "passed_controls_count": len(passed_controls),
+            "open_ports": ports[:20] if isinstance(ports, list) else ports,
+            "live_subdomains_count": len(hosts) if isinstance(hosts, list) else 0,
+            "crawled_urls_count": len(crawled_urls) if isinstance(crawled_urls, list) else 0,
+            "scope_limitations": [
+                "Chỉ rà quét các endpoint và asset công khai nằm trong phạm vi cấu hình.",
+                "Chưa bao gồm kiểm thử logic nghiệp vụ chuyên sâu yêu cầu phiên đăng nhập người dùng thực tế.",
+                "Không thể kết luận 100% mục tiêu an toàn tuyệt đối nếu một số cổng hoặc đường dẫn chưa được tiếp cận.",
+            ] if is_zero_findings else [],
         }
         return self.masker.mask_dict_or_list(ctx)
 
@@ -833,6 +880,7 @@ CẤU TRÚC ĐẦU RA BẮT BUỘC (Sử dụng đúng các tiêu đề Markdown
             "type": "STRESS_TEST_CONTEXT",
             "job_id": stress_job.get("job_id"),
             "target": stress_job.get("target_url"),
+            "endpoint": stress_job.get("endpoint", "/"),
             "status": stress_job.get("status"),
             "duration_sec": stress_job.get("duration_sec"),
             "target_rps": stress_job.get("target_rps"),
@@ -927,7 +975,7 @@ QUY TẮC BẮT BUỘC (ZERO-HALLUCINATION & EVIDENCE PRIORITY):
 1. DANH TÍNH: Bạn là ADQ Security Copilot. Tuyệt đối không nhắc đến bất kỳ bên thứ ba hay nhà phát triển AI nào khác.
 2. THỨ TỰ ƯU TIÊN BẰNG CHỨNG (EVIDENCE PRIORITY):
    - RAW SCAN/STRESS EVIDENCE có độ ưu tiên cao nhất, vượt trên SESSION MEMORY và suy đoán cũ.
-   - Nếu bộ nhớ lịch sử nhắc tới một thông tin (ví dụ port 3306) nhưng dữ liệu phiên hiện tại KHÔNG có, bạn KHÔNG ĐƯỢC khẳng định nó tồn tại, mà phải nói rõ: "Cuộc trò chuyện trước có nhắc tới, nhưng dữ liệu của phiên hiện tại không ghi nhận."
+   - Nếu phiên Scan có 0 lỗ hổng (total_findings = 0), bạn PHẢI nêu rõ phiên quét hoàn tất và chưa phát hiện lỗ hổng nào trong phạm vi quét, đồng thời nêu rõ các giới hạn phạm vi (chưa kiểm thử logic có đăng nhập, v.v.). Tuyệt đối KHÔNG tự bịa ra lỗ hổng và KHÔNG khẳng định website 'an toàn 100%'.
 3. HƯỚNG DẪN SẢN PHẨM (PRODUCT HELP): Chỉ hướng dẫn dựa trên các route/nút/tính năng thật trong PRODUCT HELP REGISTRY (/dashboard, /scan, /stress-test, /reports, /apk-audit, /copilot, /dashboard/billing, /settings). Nếu câu hỏi về tính năng không có trong registry, trả lời: "ADQ hiện chưa có đủ thông tin để hướng dẫn chính xác phần này."
 4. KHẮC PHỤC LỖ HỔNG (REMEDIATION): Cung cấp hướng dẫn rõ ràng, nguyên nhân gốc rễ và gợi ý cấu hình/mã vá nếu phù hợp.
 5. NGÔN NGỮ: Tiếng Việt tự nhiên, ngắn gọn, chuẩn xác, giữ nguyên các thuật ngữ tiếng Anh phổ biến (Scan, Stress Test, URL, API, endpoint, port, service, request, response, latency, p95, p99, RPS, WAF, CORS, IDOR, SQL Injection, XSS, token, header, cookie).
@@ -941,10 +989,19 @@ HÃY TRẢ LỜI NGAY:
         )
 
         res = self._call_gemini_api(full_prompt, system_instruction=system_instruction, enable_tools=False)
+        if res.get("status") == "SUCCESS" and res.get("text"):
+            return {
+                "status": "SUCCESS",
+                "text": res["text"],
+                "model": "ADQ Security Copilot",
+            }
+
+        err_msg = res.get("error") or "Không thể kết nối đến nhà cung cấp AI Copilot. Vui lòng thử lại sau."
         return {
-            "status": res.get("status", "SUCCESS"),
-            "text": res.get("text") or "Copilot đã ghi nhận yêu cầu của bạn.",
-            "model": res.get("model", "ADQ Security Copilot Engine"),
+            "status": res.get("status", "ERROR"),
+            "error": err_msg,
+            "text": None,
+            "model": "ADQ Security Copilot",
         }
 
 

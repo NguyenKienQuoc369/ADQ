@@ -1,7 +1,9 @@
 import os
 import re
+import time
 import shutil
 import tempfile
+import struct
 import subprocess
 import json
 import logging
@@ -81,10 +83,107 @@ DANGEROUS_PERMISSIONS = {
 
 def redact_secret_evidence(secret_value: str) -> str:
     """Masks secret value for safe reporting without exposing sensitive keys."""
-    val = secret_value.strip()
+    val = str(secret_value).strip()
     if len(val) <= 8:
         return "***"
     return f"{val[:4]}...{val[-3:]}"
+
+
+class AXMLManifestParser:
+    """
+    Pure-Python decoder for compiled Android Binary XML (AXML) format (AndroidManifest.xml).
+    Decodes RES_XML_TYPE, RES_STRING_POOL_TYPE, RES_XML_RESOURCE_MAP_TYPE, and RES_XML_START_ELEMENT_TYPE.
+    """
+
+    @staticmethod
+    def is_binary_axml(data: bytes) -> bool:
+        if len(data) < 8:
+            return False
+        magic = struct.unpack_from("<I", data, 0)[0]
+        # Chunk type 0x0003 with header size 0x0008 -> 0x00080003
+        return magic == 0x00080003
+
+    @staticmethod
+    def parse_elements(data: bytes) -> Tuple[List[str], List[Tuple[str, Dict[str, Any]]]]:
+        if not AXMLManifestParser.is_binary_axml(data):
+            raise ValueError("Data is not compiled Android Binary XML (magic mismatch)")
+
+        # Read String Pool
+        sp_type, sp_header_size, sp_size = struct.unpack_from("<HHI", data, 8)
+        if sp_type != 0x0001:
+            raise ValueError(f"Expected string pool chunk (0x0001), got {hex(sp_type)}")
+
+        string_count, style_count, flags, strings_start, styles_start = struct.unpack_from("<IIIII", data, 16)
+        is_utf8 = bool(flags & (1 << 8))
+        string_offsets = struct.unpack_from(f"<{string_count}I", data, 36)
+        strings_data_start = 8 + strings_start
+
+        strings: List[str] = []
+        for str_off in string_offsets:
+            pos = strings_data_start + str_off
+            if is_utf8:
+                u16len = data[pos]
+                pos += 1
+                if u16len & 0x80:
+                    pos += 1
+                u8len = data[pos]
+                pos += 1
+                if u8len & 0x80:
+                    pos += 1
+                str_bytes = data[pos:pos + u8len]
+                strings.append(str_bytes.decode("utf-8", errors="replace"))
+            else:
+                u16len, = struct.unpack_from("<H", data, pos)
+                pos += 2
+                if u16len & 0x8000:
+                    pos += 2
+                str_bytes = data[pos:pos + u16len * 2]
+                strings.append(str_bytes.decode("utf-16le", errors="replace"))
+
+        cur = 8 + sp_size
+        # Skip resource map if present
+        if cur < len(data):
+            c_type, c_hsize, c_size = struct.unpack_from("<HHI", data, cur)
+            if c_type == 0x0180:  # RES_XML_RESOURCE_MAP_TYPE
+                cur += c_size
+
+        elements: List[Tuple[str, Dict[str, Any]]] = []
+        while cur < len(data):
+            c_type, c_hsize, c_size = struct.unpack_from("<HHI", data, cur)
+            if c_size == 0:
+                break
+            if c_type == 0x0102:  # START_ELEMENT
+                ns_idx, name_idx, attr_start, attr_size, attr_count = struct.unpack_from("<IIHHH", data, cur + 16)
+                elem_name = strings[name_idx] if 0 <= name_idx < len(strings) else ""
+
+                attr_offset = cur + 16 + attr_start
+                attrs: Dict[str, Any] = {}
+                for i in range(attr_count):
+                    a_ns, a_name, a_raw_val, a_size_val, a_res0, a_type, a_data = struct.unpack_from(
+                        "<IIIHBBI", data, attr_offset + i * attr_size
+                    )
+                    attr_name = strings[a_name] if 0 <= a_name < len(strings) else f"attr_{a_name}"
+
+                    if a_raw_val != 0xFFFFFFFF and 0 <= a_raw_val < len(strings) and strings[a_raw_val]:
+                        attr_val: Any = strings[a_raw_val]
+                    elif a_type == 0x03:  # TYPE_STRING
+                        attr_val = strings[a_data] if 0 <= a_data < len(strings) else str(a_data)
+                    elif a_type == 0x12:  # TYPE_INT_BOOLEAN
+                        attr_val = True if a_data != 0 else False
+                    elif a_type == 0x10:  # TYPE_INT_DEC
+                        attr_val = str(a_data)
+                    elif a_type == 0x11:  # TYPE_INT_HEX
+                        attr_val = hex(a_data)
+                    elif a_type == 0x01:  # TYPE_REFERENCE
+                        attr_val = f"@0x{a_data:08x}"
+                    else:
+                        attr_val = str(a_data)
+                    attrs[attr_name] = attr_val
+
+                elements.append((elem_name, attrs))
+            cur += c_size
+
+        return strings, elements
 
 
 class APKAnalyzer:
@@ -92,7 +191,7 @@ class APKAnalyzer:
     Automated Hardened Mobile APK Static Analysis Pipeline Engine:
     1. Input & Archive Integrity: Validates magic bytes, zip bomb limits, and path traversal.
     2. Decompilation Pipeline: Invokes Apktool & JADX in an isolated sandbox with timeouts and fallback.
-    3. Core Static Auditor: Deep-scans Manifest, dangerous permissions, exported components, and redacted secrets.
+    3. Core Static Auditor: Deep-scans Manifest (AXML/Text), permissions, exported components, and redacted secrets.
     4. Auto-Cleanup: Safely purges temporary sandboxes regardless of execution outcome.
     """
 
@@ -150,7 +249,7 @@ class APKAnalyzer:
                     name = info.filename
                     if name.startswith("/") or name.startswith("\\"):
                         return False, f"Archive contains unsafe absolute path entry: {name}"
-                    
+
                     parts = name.replace("\\", "/").split("/")
                     if ".." in parts:
                         return False, f"Archive contains path traversal sequence: {name}"
@@ -183,8 +282,17 @@ class APKAnalyzer:
                 "ok": False,
                 "status": "FAILED",
                 "error": validation_err,
-                "analysisMode": "none",
+                "analysisMode": "FAILED",
                 "partial": False,
+                "coverage": {
+                    "manifest": "FAILED",
+                    "permissions": "FAILED",
+                    "source": "FAILED",
+                    "resources": "FAILED",
+                    "signing": "FAILED",
+                    "endpoints": "FAILED",
+                    "secrets": "FAILED",
+                },
                 "package": None,
                 "version": None,
                 "sdk": {"minSdkVersion": None, "targetSdkVersion": None, "compileSdkVersion": None},
@@ -221,12 +329,16 @@ class APKAnalyzer:
             # Step 3: Scan Manifest, Permissions, Signatures, and Secrets
             scan_data = self._scan_decompiled_files()
 
-            # Determine partial state and analysisMode
-            is_partial = False
-            if decompile_info.get("method") == "zip_fallback" or bool(self.tool_failures):
-                is_partial = True
+            # Determine analysisMode and partial status
+            # FULL_ANALYSIS: jadx succeeded or (apktool succeeded and not zip_fallback)
+            has_full_decompilation = (decompile_info.get("jadx") is True) or (
+                decompile_info.get("apktool") is True and not bool(self.tool_failures.get("jadx"))
+            )
+            is_partial = not has_full_decompilation or bool(self.tool_failures)
+            analysis_mode = "FULL_ANALYSIS" if not is_partial else "PARTIAL_ANALYSIS"
+            if decompile_info.get("method") == "zip_fallback":
+                analysis_mode = "zip_fallback"  # Keep backward compatible string if checked, or PARTIAL_ANALYSIS
 
-            analysis_mode = decompile_info.get("method", "zip_fallback")
             scan_data["results"]["decompile_status"] = decompile_info
 
             # Build standardized findings & contract
@@ -237,11 +349,31 @@ class APKAnalyzer:
             signing_info = scan_data["signing_info"]
             exported_components = scan_data["exported_components"]
 
+            # Explicit Truthful Coverage Matrix
+            manifest_coverage = "FULL" if manifest_info.get("packageName") else "FAILED"
+            permissions_coverage = "FULL" if manifest_info.get("packageName") else "FAILED"
+            source_coverage = "FULL" if decompile_info.get("jadx") else ("PARTIAL" if decompile_info.get("apktool") else "NONE")
+            resources_coverage = "FULL" if (decompile_info.get("apktool") or decompile_info.get("jadx")) else "PARTIAL"
+            signing_coverage = "FULL" if signing_info.get("isSigned") is not None else "NONE"
+            endpoints_coverage = "FULL" if (decompile_info.get("jadx") or decompile_info.get("apktool")) else "PARTIAL"
+            secrets_coverage = "FULL" if decompile_info.get("jadx") else "PARTIAL"
+
+            coverage = {
+                "manifest": manifest_coverage,
+                "permissions": permissions_coverage,
+                "source": source_coverage,
+                "resources": resources_coverage,
+                "signing": signing_coverage,
+                "endpoints": endpoints_coverage,
+                "secrets": secrets_coverage,
+            }
+
             return {
                 "ok": True,
                 "status": "PARTIAL" if is_partial else "COMPLETED",
                 "analysisMode": analysis_mode,
                 "partial": is_partial,
+                "coverage": coverage,
                 "package": manifest_info.get("packageName"),
                 "version": manifest_info.get("versionName"),
                 "sdk": {
@@ -272,8 +404,9 @@ class APKAnalyzer:
                 "ok": False,
                 "status": "CANCELLED",
                 "error": "APK analysis cancelled by user request",
-                "analysisMode": "none",
+                "analysisMode": "CANCELLED",
                 "partial": False,
+                "coverage": {},
                 "package": None,
                 "version": None,
                 "sdk": {"minSdkVersion": None, "targetSdkVersion": None, "compileSdkVersion": None},
@@ -295,8 +428,9 @@ class APKAnalyzer:
                 "ok": False,
                 "status": "FAILED",
                 "error": str(e),
-                "analysisMode": "none",
+                "analysisMode": "FAILED",
                 "partial": False,
+                "coverage": {},
                 "package": None,
                 "version": None,
                 "sdk": {"minSdkVersion": None, "targetSdkVersion": None, "compileSdkVersion": None},
@@ -309,7 +443,7 @@ class APKAnalyzer:
                 "toolsUsed": self.tools_used,
                 "toolFailures": self.tool_failures,
                 # Backward compatibility:
-                "apk_name": os.path.basename(self.apk_path),
+                "apk_name": os.path.basename(self.apk_path) if self.apk_path else "",
                 "decompile_status": {"apktool": False, "jadx": False, "method": "error"},
                 "results": {"scanned_files_count": 0, "secrets": [], "manifest_risks": []},
             }
@@ -322,7 +456,7 @@ class APKAnalyzer:
             raise InterruptedError(f"Process {cmd[0]} cancelled before start")
 
         # Support unittest mock patching of subprocess.run
-        if hasattr(subprocess.run, "assert_called") or hasattr(subprocess.run, "side_effect") and subprocess.run.side_effect:
+        if hasattr(subprocess.run, "assert_called") or (hasattr(subprocess.run, "side_effect") and subprocess.run.side_effect):
             res = subprocess.run(cmd, cwd=cwd, timeout=timeout, capture_output=True, text=True)
             return getattr(res, "returncode", 0), getattr(res, "stdout", "") or "", getattr(res, "stderr", "") or ""
 
@@ -468,7 +602,7 @@ class APKAnalyzer:
         scanned_files_count = 0
         target_extensions = (
             ".xml", ".java", ".kt", ".json", ".properties",
-            ".smali", ".txt", ".js", ".ts", ".html", ".yml", ".yaml"
+            ".smali", ".txt", ".js", ".ts", ".html", ".yml", ".yaml", ".dex"
         )
 
         secrets_legacy: List[Dict[str, Any]] = []
@@ -507,10 +641,11 @@ class APKAnalyzer:
                 if file.endswith((".RSA", ".DSA", ".EC")):
                     signing_info["isSigned"] = True
                     signing_info["scheme"] = "v1"
-                if file == "CERT.SF" or file == "MANIFEST.MF":
+                if file in ("CERT.SF", "MANIFEST.MF"):
                     signing_info["isSigned"] = True
 
         finding_counter = 1
+        manifest_parsed = False
 
         for root, _, files in os.walk(self.output_dir):
             for file in files:
@@ -523,9 +658,10 @@ class APKAnalyzer:
                         rel_path = rel_path[len(prefix):]
                         break
 
-                if file == "AndroidManifest.xml":
+                if file == "AndroidManifest.xml" and not manifest_parsed:
                     manifest_data = self._parse_manifest(file_path, rel_path)
-                    manifest_info.update(manifest_data["info"])
+                    if manifest_data["info"].get("packageName") or not manifest_info.get("packageName"):
+                        manifest_info.update(manifest_data["info"])
                     permissions.extend(manifest_data["permissions"])
                     for comp_type in exported_components:
                         exported_components[comp_type].extend(manifest_data["exported"].get(comp_type, []))
@@ -533,17 +669,23 @@ class APKAnalyzer:
                     # Manifest risks
                     for risk in manifest_data["risks"]:
                         manifest_risks_legacy.append(risk)
+                        cat = "MANIFEST_CONFIG"
+                        if "Secret" in risk["title"] or "Key" in risk["title"]:
+                            cat = "HARDCODED_SECRET"
                         normalized_findings.append({
                             "id": f"APK-MAN-{finding_counter:03d}",
                             "title": risk["title"],
                             "severity": risk["severity"],
-                            "category": "MANIFEST_CONFIG",
+                            "category": cat,
                             "description": risk["description"],
                             "evidence": risk["evidence"],
                             "remediation": risk["remediation"],
                             "file": rel_path
                         })
                         finding_counter += 1
+
+                    if manifest_info.get("packageName"):
+                        manifest_parsed = True
 
                 if file.endswith(target_extensions):
                     scanned_files_count += 1
@@ -561,14 +703,14 @@ class APKAnalyzer:
                 seen_perm_names.add(p["name"])
                 unique_permissions.append(p)
                 # If dangerous permission, create finding
-                if p["isDangerous"]:
+                if p.get("isDangerous"):
                     normalized_findings.append({
                         "id": f"APK-PERM-{finding_counter:03d}",
                         "title": f"Dangerous Permission Requested: {p['name'].split('.')[-1]}",
                         "severity": "MEDIUM",
                         "category": "PERMISSION",
                         "description": f"The application requests sensitive permission '{p['name']}'. {p['description']}",
-                        "evidence": f"<uses-permission android:name=\"{p['name']}\" />",
+                        "evidence": f'<uses-permission android:name="{p["name"]}" />',
                         "remediation": "Audit if this permission is strictly required for core application functionality. Enforce runtime permission checks.",
                         "file": "AndroidManifest.xml"
                     })
@@ -596,7 +738,10 @@ class APKAnalyzer:
         }
 
     def _parse_manifest(self, manifest_path: str, rel_path: str) -> Dict[str, Any]:
-        """Parses AndroidManifest.xml and extracts package metadata, permissions, and security flags."""
+        """
+        Parses AndroidManifest.xml and extracts package metadata, permissions, and security flags.
+        Supports both compiled binary AXML and decompiled plain text XML.
+        """
         info: Dict[str, Any] = {
             "packageName": None,
             "versionName": None,
@@ -613,33 +758,154 @@ class APKAnalyzer:
         risks: List[Dict[str, Any]] = []
 
         try:
-            with open(manifest_path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
+            with open(manifest_path, "rb") as f:
+                raw_bytes = f.read()
 
-            # 1. Regex extractions for attributes
-            pkg_match = re.search(r'package\s*=\s*["\']([^"\']+)["\']', content)
-            if pkg_match:
-                info["packageName"] = pkg_match.group(1)
+            if AXMLManifestParser.is_binary_axml(raw_bytes):
+                # Binary AXML Parsing
+                _, elements = AXMLManifestParser.parse_elements(raw_bytes)
+                for elem_name, attrs in elements:
+                    if elem_name == "manifest":
+                        info["packageName"] = attrs.get("package")
+                        info["versionName"] = attrs.get("versionName")
+                        info["versionCode"] = str(attrs.get("versionCode")) if attrs.get("versionCode") is not None else None
+                        info["compileSdkVersion"] = str(attrs.get("compileSdkVersion")) if attrs.get("compileSdkVersion") is not None else None
 
-            ver_name_match = re.search(r'android:versionName\s*=\s*["\']([^"\']+)["\']', content)
-            if ver_name_match:
-                info["versionName"] = ver_name_match.group(1)
+                    elif elem_name == "uses-sdk":
+                        if "minSdkVersion" in attrs:
+                            info["minSdkVersion"] = str(attrs["minSdkVersion"])
+                        if "targetSdkVersion" in attrs:
+                            info["targetSdkVersion"] = str(attrs["targetSdkVersion"])
 
-            ver_code_match = re.search(r'android:versionCode\s*=\s*["\']([^"\']+)["\']', content)
-            if ver_code_match:
-                info["versionCode"] = ver_code_match.group(1)
+                    elif elem_name == "application":
+                        if "debuggable" in attrs:
+                            info["debuggable"] = bool(attrs["debuggable"])
+                        if "allowBackup" in attrs:
+                            info["allowBackup"] = bool(attrs["allowBackup"])
+                        if "usesCleartextTraffic" in attrs:
+                            info["usesCleartextTraffic"] = bool(attrs["usesCleartextTraffic"])
 
-            min_sdk_match = re.search(r'android:minSdkVersion\s*=\s*["\']([^"\']+)["\']', content)
-            if min_sdk_match:
-                info["minSdkVersion"] = min_sdk_match.group(1)
+                    elif elem_name in ("uses-permission", "uses-permission-sdk-23"):
+                        p_name = attrs.get("name")
+                        if p_name:
+                            is_dang = p_name in DANGEROUS_PERMISSIONS
+                            permissions.append({
+                                "name": p_name,
+                                "isDangerous": is_dang,
+                                "description": DANGEROUS_PERMISSIONS.get(p_name, "Standard application permission")
+                            })
 
-            target_sdk_match = re.search(r'android:targetSdkVersion\s*=\s*["\']([^"\']+)["\']', content)
-            if target_sdk_match:
-                info["targetSdkVersion"] = target_sdk_match.group(1)
+                    elif elem_name in ("activity", "service", "receiver", "provider"):
+                        comp_name = attrs.get("name")
+                        is_exp = attrs.get("exported")
+                        comp_group = f"{elem_name}s"
+                        if is_exp is True and comp_name:
+                            if comp_group in exported:
+                                exported[comp_group].append(comp_name)
+                            risks.append({
+                                "file": rel_path,
+                                "type": "exported_component",
+                                "title": f"Exported {elem_name.capitalize()} Component Detected",
+                                "severity": "HIGH" if elem_name in ("provider", "service") else "MEDIUM",
+                                "description": f"The component '{comp_name}' is declared as android:exported=\"true\" without explicit permission gating.",
+                                "evidence": f'<{elem_name} android:name="{comp_name}" android:exported="true">',
+                                "remediation": f"Set android:exported=\"false\" if the {elem_name} is for internal use only, or declare android:permission to restrict access."
+                            })
 
-            # Security flags
-            if re.search(r'android:debuggable\s*=\s*["\']true["\']', content, re.IGNORECASE):
-                info["debuggable"] = True
+                    elif elem_name == "meta-data":
+                        m_name = attrs.get("name", "")
+                        m_val = str(attrs.get("value", ""))
+                        if m_name and m_val and len(m_val) > 10:
+                            if any(k in m_name.lower() for k in ("api_key", "apikey", "fabric", "secret", "token", "google")):
+                                redacted_val = redact_secret_evidence(m_val)
+                                risks.append({
+                                    "file": rel_path,
+                                    "type": "manifest_secret",
+                                    "title": f"Hardcoded Sensitive Credential in Manifest ({m_name})",
+                                    "severity": "HIGH",
+                                    "description": f"Detected hardcoded API key or credential '{m_name}' declared in AndroidManifest.xml <meta-data>.",
+                                    "evidence": f'<meta-data android:name="{m_name}" android:value="{redacted_val}" />',
+                                    "remediation": "Do not hardcode sensitive secrets in AndroidManifest.xml metadata. Store credentials securely in backend or Android Keystore."
+                                })
+
+            else:
+                # Text XML Parsing
+                content = raw_bytes.decode("utf-8", errors="ignore")
+
+                pkg_match = re.search(r'package\s*=\s*["\']([^"\']+)["\']', content)
+                if pkg_match:
+                    info["packageName"] = pkg_match.group(1)
+
+                ver_name_match = re.search(r'android:versionName\s*=\s*["\']([^"\']+)["\']', content)
+                if ver_name_match:
+                    info["versionName"] = ver_name_match.group(1)
+
+                ver_code_match = re.search(r'android:versionCode\s*=\s*["\']([^"\']+)["\']', content)
+                if ver_code_match:
+                    info["versionCode"] = ver_code_match.group(1)
+
+                min_sdk_match = re.search(r'android:minSdkVersion\s*=\s*["\']([^"\']+)["\']', content)
+                if min_sdk_match:
+                    info["minSdkVersion"] = min_sdk_match.group(1)
+
+                target_sdk_match = re.search(r'android:targetSdkVersion\s*=\s*["\']([^"\']+)["\']', content)
+                if target_sdk_match:
+                    info["targetSdkVersion"] = target_sdk_match.group(1)
+
+                compile_sdk_match = re.search(r'android:compileSdkVersion\s*=\s*["\']([^"\']+)["\']', content)
+                if compile_sdk_match:
+                    info["compileSdkVersion"] = compile_sdk_match.group(1)
+
+                if re.search(r'android:debuggable\s*=\s*["\']true["\']', content, re.IGNORECASE):
+                    info["debuggable"] = True
+                elif re.search(r'android:debuggable\s*=\s*["\']false["\']', content, re.IGNORECASE):
+                    info["debuggable"] = False
+
+                if re.search(r'android:allowBackup\s*=\s*["\']true["\']', content, re.IGNORECASE):
+                    info["allowBackup"] = True
+                elif re.search(r'android:allowBackup\s*=\s*["\']false["\']', content, re.IGNORECASE):
+                    info["allowBackup"] = False
+
+                if re.search(r'android:usesCleartextTraffic\s*=\s*["\']true["\']', content, re.IGNORECASE):
+                    info["usesCleartextTraffic"] = True
+                elif re.search(r'android:usesCleartextTraffic\s*=\s*["\']false["\']', content, re.IGNORECASE):
+                    info["usesCleartextTraffic"] = False
+
+                # Permissions extraction
+                perm_matches = re.finditer(r'<uses-permission(?:-sdk-23)?\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\']', content)
+                for m in perm_matches:
+                    perm_name = m.group(1)
+                    is_dangerous = perm_name in DANGEROUS_PERMISSIONS
+                    desc = DANGEROUS_PERMISSIONS.get(perm_name, "Standard application permission")
+                    permissions.append({
+                        "name": perm_name,
+                        "isDangerous": is_dangerous,
+                        "description": desc
+                    })
+
+                # Exported components extraction
+                comp_patterns = {
+                    "activities": r'<activity\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\'][^>]*android:exported\s*=\s*["\']true["\']',
+                    "services": r'<service\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\'][^>]*android:exported\s*=\s*["\']true["\']',
+                    "receivers": r'<receiver\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\'][^>]*android:exported\s*=\s*["\']true["\']',
+                    "providers": r'<provider\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\'][^>]*android:exported\s*=\s*["\']true["\']',
+                }
+                for comp_type, pattern in comp_patterns.items():
+                    for cm in re.finditer(pattern, content, re.IGNORECASE):
+                        comp_name = cm.group(1)
+                        exported[comp_type].append(comp_name)
+                        risks.append({
+                            "file": rel_path,
+                            "type": "exported_component",
+                            "title": f"Exported {comp_type[:-1].capitalize()} Component Detected",
+                            "severity": "HIGH" if comp_type in ("providers", "services") else "MEDIUM",
+                            "description": f"The component '{comp_name}' is declared as android:exported=\"true\" without explicit permission gating.",
+                            "evidence": f'<{comp_type[:-1]} android:name="{comp_name}" android:exported="true">',
+                            "remediation": f"Set android:exported=\"false\" if the {comp_type[:-1]} is for internal use only, or declare android:permission to restrict access."
+                        })
+
+            # Common Manifest Security Risks Assessment
+            if info["debuggable"] is True:
                 risks.append({
                     "file": rel_path,
                     "type": "debuggable",
@@ -649,11 +915,8 @@ class APKAnalyzer:
                     "evidence": 'android:debuggable="true"',
                     "remediation": "Set android:debuggable=\"false\" in AndroidManifest.xml before release."
                 })
-            elif re.search(r'android:debuggable\s*=\s*["\']false["\']', content, re.IGNORECASE):
-                info["debuggable"] = False
 
-            if re.search(r'android:allowBackup\s*=\s*["\']true["\']', content, re.IGNORECASE):
-                info["allowBackup"] = True
+            if info["allowBackup"] is True:
                 risks.append({
                     "file": rel_path,
                     "type": "allow_backup",
@@ -663,11 +926,8 @@ class APKAnalyzer:
                     "evidence": 'android:allowBackup="true"',
                     "remediation": "Set android:allowBackup=\"false\" or configure a custom BackupAgent with explicit inclusion rules."
                 })
-            elif re.search(r'android:allowBackup\s*=\s*["\']false["\']', content, re.IGNORECASE):
-                info["allowBackup"] = False
 
-            if re.search(r'android:usesCleartextTraffic\s*=\s*["\']true["\']', content, re.IGNORECASE):
-                info["usesCleartextTraffic"] = True
+            if info["usesCleartextTraffic"] is True:
                 risks.append({
                     "file": rel_path,
                     "type": "uses_cleartext_traffic",
@@ -677,41 +937,6 @@ class APKAnalyzer:
                     "evidence": 'android:usesCleartextTraffic="true"',
                     "remediation": "Enforce strict HTTPS by setting android:usesCleartextTraffic=\"false\" and configuring network_security_config.xml."
                 })
-            elif re.search(r'android:usesCleartextTraffic\s*=\s*["\']false["\']', content, re.IGNORECASE):
-                info["usesCleartextTraffic"] = False
-
-            # Permissions extraction
-            perm_matches = re.finditer(r'<uses-permission\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\']', content)
-            for m in perm_matches:
-                perm_name = m.group(1)
-                is_dangerous = perm_name in DANGEROUS_PERMISSIONS
-                desc = DANGEROUS_PERMISSIONS.get(perm_name, "Standard application permission")
-                permissions.append({
-                    "name": perm_name,
-                    "isDangerous": is_dangerous,
-                    "description": desc
-                })
-
-            # Exported components extraction
-            comp_patterns = {
-                "activities": r'<activity\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\'][^>]*android:exported\s*=\s*["\']true["\']',
-                "services": r'<service\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\'][^>]*android:exported\s*=\s*["\']true["\']',
-                "receivers": r'<receiver\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\'][^>]*android:exported\s*=\s*["\']true["\']',
-                "providers": r'<provider\s+[^>]*android:name\s*=\s*["\']([^"\']+)["\'][^>]*android:exported\s*=\s*["\']true["\']',
-            }
-            for comp_type, pattern in comp_patterns.items():
-                for cm in re.finditer(pattern, content, re.IGNORECASE):
-                    comp_name = cm.group(1)
-                    exported[comp_type].append(comp_name)
-                    risks.append({
-                        "file": rel_path,
-                        "type": "exported_component",
-                        "title": f"Exported {comp_type[:-1].capitalize()} Component Detected",
-                        "severity": "HIGH" if comp_type in ("providers", "services") else "MEDIUM",
-                        "description": f"The component '{comp_name}' is declared as android:exported=\"true\" without explicit permission gating.",
-                        "evidence": f'<{comp_type[:-1]} android:name="{comp_name}" android:exported="true">',
-                        "remediation": f"Set android:exported=\"false\" if the {comp_type[:-1]} is for internal use only, or declare android:permission to restrict access."
-                    })
 
         except Exception as e:
             logger.warning(f"Error parsing AndroidManifest.xml: {e}")
@@ -724,19 +949,22 @@ class APKAnalyzer:
         }
 
     def _scan_single_file(self, file_path: str, rel_path: str, start_counter: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
-        """Scans individual source or resource file for secrets, sensitive endpoints, and crypto misconfigurations."""
+        """Scans individual source, DEX, or resource file for secrets, sensitive endpoints, and crypto misconfigurations."""
         findings: List[Dict[str, Any]] = []
         secrets_legacy: List[Dict[str, Any]] = []
         endpoints: List[str] = []
         curr_id = start_counter
 
         try:
-            # Skip massive files > 5MB to bound RAM & regex time
-            if os.path.getsize(file_path) > 5 * 1024 * 1024:
+            # Skip massive files > 10MB to bound RAM & regex time
+            file_size = os.path.getsize(file_path)
+            if file_size > 10 * 1024 * 1024:
                 return findings, secrets_legacy, endpoints
 
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
+            with open(file_path, "rb") as f:
+                raw_data = f.read()
+
+            content = raw_data.decode("utf-8", errors="ignore")
 
             # Secret Regex Scanning
             for secret_type, pattern in MOBILE_SECRET_PATTERNS.items():
@@ -769,7 +997,8 @@ class APKAnalyzer:
                         curr_id += 1
 
             # Insecure TrustManager / SSL bypass detection
-            if "TrustAllCertificates" in content or "ALLOW_ALL_HOSTNAME_VERIFIER" in content or "checkServerTrusted" in content and "return;" in content:
+            if ("TrustAllCertificates" in content or "ALLOW_ALL_HOSTNAME_VERIFIER" in content or
+                    ("checkServerTrusted" in content and "return;" in content)):
                 findings.append({
                     "id": f"APK-CRYPTO-{curr_id:03d}",
                     "title": "Insecure TLS/SSL TrustManager Implementation",
@@ -786,7 +1015,7 @@ class APKAnalyzer:
             for endp_pattern in MOBILE_ENDPOINT_PATTERNS:
                 for match in endp_pattern.finditer(content):
                     ep = match.group(0).strip("\"' ")
-                    if len(ep) > 5 and not ep.startswith("http://schemas.android.com"):
+                    if len(ep) > 5 and not ep.startswith("http://schemas.android.com") and not ep.startswith("http://schemas.android.com/apk"):
                         endpoints.append(ep)
 
         except Exception as e:
@@ -804,4 +1033,3 @@ class APKAnalyzer:
                 logger.error(f"Failed to cleanup APK sandbox directory {self.output_dir}: {e}")
             finally:
                 self.output_dir = None
-

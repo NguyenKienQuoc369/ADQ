@@ -162,6 +162,7 @@ class APKWorker:
                 "status": status_str,
                 "analysisMode": pipeline_res.get("analysisMode", "zip_fallback"),
                 "partial": is_partial,
+                "coverage": pipeline_res.get("coverage", {}),
                 "package": pipeline_res.get("package"),
                 "version": pipeline_res.get("version"),
                 "sdk": pipeline_res.get("sdk", {}),

@@ -1189,6 +1189,15 @@ export interface ApkAuditResultPayload {
   status: "COMPLETED" | "PARTIAL" | "FAILED" | string;
   analysisMode?: string;
   partial?: boolean;
+  coverage?: {
+    manifest?: string;
+    permissions?: string;
+    source?: string;
+    resources?: string;
+    signing?: string;
+    endpoints?: string;
+    secrets?: string;
+  };
   package?: string | null;
   version?: string | null;
   sdk?: ApkSdkInfo;

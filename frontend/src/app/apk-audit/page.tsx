@@ -642,12 +642,17 @@ function ApkAuditContent() {
 
           {/* Partial Warning Banner */}
           {analysisResult?.partial && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-950/20 p-3.5 flex items-start gap-3">
-              <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-              <div className="text-xs space-y-1">
-                <p className="font-semibold text-amber-300">Chế Độ Phân Tích Thu Gọn (Partial Analysis)</p>
-                <p className="text-amber-200/80 leading-relaxed">
-                  Một số công cụ decompilation chuyên sâu gặp cảnh báo hoặc giới hạn. Hệ thống đã tự động trích xuất tĩnh qua cơ chế ZIP Fallback.
+            <div className="rounded-md border border-amber-500/40 bg-amber-950/20 p-4 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1.5">
+                <p className="font-semibold text-amber-300 uppercase tracking-wider text-[11px]">
+                  Phân Tích Chưa Đầy Đủ (Partial Analysis Mode)
+                </p>
+                <p className="text-amber-200/90 leading-relaxed">
+                  Một số công cụ decompilation chuyên sâu (JADX/Apktool) gặp cảnh báo hoặc giới hạn môi trường. Hệ thống đã tự động trích xuất dữ liệu qua cơ chế nhị phân (Binary AXML + DEX Extraction).
+                </p>
+                <p className="text-amber-300 font-medium text-[11px]">
+                  Lưu ý: Không thể kết luận ứng dụng không có lỗ hổng vì một số bước dịch ngược mã nguồn chưa hoàn tất.
                 </p>
               </div>
             </div>
@@ -657,6 +662,52 @@ function ApkAuditContent() {
         {/* Real Analysis Results */}
         {analysisResult && (
           <div className="space-y-6">
+            {/* Coverage Matrix Breakdown */}
+            {analysisResult.coverage && (
+              <div className="rounded-lg border border-[#222222] bg-[#000000] p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-[#222222] pb-2">
+                  <span className="text-xs font-semibold text-white flex items-center gap-2">
+                    <Layers className="h-3.5 w-3.5 text-white" /> Ma Trận Độ Phủ Phân Tích (Analysis Coverage Breakdown)
+                  </span>
+                  <Badge
+                    className={`text-[10px] ${
+                      !analysisResult.partial
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                        : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                    }`}
+                  >
+                    {analysisResult.analysisMode || (analysisResult.partial ? "PARTIAL_ANALYSIS" : "FULL_ANALYSIS")}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 pt-1 text-center font-mono text-xs">
+                  {Object.entries({
+                    "Manifest": analysisResult.coverage.manifest || "FULL",
+                    "Mã Nguồn": analysisResult.coverage.source || (analysisResult.partial ? "NONE" : "FULL"),
+                    "Phân Quyền": analysisResult.coverage.permissions || "FULL",
+                    "Tài Nguyên": analysisResult.coverage.resources || (analysisResult.partial ? "PARTIAL" : "FULL"),
+                    "Chữ Ký": analysisResult.coverage.signing || "FULL",
+                    "Endpoints": analysisResult.coverage.endpoints || (analysisResult.partial ? "PARTIAL" : "FULL"),
+                    "Secrets": analysisResult.coverage.secrets || (analysisResult.partial ? "PARTIAL" : "FULL"),
+                  }).map(([key, value]) => (
+                    <div key={key} className="p-2 rounded border border-neutral-900 bg-[#0a0a0a] space-y-1">
+                      <p className="text-[10px] text-neutral-400">{key}</p>
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          value === "FULL"
+                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                            : value === "PARTIAL"
+                            ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                            : "bg-neutral-800 text-neutral-400 border border-neutral-700"
+                        }`}
+                      >
+                        {value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Metadata Overview Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* App / Package Info */}
@@ -794,8 +845,16 @@ function ApkAuditContent() {
               </div>
               <div className="divide-y divide-[#222222]">
                 {(analysisResult.findings || []).length === 0 ? (
-                  <div className="p-6 text-center text-xs text-neutral-500">
-                    Không phát hiện lỗ hổng nghiêm trọng nào trong tệp APK này.
+                  <div className="p-6 text-center text-xs">
+                    {analysisResult.partial ? (
+                      <p className="text-amber-400/90 leading-relaxed font-medium">
+                        Không phát hiện lỗ hổng trong phạm vi quét thu gọn. Cần phân tích đầy đủ mã nguồn để xác định toàn diện.
+                      </p>
+                    ) : (
+                      <p className="text-neutral-400 leading-relaxed">
+                        Chưa phát hiện finding nào trong phạm vi kiểm tra hiện tại.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   (analysisResult.findings || []).map((finding: ApkFinding, i: number) => {

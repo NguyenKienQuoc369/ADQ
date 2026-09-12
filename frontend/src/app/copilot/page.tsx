@@ -303,10 +303,24 @@ function CopilotContent() {
         void refreshConversations();
       }
 
+      if (res?.ok === false || !res?.copilot_response) {
+        const errorMsg = (res as any)?.error || "Máy chủ AI Copilot không trả về nội dung. Vui lòng thử lại.";
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `err_${Date.now()}`,
+            role: "copilot",
+            text: `⚠️ **Không thể hoàn tất phản hồi:** ${errorMsg}\n\nVui lòng thử lại câu hỏi của bạn.`,
+            timestamp: Date.now() / 1000,
+          },
+        ]);
+        return;
+      }
+
       const asstMsg: ChatMessage = {
         id: `asst_${Date.now()}`,
         role: "copilot",
-        text: res?.copilot_response || "Copilot đã ghi nhận yêu cầu nhưng không có phản hồi.",
+        text: res.copilot_response,
         timestamp: Date.now() / 1000,
       };
 
@@ -317,7 +331,7 @@ function CopilotContent() {
         {
           id: `err_${Date.now()}`,
           role: "copilot",
-          text: `Không thể kết nối đến máy chủ AI Copilot: ${err?.message || "Lỗi không xác định"}`,
+          text: `⚠️ **Không thể kết nối đến máy chủ AI Copilot:** ${err?.message || "Lỗi không xác định"}`,
           timestamp: Date.now() / 1000,
         },
       ]);
@@ -661,8 +675,8 @@ function CopilotContent() {
                   <div
                     key={msg.id}
                     className={cn(
-                      "flex flex-col gap-1 max-w-2xl",
-                      msg.role === "user" ? "ml-auto items-end" : "mr-auto items-start"
+                      "flex flex-col gap-1 w-full",
+                      msg.role === "user" ? "ml-auto items-end max-w-xl" : "mr-auto items-start max-w-3xl lg:max-w-4xl"
                     )}
                   >
                     <div className="flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 px-1">

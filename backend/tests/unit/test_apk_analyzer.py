@@ -237,3 +237,38 @@ def test_12_no_raw_filesystem_paths_in_result(tmp_path):
         assert not sec["file"].startswith("/home/")
         assert "adq_apk_" not in sec["file"]
 
+
+def test_13_coverage_matrix_contract(tmp_path):
+    apk_file = tmp_path / "coverage_test.apk"
+    with zipfile.ZipFile(apk_file, "w") as zf:
+        zf.writestr("AndroidManifest.xml", '<manifest package="com.coverage.test"><application android:debuggable="true"/></manifest>')
+        zf.writestr("classes.dex", b"DEX_CONTENT_HTTPS_URL_https://api.example.com/v1/auth")
+
+    analyzer = APKAnalyzer(str(apk_file))
+    res = analyzer.run_pipeline()
+    assert res["ok"] is True
+    assert "coverage" in res
+    assert res["coverage"]["manifest"] == "FULL"
+    assert res["coverage"]["permissions"] == "FULL"
+    assert res["coverage"]["source"] in ("FULL", "PARTIAL", "NONE")
+    assert "https://api.example.com/v1/auth" in res["endpoints"]
+
+
+def test_14_mstg_binary_apk_if_available():
+    fixture_path = "/home/sisiniki123/Downloads/MSTG-Android-Java.apk"
+    if not os.path.exists(fixture_path):
+        pytest.skip("MSTG-Android-Java.apk fixture not found locally")
+
+    analyzer = APKAnalyzer(fixture_path)
+    res = analyzer.run_pipeline()
+    assert res["ok"] is True
+    assert res["package"] == "sg.vp.owasp_mobile.omtg_android"
+    assert res["version"] == "1.0"
+    assert res["sdk"]["minSdkVersion"] == "21"
+    assert res["sdk"]["targetSdkVersion"] == "28"
+    assert any(p["name"] == "android.permission.WRITE_EXTERNAL_STORAGE" for p in res["permissions"])
+    assert any(f["title"] == "Hardcoded Sensitive Credential in Manifest (io.fabric.ApiKey)" for f in res["findings"])
+    assert res["coverage"]["manifest"] == "FULL"
+    assert res["coverage"]["permissions"] == "FULL"
+
+
