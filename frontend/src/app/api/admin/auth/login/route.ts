@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import {
+  checkLoginRateLimit,
   createSocSessionToken,
   isAllowedSocHost,
+  recordLoginAttempt,
   SOC_COOKIE_NAME,
   SOC_SESSION_MAX_AGE_SECONDS,
-  verifySocMasterKey,
+  verifySocPassword,
 } from "@/lib/soc-auth";
+import { getPrismaClient } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   if (!isAllowedSocHost(request)) {
@@ -15,24 +18,62 @@ export async function POST(request: Request) {
     );
   }
 
+  const clientIp =
+    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+    request.headers.get("x-real-ip") ||
+    "127.0.0.1";
+
+  const rateCheck = checkLoginRateLimit(clientIp);
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      {
+        error: `Quá nhiều lần thử đăng nhập không thành công. Vui lòng thử lại sau ${rateCheck.retryAfterSeconds ?? 900} giây.`,
+        locked: true,
+        retryAfter: rateCheck.retryAfterSeconds,
+      },
+      { status: 429 }
+    );
+  }
+
   try {
     const body = await request.json();
-    const masterKey = String(
-      body?.masterKey ?? ""
-    ).trim();
+    const masterKey = String(body?.masterKey ?? body?.password ?? "").trim();
 
-    if (!verifySocMasterKey(masterKey)) {
+    const isValid = await verifySocPassword(masterKey);
+
+    if (!isValid) {
+      recordLoginAttempt(clientIp, false);
       return NextResponse.json(
-        { error: "INVALID_SOC_CREDENTIALS" },
+        { error: "Mã xác thực quản trị viên hoặc mật khẩu không chính xác." },
         { status: 401 }
       );
     }
 
-    const token = createSocSessionToken();
+    recordLoginAttempt(clientIp, true);
+
+    const token = createSocSessionToken("soc-root");
+
+    // Audit log
+    try {
+      const prisma = getPrismaClient();
+      await prisma.adminAction.create({
+        data: {
+          adminAuthUserId: "soc-root",
+          action: "SOC_LOGIN_SUCCESS",
+          detail: {
+            ip: clientIp,
+            userAgent: request.headers.get("user-agent") || "unknown",
+            timestamp: new Date().toISOString(),
+          },
+        },
+      });
+    } catch {}
 
     const response = NextResponse.json({
       ok: true,
       authenticated: true,
+      role: "ADMIN",
+      name: "SOC Root Administrator",
     });
 
     response.cookies.set({
@@ -45,7 +86,7 @@ export async function POST(request: Request) {
       maxAge: SOC_SESSION_MAX_AGE_SECONDS,
     });
 
-    // Xóa cookie admin legacy.
+    // Clear legacy cookie
     response.cookies.set({
       name: "adq_admin_root_token",
       value: "",
@@ -57,9 +98,9 @@ export async function POST(request: Request) {
     });
 
     return response;
-  } catch {
+  } catch (error: any) {
     return NextResponse.json(
-      { error: "SOC_LOGIN_FAILED" },
+      { error: "Xác thực SOC thất bại. Vui lòng kiểm tra lại cấu hình." },
       { status: 500 }
     );
   }
