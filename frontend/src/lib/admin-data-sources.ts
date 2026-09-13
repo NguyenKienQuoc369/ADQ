@@ -13,13 +13,15 @@ export function getAdminRedisClient(): Redis {
   if (!redisClientInstance) {
     const redisUrl =
       process.env.REDIS_URL ||
-      `redis://${process.env.REDIS_HOST || "redis"}:${process.env.REDIS_PORT || 6379}`;
+      `redis://${process.env.REDIS_HOST || "redis"}:${process.env.REDIS_PORT || 6379}/0`;
 
     redisClientInstance = new Redis(redisUrl, {
-      maxRetriesPerRequest: 2,
-      connectTimeout: 3000,
-      lazyConnect: true,
-      enableOfflineQueue: false,
+      maxRetriesPerRequest: 3,
+      connectTimeout: 5000,
+      enableReadyCheck: true,
+      retryStrategy(times) {
+        return Math.min(times * 100, 2000);
+      },
     });
 
     redisClientInstance.on("error", (err) => {
