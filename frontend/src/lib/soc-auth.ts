@@ -261,14 +261,14 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Password Bootstrap & Retrieval (Database Authoritative + Runtime Reconciliation)
+// Single Authoritative Password Record Management
 // ---------------------------------------------------------------------------
 let cachedPasswordHash: string | null = null;
 let lastCacheCheck = 0;
 
-export async function getOrBootstrapAdminPasswordHash(): Promise<string> {
+export async function getOrBootstrapAdminPasswordHash(forceRefresh = false): Promise<string> {
   const now = Date.now();
-  if (cachedPasswordHash && now - lastCacheCheck < 10000) {
+  if (!forceRefresh && cachedPasswordHash && now - lastCacheCheck < 5000) {
     return cachedPasswordHash;
   }
 
@@ -282,7 +282,7 @@ export async function getOrBootstrapAdminPasswordHash(): Promise<string> {
   ).trim();
 
   try {
-    // 1. Check if hash is already persisted in DB
+    // 1. Single deterministic query for current authoritative hash
     const existingAction = await prisma.adminAction.findFirst({
       where: { action: "SOC_PASSWORD_HASH" },
       orderBy: { createdAt: "desc" },
@@ -305,20 +305,36 @@ export async function getOrBootstrapAdminPasswordHash(): Promise<string> {
         return currentDbHash;
       }
 
-      // If DB hash does NOT match runtime secret (or does not exist), RECONCILE / UPDATE IT!
+      // If DB hash does NOT match runtime secret (or does not exist), UPDATE or CREATE single authoritative row
       const newHash = hashPassword(bootstrapPassword);
-      await prisma.adminAction.create({
-        data: {
-          adminAuthUserId: "soc-system",
-          action: "SOC_PASSWORD_HASH",
-          detail: {
-            hash: newHash,
-            bootstrappedAt: new Date().toISOString(),
-            version: "1.0",
-            recoveryReason: currentDbHash ? "RUNTIME_SECRET_RECONCILIATION" : "INITIAL_BOOTSTRAP",
+
+      if (existingAction) {
+        // Update the existing single authoritative row
+        await prisma.adminAction.update({
+          where: { id: existingAction.id },
+          data: {
+            detail: {
+              hash: newHash,
+              updatedAt: new Date().toISOString(),
+              version: "1.0",
+              recoveryReason: "RUNTIME_SECRET_RECONCILIATION",
+            },
           },
-        },
-      });
+        });
+      } else {
+        // Create single authoritative row
+        await prisma.adminAction.create({
+          data: {
+            adminAuthUserId: "soc-system",
+            action: "SOC_PASSWORD_HASH",
+            detail: {
+              hash: newHash,
+              bootstrappedAt: new Date().toISOString(),
+              version: "1.0",
+            },
+          },
+        });
+      }
 
       cachedPasswordHash = newHash;
       lastCacheCheck = now;
@@ -347,8 +363,15 @@ export async function verifySocPassword(input: string): Promise<{ valid: boolean
     return { valid: false, code: "INVALID_CREDENTIAL" };
   }
   try {
-    const hash = await getOrBootstrapAdminPasswordHash();
-    const matches = verifyPassword(input, hash);
+    let hash = await getOrBootstrapAdminPasswordHash(false);
+    let matches = verifyPassword(input, hash);
+
+    // If cache did not match, do a forced refresh from database to ensure no stale cache
+    if (!matches) {
+      hash = await getOrBootstrapAdminPasswordHash(true);
+      matches = verifyPassword(input, hash);
+    }
+
     return {
       valid: matches,
       code: matches ? undefined : "INVALID_CREDENTIAL",
@@ -376,17 +399,36 @@ export async function rotateSocPassword(
   const prisma = getPrismaClient();
   const newHash = hashPassword(newPassword);
 
-  await prisma.adminAction.create({
-    data: {
-      adminAuthUserId: adminId,
-      action: "SOC_PASSWORD_HASH",
-      detail: {
-        hash: newHash,
-        rotatedAt: new Date().toISOString(),
-        rotatedBy: adminId,
-      },
-    },
+  const existingAction = await prisma.adminAction.findFirst({
+    where: { action: "SOC_PASSWORD_HASH" },
+    orderBy: { createdAt: "desc" },
   });
+
+  if (existingAction) {
+    await prisma.adminAction.update({
+      where: { id: existingAction.id },
+      data: {
+        adminAuthUserId: adminId,
+        detail: {
+          hash: newHash,
+          rotatedAt: new Date().toISOString(),
+          rotatedBy: adminId,
+        },
+      },
+    });
+  } else {
+    await prisma.adminAction.create({
+      data: {
+        adminAuthUserId: adminId,
+        action: "SOC_PASSWORD_HASH",
+        detail: {
+          hash: newHash,
+          rotatedAt: new Date().toISOString(),
+          rotatedBy: adminId,
+        },
+      },
+    });
+  }
 
   cachedPasswordHash = newHash;
   lastCacheCheck = Date.now();
@@ -426,7 +468,7 @@ export function createSocSessionToken(adminId: string = "soc-root"): string {
 }
 
 export function verifySocSessionToken(token?: string | null): boolean {
-  if (!token) return false;
+  if (!token || !token.trim()) return false;
 
   try {
     const parts = token.split(".");

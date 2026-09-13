@@ -37,8 +37,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = await request.json();
-    const masterKey = String(body?.masterKey ?? body?.password ?? "").trim();
+    const body = await request.json().catch(() => ({}));
+    const masterKey = String(
+      body?.password ??
+      body?.masterKey ??
+      body?.socPassword ??
+      body?.master_password ??
+      body?.key ??
+      ""
+    ).trim();
 
     if (!masterKey) {
       await recordLoginAttempt(clientIp, false);
