@@ -13,7 +13,7 @@ import { getPrismaClient } from "@/lib/prisma";
 export async function POST(request: Request) {
   if (!isAllowedSocHost(request)) {
     return NextResponse.json(
-      { error: "SOC_HOST_REQUIRED" },
+      { error: "SOC_HOST_REQUIRED", code: "SOC_HOST_REQUIRED" },
       { status: 403 }
     );
   }
@@ -23,11 +23,12 @@ export async function POST(request: Request) {
     request.headers.get("x-real-ip") ||
     "127.0.0.1";
 
-  const rateCheck = checkLoginRateLimit(clientIp);
+  const rateCheck = await checkLoginRateLimit(clientIp);
   if (!rateCheck.allowed) {
     return NextResponse.json(
       {
         error: `Quá nhiều lần thử đăng nhập không thành công. Vui lòng thử lại sau ${rateCheck.retryAfterSeconds ?? 900} giây.`,
+        code: "RATE_LIMITED",
         locked: true,
         retryAfter: rateCheck.retryAfterSeconds,
       },
@@ -39,19 +40,50 @@ export async function POST(request: Request) {
     const body = await request.json();
     const masterKey = String(body?.masterKey ?? body?.password ?? "").trim();
 
-    const isValid = await verifySocPassword(masterKey);
-
-    if (!isValid) {
-      recordLoginAttempt(clientIp, false);
+    if (!masterKey) {
+      await recordLoginAttempt(clientIp, false);
       return NextResponse.json(
-        { error: "Mã xác thực quản trị viên hoặc mật khẩu không chính xác." },
+        { error: "Vui lòng nhập mật khẩu quản trị SOC.", code: "INVALID_CREDENTIAL" },
         { status: 401 }
       );
     }
 
-    recordLoginAttempt(clientIp, true);
+    const verifyResult = await verifySocPassword(masterKey);
 
-    const token = createSocSessionToken("soc-root");
+    if (!verifyResult.valid) {
+      await recordLoginAttempt(clientIp, false);
+
+      if (verifyResult.code === "AUTH_CONFIG_ERROR") {
+        return NextResponse.json(
+          { error: "Cấu hình xác thực SOC chưa được khởi tạo trên máy chủ.", code: "AUTH_CONFIG_ERROR" },
+          { status: 500 }
+        );
+      }
+
+      if (verifyResult.code === "HASH_ERROR") {
+        return NextResponse.json(
+          { error: "Lỗi kiểm tra mã băm xác thực quản trị.", code: "HASH_ERROR" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json(
+        { error: "Mật khẩu quản trị viên SOC không chính xác.", code: "INVALID_CREDENTIAL" },
+        { status: 401 }
+      );
+    }
+
+    await recordLoginAttempt(clientIp, true);
+
+    let token: string;
+    try {
+      token = createSocSessionToken("soc-root");
+    } catch {
+      return NextResponse.json(
+        { error: "Lỗi khởi tạo phiên quản trị SOC.", code: "SESSION_ERROR" },
+        { status: 500 }
+      );
+    }
 
     // Audit log
     try {
@@ -81,7 +113,7 @@ export async function POST(request: Request) {
       value: token,
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "lax",
       path: "/",
       maxAge: SOC_SESSION_MAX_AGE_SECONDS,
     });
@@ -92,7 +124,7 @@ export async function POST(request: Request) {
       value: "",
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "lax",
       path: "/",
       maxAge: 0,
     });
@@ -100,7 +132,7 @@ export async function POST(request: Request) {
     return response;
   } catch (error: any) {
     return NextResponse.json(
-      { error: "Xác thực SOC thất bại. Vui lòng kiểm tra lại cấu hình." },
+      { error: "Xác thực SOC thất bại. Vui lòng kiểm tra lại cấu hình.", code: "SESSION_ERROR" },
       { status: 500 }
     );
   }
