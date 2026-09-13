@@ -156,6 +156,8 @@ services:
     restart: always
     environment:
       - PORT=3000
+      - SOC_ADMIN_PASSWORD=${SOC_ADMIN_PASSWORD:-}
+      - ADQ_SOC_SESSION_SECRET=${ADQ_SOC_SESSION_SECRET:-}
     env_file:
       - .env
     depends_on:
