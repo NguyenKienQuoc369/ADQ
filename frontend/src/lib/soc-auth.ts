@@ -1,9 +1,9 @@
 import "server-only";
 
 import {
+  createHash,
   createHmac,
   randomBytes,
-  scryptSync,
   timingSafeEqual,
 } from "crypto";
 import { cookies } from "next/headers";
@@ -15,7 +15,7 @@ export const SOC_SESSION_MAX_AGE = 60 * 60 * 8; // 8 hours in seconds
 export const SOC_SESSION_MAX_AGE_SECONDS = SOC_SESSION_MAX_AGE;
 
 // ---------------------------------------------------------------------------
-// Rate Limiter for Login (Redis-backed with In-Memory fallback)
+// Rate Limiter for SOC Auth (Redis-backed with In-Memory fallback)
 // ---------------------------------------------------------------------------
 interface RateLimitEntry {
   attempts: number;
@@ -208,241 +208,128 @@ export async function clearLoginRateLimit(ip: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Cryptographic Password Hashing (scrypt N=16384, r=8, p=1)
+// Authoritative SOC Admin Authorization Model (UUID-Based via soc_admins)
 // ---------------------------------------------------------------------------
-export const SCRYPT_PARAMS = {
-  N: 16384,
-  r: 8,
-  p: 1,
-  keyLen: 64,
-};
 
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const derivedKey = scryptSync(password, salt, SCRYPT_PARAMS.keyLen, {
-    N: SCRYPT_PARAMS.N,
-    r: SCRYPT_PARAMS.r,
-    p: SCRYPT_PARAMS.p,
-  }).toString("hex");
-
-  return `scrypt$${SCRYPT_PARAMS.N}$${SCRYPT_PARAMS.r}$${SCRYPT_PARAMS.p}$${salt}$${derivedKey}`;
-}
-
-export function verifyPassword(password: string, storedHash: string): boolean {
-  try {
-    if (!password || !storedHash) return false;
-
-    const parts = storedHash.split("$");
-    if (parts.length !== 6 || parts[0] !== "scrypt") {
-      return false;
-    }
-
-    const [, rawN, rawR, rawP, salt, originalKey] = parts;
-    const N = Number(rawN);
-    const r = Number(rawR);
-    const p = Number(rawP);
-
-    if (!salt || !originalKey || !N || !r || !p) return false;
-
-    const derivedKey = scryptSync(password, salt, Buffer.from(originalKey, "hex").length, {
-      N,
-      r,
-      p,
-    }).toString("hex");
-
-    const a = Buffer.from(derivedKey, "hex");
-    const b = Buffer.from(originalKey, "hex");
-
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Single Authoritative Password Record Management
-// ---------------------------------------------------------------------------
-let cachedPasswordHash: string | null = null;
-let lastCacheCheck = 0;
-
-export async function getOrBootstrapAdminPasswordHash(forceRefresh = false): Promise<string> {
-  const now = Date.now();
-  if (!forceRefresh && cachedPasswordHash && now - lastCacheCheck < 5000) {
-    return cachedPasswordHash;
+export async function checkSocAdminAuthorization(userAuthId: string): Promise<{
+  authorized: boolean;
+  role?: string;
+  emailSnapshot?: string | null;
+  enabled?: boolean;
+}> {
+  if (!userAuthId || typeof userAuthId !== "string") {
+    return { authorized: false };
   }
 
-  const prisma = getPrismaClient();
-
-  const bootstrapPassword = String(
-    process.env.SOC_ADMIN_PASSWORD ||
-    process.env.ADQ_SOC_ADMIN_PASSWORD ||
-    process.env.ADQ_SOC_MASTER_KEY ||
-    ""
-  ).trim();
-
   try {
-    // 1. Single deterministic query for current authoritative hash
-    const existingAction = await prisma.adminAction.findFirst({
-      where: { action: "SOC_PASSWORD_HASH" },
-      orderBy: { createdAt: "desc" },
+    const prisma = getPrismaClient();
+    const admin = await prisma.socAdmin.findUnique({
+      where: { userAuthId },
     });
 
-    let currentDbHash: string | null = null;
-    if (existingAction && existingAction.detail && typeof existingAction.detail === "object") {
-      const detailObj = existingAction.detail as Record<string, any>;
-      if (detailObj.hash && typeof detailObj.hash === "string" && detailObj.hash.startsWith("scrypt$")) {
-        currentDbHash = detailObj.hash;
-      }
-    }
-
-    // 2. If runtime secret is provided:
-    if (bootstrapPassword) {
-      // If DB hash exists and verifies against runtime secret, use it
-      if (currentDbHash && verifyPassword(bootstrapPassword, currentDbHash)) {
-        cachedPasswordHash = currentDbHash;
-        lastCacheCheck = now;
-        return currentDbHash;
-      }
-
-      // If DB hash does NOT match runtime secret (or does not exist), UPDATE or CREATE single authoritative row
-      const newHash = hashPassword(bootstrapPassword);
-
-      if (existingAction) {
-        // Update the existing single authoritative row
-        await prisma.adminAction.update({
-          where: { id: existingAction.id },
-          data: {
-            detail: {
-              hash: newHash,
-              updatedAt: new Date().toISOString(),
-              version: "1.0",
-              recoveryReason: "RUNTIME_SECRET_RECONCILIATION",
-            },
-          },
-        });
-      } else {
-        // Create single authoritative row
-        await prisma.adminAction.create({
-          data: {
-            adminAuthUserId: "soc-system",
-            action: "SOC_PASSWORD_HASH",
-            detail: {
-              hash: newHash,
-              bootstrappedAt: new Date().toISOString(),
-              version: "1.0",
-            },
-          },
-        });
-      }
-
-      cachedPasswordHash = newHash;
-      lastCacheCheck = now;
-      return newHash;
-    }
-
-    // 3. If no runtime secret was supplied, use currentDbHash if valid
-    if (currentDbHash) {
-      cachedPasswordHash = currentDbHash;
-      lastCacheCheck = now;
-      return currentDbHash;
-    }
-
-    throw new Error("AUTH_CONFIG_ERROR");
-  } catch (err: any) {
-    if (bootstrapPassword) {
-      return hashPassword(bootstrapPassword);
-    }
-    if (cachedPasswordHash) return cachedPasswordHash;
-    throw err;
-  }
-}
-
-export async function verifySocPassword(input: string): Promise<{ valid: boolean; code?: string }> {
-  if (!input) {
-    return { valid: false, code: "INVALID_CREDENTIAL" };
-  }
-  try {
-    let hash = await getOrBootstrapAdminPasswordHash(false);
-    let matches = verifyPassword(input, hash);
-
-    // If cache did not match, do a forced refresh from database to ensure no stale cache
-    if (!matches) {
-      hash = await getOrBootstrapAdminPasswordHash(true);
-      matches = verifyPassword(input, hash);
+    if (!admin || !admin.enabled) {
+      return { authorized: false, enabled: admin?.enabled ?? false };
     }
 
     return {
-      valid: matches,
-      code: matches ? undefined : "INVALID_CREDENTIAL",
+      authorized: true,
+      role: admin.role,
+      emailSnapshot: admin.emailSnapshot,
+      enabled: admin.enabled,
     };
-  } catch (err: any) {
-    const code = err.message === "AUTH_CONFIG_ERROR" ? "AUTH_CONFIG_ERROR" : "HASH_ERROR";
-    return { valid: false, code };
+  } catch (error) {
+    console.error("[SOC Auth] Database lookup error:", error);
+    return { authorized: false };
   }
 }
 
-export async function rotateSocPassword(
-  currentPassword: string,
-  newPassword: string,
-  adminId: string = "soc-root"
-): Promise<{ success: boolean; error?: string }> {
-  if (!newPassword || newPassword.length < 8) {
-    return { success: false, error: "Mật khẩu mới phải có ít nhất 8 ký tự" };
-  }
-
-  const verifyResult = await verifySocPassword(currentPassword);
-  if (!verifyResult.valid) {
-    return { success: false, error: "Mật khẩu hiện tại không chính xác" };
-  }
-
-  const prisma = getPrismaClient();
-  const newHash = hashPassword(newPassword);
-
-  const existingAction = await prisma.adminAction.findFirst({
-    where: { action: "SOC_PASSWORD_HASH" },
-    orderBy: { createdAt: "desc" },
-  });
-
-  if (existingAction) {
-    await prisma.adminAction.update({
-      where: { id: existingAction.id },
-      data: {
-        adminAuthUserId: adminId,
-        detail: {
-          hash: newHash,
-          rotatedAt: new Date().toISOString(),
-          rotatedBy: adminId,
-        },
+export async function grantSocAdminRole(params: {
+  userAuthId: string;
+  emailSnapshot: string;
+  grantedByAuthId?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const prisma = getPrismaClient();
+    await prisma.socAdmin.upsert({
+      where: { userAuthId: params.userAuthId },
+      update: {
+        role: "SOC_ADMIN",
+        enabled: true,
+        emailSnapshot: params.emailSnapshot,
+        revokedAt: null,
+      },
+      create: {
+        userAuthId: params.userAuthId,
+        emailSnapshot: params.emailSnapshot,
+        role: "SOC_ADMIN",
+        enabled: true,
       },
     });
-  } else {
+
+    // Audit log
     await prisma.adminAction.create({
       data: {
-        adminAuthUserId: adminId,
-        action: "SOC_PASSWORD_HASH",
+        adminAuthUserId: params.grantedByAuthId || "system-bootstrap",
+        action: "SOC_ROLE_GRANTED",
         detail: {
-          hash: newHash,
-          rotatedAt: new Date().toISOString(),
-          rotatedBy: adminId,
+          userAuthId: params.userAuthId,
+          email: params.emailSnapshot,
+          role: "SOC_ADMIN",
+          timestamp: new Date().toISOString(),
         },
       },
     });
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
   }
+}
 
-  cachedPasswordHash = newHash;
-  lastCacheCheck = Date.now();
+export async function revokeSocAdminRole(params: {
+  userAuthId: string;
+  revokedByAuthId?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const prisma = getPrismaClient();
+    await prisma.socAdmin.update({
+      where: { userAuthId: params.userAuthId },
+      data: {
+        enabled: false,
+        revokedAt: new Date(),
+      },
+    });
 
-  return { success: true };
+    // Audit log
+    await prisma.adminAction.create({
+      data: {
+        adminAuthUserId: params.revokedByAuthId || "system",
+        action: "SOC_ROLE_REVOKED",
+        detail: {
+          userAuthId: params.userAuthId,
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
 }
 
 // ---------------------------------------------------------------------------
-// HMAC-SHA256 Signed SOC Sessions
+// HMAC-SHA256 Signed SOC Sessions (v2 Identity Format)
 // ---------------------------------------------------------------------------
 function getSessionSecret(): string {
-  const secret = String(process.env.ADQ_SOC_SESSION_SECRET || process.env.SUPABASE_JWT_SECRET || "").trim();
+  const secret = String(
+    process.env.ADQ_SOC_SESSION_SECRET ||
+    process.env.SUPABASE_JWT_SECRET ||
+    ""
+  ).trim();
+
   if (!secret) {
-    return "adq-soc-secure-session-secret-salt-2026-prod-fallback";
+    return "adq-soc-identity-session-secret-2026-prod-fallback";
   }
   return secret;
 }
@@ -459,51 +346,245 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(aa, bb);
 }
 
-export function createSocSessionToken(adminId: string = "soc-root"): string {
+export function createSocSessionToken(userAuthId: string, role = "SOC_ADMIN"): string {
   const issuedAt = Math.floor(Date.now() / 1000);
-  const nonce = randomBytes(18).toString("hex");
-  const payload = `v1.${issuedAt}.${adminId}.${nonce}`;
+  const nonce = randomBytes(16).toString("hex");
+  const payload = `v2.${issuedAt}.${userAuthId}.${role}.${nonce}`;
   const signature = sign(payload);
   return `${payload}.${signature}`;
 }
 
-export function verifySocSessionToken(token?: string | null): boolean {
-  if (!token || !token.trim()) return false;
+export function verifySocSessionToken(token?: string | null): {
+  valid: boolean;
+  userAuthId?: string;
+  role?: string;
+  issuedAt?: number;
+} {
+  if (!token || !token.trim()) return { valid: false };
 
   try {
     const parts = token.split(".");
-    if (parts.length !== 5) return false;
+    
+    // Support v2 token format: v2.issuedAt.userAuthId.role.nonce.signature
+    if (parts.length === 6 && parts[0] === "v2") {
+      const [version, rawIssuedAt, userAuthId, role, nonce, signature] = parts;
+      const issuedAt = Number(rawIssuedAt);
+      if (!Number.isFinite(issuedAt)) return { valid: false };
 
-    const [version, rawIssuedAt, adminId, nonce, signature] = parts;
-    if (version !== "v1" || !adminId || !nonce || !signature) return false;
+      const now = Math.floor(Date.now() / 1000);
+      const age = now - issuedAt;
 
-    const issuedAt = Number(rawIssuedAt);
-    if (!Number.isFinite(issuedAt)) return false;
+      if (age < -60 || age > SOC_SESSION_MAX_AGE) {
+        return { valid: false };
+      }
 
-    const now = Math.floor(Date.now() / 1000);
-    const age = now - issuedAt;
+      const expected = sign(`${version}.${rawIssuedAt}.${userAuthId}.${role}.${nonce}`);
+      if (!safeEqual(signature, expected)) {
+        return { valid: false };
+      }
 
-    if (age < -60 || age > SOC_SESSION_MAX_AGE) {
-      return false;
+      return {
+        valid: true,
+        userAuthId,
+        role,
+        issuedAt,
+      };
     }
 
-    const expected = sign(`${version}.${rawIssuedAt}.${adminId}.${nonce}`);
-    return safeEqual(signature, expected);
+    // Support legacy v1 token format during migration transition
+    if (parts.length === 5 && parts[0] === "v1") {
+      const [version, rawIssuedAt, adminId, nonce, signature] = parts;
+      const issuedAt = Number(rawIssuedAt);
+      if (!Number.isFinite(issuedAt)) return { valid: false };
+
+      const now = Math.floor(Date.now() / 1000);
+      const age = now - issuedAt;
+
+      if (age < -60 || age > SOC_SESSION_MAX_AGE) {
+        return { valid: false };
+      }
+
+      const expected = sign(`${version}.${rawIssuedAt}.${adminId}.${nonce}`);
+      if (!safeEqual(signature, expected)) {
+        return { valid: false };
+      }
+
+      return {
+        valid: true,
+        userAuthId: adminId === "soc-root" ? "6fab82b0-d0d0-4474-a25a-d3f1ccb6f1a1" : adminId,
+        role: "SOC_ADMIN",
+        issuedAt,
+      };
+    }
+
+    return { valid: false };
   } catch {
-    return false;
+    return { valid: false };
   }
 }
 
 export async function isSocSessionValid(): Promise<boolean> {
+  const admin = await getAuthenticatedSocAdmin();
+  return admin.authenticated;
+}
+
+export async function getAuthenticatedSocAdmin(): Promise<{
+  authenticated: boolean;
+  userAuthId?: string;
+  emailSnapshot?: string | null;
+  role?: string;
+  reason?: string;
+}> {
   try {
     const store = await cookies();
     const token = store.get(SOC_COOKIE_NAME)?.value;
-    return verifySocSessionToken(token);
-  } catch {
-    return false;
+    if (!token) {
+      return { authenticated: false, reason: "NO_COOKIE" };
+    }
+
+    const session = verifySocSessionToken(token);
+    if (!session.valid || !session.userAuthId) {
+      return { authenticated: false, reason: "INVALID_SESSION" };
+    }
+
+    // Authoritative DB verification to ensure identity was not revoked
+    const authCheck = await checkSocAdminAuthorization(session.userAuthId);
+    if (!authCheck.authorized) {
+      return { authenticated: false, reason: "REVOKED_OR_UNAUTHORIZED" };
+    }
+
+    return {
+      authenticated: true,
+      userAuthId: session.userAuthId,
+      emailSnapshot: authCheck.emailSnapshot,
+      role: authCheck.role || "SOC_ADMIN",
+    };
+  } catch (error) {
+    return { authenticated: false, reason: "ERROR" };
   }
 }
 
+export async function requireSocAdmin(): Promise<{
+  userAuthId: string;
+  emailSnapshot?: string | null;
+  role: string;
+}> {
+  const admin = await getAuthenticatedSocAdmin();
+  if (!admin.authenticated || !admin.userAuthId) {
+    throw new Error("UNAUTHORIZED_SOC_ADMIN");
+  }
+  return {
+    userAuthId: admin.userAuthId,
+    emailSnapshot: admin.emailSnapshot,
+    role: admin.role || "SOC_ADMIN",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Emergency SSH Recovery (Single-Use CSPRNG 256-Bit Token)
+// ---------------------------------------------------------------------------
+
+export async function generateEmergencyRecoveryToken(
+  adminAuthId = "6fab82b0-d0d0-4474-a25a-d3f1ccb6f1a1",
+  ttlMinutes = 5
+): Promise<{ token: string; expiresAt: Date; recoveryUrl: string }> {
+  const token = randomBytes(32).toString("hex"); // 256 bits CSPRNG
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+
+  const prisma = getPrismaClient();
+  await prisma.socRecoveryToken.create({
+    data: {
+      tokenHash,
+      adminAuthId,
+      expiresAt,
+      used: false,
+    },
+  });
+
+  await prisma.adminAction.create({
+    data: {
+      adminAuthUserId: adminAuthId,
+      action: "SOC_RECOVERY_CREATED",
+      detail: {
+        expiresAt: expiresAt.toISOString(),
+        ttlMinutes,
+        timestamp: new Date().toISOString(),
+      },
+    },
+  });
+
+  return {
+    token,
+    expiresAt,
+    recoveryUrl: `https://adq-soc.click/admin/recovery?token=${token}`,
+  };
+}
+
+export async function redeemEmergencyRecoveryToken(token: string): Promise<{
+  success: boolean;
+  sessionToken?: string;
+  error?: string;
+  adminAuthId?: string;
+}> {
+  if (!token || token.length < 32) {
+    return { success: false, error: "INVALID_RECOVERY_TOKEN" };
+  }
+
+  const tokenHash = createHash("sha256").update(token.trim()).digest("hex");
+  const prisma = getPrismaClient();
+
+  const record = await prisma.socRecoveryToken.findUnique({
+    where: { tokenHash },
+  });
+
+  if (!record) {
+    return { success: false, error: "RECOVERY_TOKEN_NOT_FOUND" };
+  }
+
+  if (record.used) {
+    return { success: false, error: "RECOVERY_TOKEN_ALREADY_USED" };
+  }
+
+  if (record.expiresAt.getTime() < Date.now()) {
+    return { success: false, error: "RECOVERY_TOKEN_EXPIRED" };
+  }
+
+  // Mark token used (single use)
+  await prisma.socRecoveryToken.update({
+    where: { id: record.id },
+    data: { used: true },
+  });
+
+  // Verify that the target admin is authorized
+  const authCheck = await checkSocAdminAuthorization(record.adminAuthId);
+  if (!authCheck.authorized) {
+    return { success: false, error: "ADMIN_IDENTITY_DISABLED" };
+  }
+
+  // Issue SOC session
+  const sessionToken = createSocSessionToken(record.adminAuthId, "SOC_ADMIN");
+
+  await prisma.adminAction.create({
+    data: {
+      adminAuthUserId: record.adminAuthId,
+      action: "SOC_RECOVERY_USED",
+      detail: {
+        timestamp: new Date().toISOString(),
+      },
+    },
+  });
+
+  return {
+    success: true,
+    sessionToken,
+    adminAuthId: record.adminAuthId,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Hostname Validation
+// ---------------------------------------------------------------------------
 export function isAllowedSocHost(request: Request): boolean {
   const rawHost =
     request.headers.get("x-forwarded-host") ||

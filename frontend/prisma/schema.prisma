@@ -215,3 +215,28 @@ model StressJob {
   @@index([createdAt])
   @@map("stress_jobs")
 }
+
+model SocAdmin {
+  id            String    @id @default(cuid())
+  userAuthId    String    @unique @map("user_auth_id")
+  emailSnapshot String?   @map("email_snapshot")
+  role          String    @default("SOC_ADMIN")
+  enabled       Boolean   @default(true)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  revokedAt     DateTime? @map("revoked_at")
+
+  @@map("soc_admins")
+}
+
+model SocRecoveryToken {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique @map("token_hash")
+  adminAuthId String    @map("admin_auth_id")
+  used        Boolean   @default(false)
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([tokenHash])
+  @@map("soc_recovery_tokens")
+}

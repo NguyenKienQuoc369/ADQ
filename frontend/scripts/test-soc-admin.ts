@@ -1,10 +1,9 @@
 import {
-  hashPassword,
-  verifyPassword,
   checkLoginRateLimit,
   recordLoginAttempt,
   createSocSessionToken,
   verifySocSessionToken,
+  generateRecoveryTokenHash,
   maskSensitiveValue,
   redactRow,
   ALLOWLISTED_POSTGRES_TABLES,
@@ -25,18 +24,29 @@ async function runTests() {
     }
   }
 
-  // 1. Password Hashing & Verification
-  console.log("\n1. Testing scrypt Password Hashing & Verification:");
-  const testPassword = "sisiniki123";
-  const hash = hashPassword(testPassword);
-  assert(hash.startsWith("scrypt$"), "Hash follows scrypt$ format");
-  assert(verifyPassword(testPassword, hash), "Correct password verification succeeds");
-  assert(!verifyPassword("wrong_password", hash), "Wrong password rejected");
-  assert(!verifyPassword("", hash), "Empty password rejected");
-  assert(!verifyPassword(testPassword, ""), "Empty hash rejected");
+  // 1. Session Security (v2 Identity Token)
+  console.log("\n1. Testing HMAC-SHA256 v2 Identity Session Security:");
+  process.env.ADQ_SOC_SESSION_SECRET = "test-secret-salt-key-1234567890";
+  const userAuthId = "6fab82b0-d0d0-4474-a25a-d3f1ccb6f1a1";
+  const sessionToken = createSocSessionToken(userAuthId, "SOC_ADMIN");
+  const verification = verifySocSessionToken(sessionToken);
+  assert(verification.valid, "Valid v2 session token verifies successfully");
+  assert(verification.userAuthId === userAuthId, "Extracted userAuthId matches");
+  assert(verification.role === "SOC_ADMIN", "Extracted role matches SOC_ADMIN");
+  assert(!verifySocSessionToken(sessionToken + "tampered").valid, "Tampered session token rejected");
+  assert(!verifySocSessionToken("invalid.token").valid, "Invalid token format rejected");
+  assert(!verifySocSessionToken("").valid, "Empty token rejected");
 
-  // 2. Rate Limiter
-  console.log("\n2. Testing Login Rate Limiter:");
+  // 2. Emergency Recovery Token Hashing
+  console.log("\n2. Testing Emergency Recovery Token Hashing:");
+  const testToken = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+  const tokenHash = generateRecoveryTokenHash(testToken);
+  assert(tokenHash.length === 64, "SHA-256 hash length is 64 hex characters");
+  assert(tokenHash === generateRecoveryTokenHash(testToken), "Hash is deterministic");
+  assert(tokenHash !== generateRecoveryTokenHash(testToken + "x"), "Hash changes on token alteration");
+
+  // 3. Rate Limiter
+  console.log("\n3. Testing Rate Limiter:");
   const testIp = "192.168.1.100";
   recordLoginAttempt(testIp, true); // reset
   for (let i = 0; i < 5; i++) {
@@ -49,15 +59,6 @@ async function runTests() {
   recordLoginAttempt(testIp, true); // successful login resets
   assert(checkLoginRateLimit(testIp).allowed, "Successful login resets rate limit");
 
-  // 3. Session Security
-  console.log("\n3. Testing HMAC-SHA256 Session Security:");
-  process.env.ADQ_SOC_SESSION_SECRET = "test-secret-salt-key-1234567890";
-  const sessionToken = createSocSessionToken("soc-root");
-  assert(verifySocSessionToken(sessionToken), "Valid session token verifies successfully");
-  assert(!verifySocSessionToken(sessionToken + "tampered"), "Tampered session token rejected");
-  assert(!verifySocSessionToken("invalid.token"), "Invalid token format rejected");
-  assert(!verifySocSessionToken(""), "Empty token rejected");
-
   // 4. Sensitive Data Masking & Redaction
   console.log("\n4. Testing Sensitive Data Masking:");
   const testRow = {
@@ -66,13 +67,13 @@ async function runTests() {
     password_hash: "scrypt$16384$8$1$salt$hash",
     api_key: "adq_live_key_9999",
     authorized_test_credential: "user:pass123",
-    role: "ADMIN",
+    role: "SOC_ADMIN",
     public_status: "HEALTHY",
   };
   const redacted = redactRow(testRow);
   assert(redacted.id === "user_123", "Non-sensitive ID preserved");
   assert(redacted.email === "admin@adq.io.vn", "Non-sensitive email preserved");
-  assert(redacted.role === "ADMIN", "Role preserved");
+  assert(redacted.role === "SOC_ADMIN", "Role preserved");
   assert(redacted.public_status === "HEALTHY", "Status preserved");
   assert(redacted.password_hash.includes("[REDACTED]"), "Password hash redacted");
   assert(redacted.api_key.includes("[REDACTED]"), "API key redacted");
@@ -80,8 +81,10 @@ async function runTests() {
 
   // 5. Allowlisted PostgreSQL Tables
   console.log("\n5. Testing Allowlisted PostgreSQL Tables Registry:");
-  assert(Object.keys(ALLOWLISTED_POSTGRES_TABLES).length === 12, "Exactly 12 allowlisted tables registered");
+  assert(Object.keys(ALLOWLISTED_POSTGRES_TABLES).length === 14, "Exactly 14 allowlisted tables registered");
   assert("admin_users" in ALLOWLISTED_POSTGRES_TABLES, "admin_users table registered");
+  assert("soc_admins" in ALLOWLISTED_POSTGRES_TABLES, "soc_admins table registered");
+  assert("soc_recovery_tokens" in ALLOWLISTED_POSTGRES_TABLES, "soc_recovery_tokens table registered");
   assert("scan_jobs" in ALLOWLISTED_POSTGRES_TABLES, "scan_jobs table registered");
   assert("stress_jobs" in ALLOWLISTED_POSTGRES_TABLES, "stress_jobs table registered");
   assert("redeem_codes" in ALLOWLISTED_POSTGRES_TABLES, "redeem_codes table registered");

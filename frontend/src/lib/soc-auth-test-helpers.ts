@@ -1,12 +1,28 @@
 import {
   createHmac,
+  createHash,
   randomBytes,
-  scryptSync,
   timingSafeEqual,
 } from "crypto";
 
 export const SOC_COOKIE_NAME = "adq_soc_session";
 export const SOC_SESSION_MAX_AGE = 60 * 60 * 8;
+
+function getSessionSecret(): string {
+  return String(process.env.ADQ_SOC_SESSION_SECRET || "test-secret").trim();
+}
+
+function sign(payload: string): string {
+  const secret = getSessionSecret();
+  return createHmac("sha256", secret).update(payload).digest("hex");
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const aa = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (aa.length !== bb.length) return false;
+  return timingSafeEqual(aa, bb);
+}
 
 interface RateLimitEntry {
   attempts: number;
@@ -61,105 +77,72 @@ export function recordLoginAttempt(ip: string, success: boolean): void {
   loginRateLimits.set(ip, entry);
 }
 
-const SCRYPT_PARAMS = {
-  N: 16384,
-  r: 8,
-  p: 1,
-  keyLen: 64,
-};
 
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const derivedKey = scryptSync(password, salt, SCRYPT_PARAMS.keyLen, {
-    N: SCRYPT_PARAMS.N,
-    r: SCRYPT_PARAMS.r,
-    p: SCRYPT_PARAMS.p,
-  }).toString("hex");
-
-  return `scrypt$${SCRYPT_PARAMS.N}$${SCRYPT_PARAMS.r}$${SCRYPT_PARAMS.p}$${salt}$${derivedKey}`;
-}
-
-export function verifyPassword(password: string, storedHash: string): boolean {
-  try {
-    if (!password || !storedHash) return false;
-
-    const parts = storedHash.split("$");
-    if (parts.length !== 6 || parts[0] !== "scrypt") {
-      return false;
-    }
-
-    const [, rawN, rawR, rawP, salt, originalKey] = parts;
-    const N = Number(rawN);
-    const r = Number(rawR);
-    const p = Number(rawP);
-
-    if (!salt || !originalKey || !N || !r || !p) return false;
-
-    const derivedKey = scryptSync(password, salt, Buffer.from(originalKey, "hex").length, {
-      N,
-      r,
-      p,
-    }).toString("hex");
-
-    const a = Buffer.from(derivedKey, "hex");
-    const b = Buffer.from(originalKey, "hex");
-
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
-}
-
-function getSessionSecret(): string {
-  return String(process.env.ADQ_SOC_SESSION_SECRET || "test-secret").trim();
-}
-
-function sign(payload: string): string {
-  const secret = getSessionSecret();
-  return createHmac("sha256", secret).update(payload).digest("hex");
-}
-
-function safeEqual(a: string, b: string): boolean {
-  const aa = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (aa.length !== bb.length) return false;
-  return timingSafeEqual(aa, bb);
-}
-
-export function createSocSessionToken(adminId: string = "soc-root"): string {
+export function createSocSessionToken(userAuthId: string, role = "SOC_ADMIN"): string {
   const issuedAt = Math.floor(Date.now() / 1000);
-  const nonce = randomBytes(18).toString("hex");
-  const payload = `v1.${issuedAt}.${adminId}.${nonce}`;
+  const nonce = randomBytes(16).toString("hex");
+  const payload = `v2.${issuedAt}.${userAuthId}.${role}.${nonce}`;
   const signature = sign(payload);
   return `${payload}.${signature}`;
 }
 
-export function verifySocSessionToken(token?: string | null): boolean {
-  if (!token) return false;
+export function verifySocSessionToken(token?: string | null): {
+  valid: boolean;
+  userAuthId?: string;
+  role?: string;
+} {
+  if (!token || !token.trim()) return { valid: false };
 
   try {
     const parts = token.split(".");
-    if (parts.length !== 5) return false;
+    if (parts.length === 6 && parts[0] === "v2") {
+      const [version, rawIssuedAt, userAuthId, role, nonce, signature] = parts;
+      const issuedAt = Number(rawIssuedAt);
+      if (!Number.isFinite(issuedAt)) return { valid: false };
 
-    const [version, rawIssuedAt, adminId, nonce, signature] = parts;
-    if (version !== "v1" || !adminId || !nonce || !signature) return false;
+      const now = Math.floor(Date.now() / 1000);
+      const age = now - issuedAt;
 
-    const issuedAt = Number(rawIssuedAt);
-    if (!Number.isFinite(issuedAt)) return false;
+      if (age < -60 || age > SOC_SESSION_MAX_AGE) {
+        return { valid: false };
+      }
 
-    const now = Math.floor(Date.now() / 1000);
-    const age = now - issuedAt;
+      const expected = sign(`${version}.${rawIssuedAt}.${userAuthId}.${role}.${nonce}`);
+      if (!safeEqual(signature, expected)) {
+        return { valid: false };
+      }
 
-    if (age < -60 || age > SOC_SESSION_MAX_AGE) {
-      return false;
+      return { valid: true, userAuthId, role };
     }
 
-    const expected = sign(`${version}.${rawIssuedAt}.${adminId}.${nonce}`);
-    return safeEqual(signature, expected);
+    if (parts.length === 5 && parts[0] === "v1") {
+      const [version, rawIssuedAt, adminId, nonce, signature] = parts;
+      const issuedAt = Number(rawIssuedAt);
+      if (!Number.isFinite(issuedAt)) return { valid: false };
+
+      const now = Math.floor(Date.now() / 1000);
+      const age = now - issuedAt;
+
+      if (age < -60 || age > SOC_SESSION_MAX_AGE) {
+        return { valid: false };
+      }
+
+      const expected = sign(`${version}.${rawIssuedAt}.${adminId}.${nonce}`);
+      if (!safeEqual(signature, expected)) {
+        return { valid: false };
+      }
+
+      return { valid: true, userAuthId: adminId, role: "SOC_ADMIN" };
+    }
+
+    return { valid: false };
   } catch {
-    return false;
+    return { valid: false };
   }
+}
+
+export function generateRecoveryTokenHash(token: string): string {
+  return createHash("sha256").update(token.trim()).digest("hex");
 }
 
 const SENSITIVE_KEY_PATTERNS = [
@@ -229,4 +212,6 @@ export const ALLOWLISTED_POSTGRES_TABLES = {
   redeem_codes: true,
   redeem_code_redemptions: true,
   outgoing_emails: true,
+  soc_admins: true,
+  soc_recovery_tokens: true,
 };

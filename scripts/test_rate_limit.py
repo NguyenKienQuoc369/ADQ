@@ -53,3 +53,4 @@ req = urllib.request.Request(
 res = opener.open(req)
 data = json.loads(res.read().decode())
 print(f"Clean IP Attempt: HTTP {res.status} - ok: {data.get('ok')} - role: {data.get('role')}")
+

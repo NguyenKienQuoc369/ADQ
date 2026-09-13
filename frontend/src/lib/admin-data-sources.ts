@@ -210,7 +210,26 @@ export const ALLOWLISTED_POSTGRES_TABLES: Record<string, TableSchemaInfo> = {
     allowSortColumns: ["id", "to", "subject", "sentAt", "createdAt"],
     searchColumns: ["to", "subject"],
   },
+  soc_admins: {
+    name: "soc_admins",
+    displayName: "Quản trị viên SOC (soc_admins)",
+    description: "Danh sách danh tính quản trị viên SOC được ủy quyền truy cập Control Center qua Supabase Identity.",
+    category: "CORE",
+    primaryKey: "id",
+    allowSortColumns: ["id", "userAuthId", "emailSnapshot", "role", "enabled", "createdAt", "updatedAt"],
+    searchColumns: ["userAuthId", "emailSnapshot", "role"],
+  },
+  soc_recovery_tokens: {
+    name: "soc_recovery_tokens",
+    displayName: "Mã Khôi phục SOC (soc_recovery_tokens)",
+    description: "Mã token khôi phục khẩn cấp SSH dùng một lần (CSPRNG 256-bit, TTL 5 phút).",
+    category: "SYSTEM",
+    primaryKey: "id",
+    allowSortColumns: ["id", "adminAuthId", "used", "expiresAt", "createdAt"],
+    searchColumns: ["adminAuthId", "tokenHash"],
+  },
 };
+
 
 export async function queryPostgresTable(params: {
   table: string;
