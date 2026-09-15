@@ -9,16 +9,39 @@ import {
 } from "@/lib/soc-auth";
 import { getPrismaClient } from "@/lib/prisma";
 
+function getSocOrigin(request: Request): string {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const host = (forwardedHost || request.headers.get("host") || "").split(",")[0].trim().toLowerCase().split(":")[0];
+
+  if (host === "www.adq-soc.click") {
+    return "https://www.adq-soc.click";
+  }
+  if (host === "adq-soc.click") {
+    return "https://adq-soc.click";
+  }
+  if (process.env.NODE_ENV !== "production" && (host === "localhost" || host === "127.0.0.1")) {
+    const forwardedProto = request.headers.get("x-forwarded-proto") || "http";
+    const rawHost = request.headers.get("host") || "localhost:3000";
+    return `${forwardedProto}://${rawHost}`;
+  }
+  // Hard isolation default for production SOC realm
+  return "https://adq-soc.click";
+}
+
 export async function GET(request: Request) {
+  const origin = getSocOrigin(request);
   const { searchParams } = new URL(request.url);
+  const errorParam = searchParams.get("error");
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/admin";
 
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
-  const host = forwardedHost || request.headers.get("host") || "adq-soc.click";
-  const origin = `${forwardedProto}://${host.split(",")[0].trim()}`;
+  // 1. Handle OAuth cancellation or provider errors
+  if (errorParam) {
+    const errorCode = errorParam === "access_denied" ? "oauth_cancelled" : "auth_failed";
+    return NextResponse.redirect(`${origin}/admin/login?error=${errorCode}`);
+  }
 
+  // 2. Missing authorization code
   if (!code) {
     return NextResponse.redirect(`${origin}/admin/login?error=missing_code`);
   }
@@ -43,10 +66,16 @@ export async function GET(request: Request) {
     }
   );
 
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+  let exchangeError: any = null;
+  try {
+    const res = await supabase.auth.exchangeCodeForSession(code);
+    exchangeError = res.error;
+  } catch (err: any) {
+    exchangeError = err;
+  }
 
   if (exchangeError) {
-    console.error("[SOC Callback] Exchange error:", exchangeError.message);
+    console.error("[SOC Callback] Exchange error:", exchangeError.message || exchangeError);
     return NextResponse.redirect(`${origin}/admin/login?error=auth_failed`);
   }
 
@@ -58,7 +87,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/admin/login?error=no_identity`);
   }
 
-  // Authoritative UUID check in soc_admins table
+  // 3. Authoritative UUID check in soc_admins table
   const authCheck = await checkSocAdminAuthorization(user.id);
 
   const prisma = getPrismaClient();
@@ -82,7 +111,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/admin/login?error=access_denied`);
   }
 
-  // Issue SOC session token
+  // 4. Issue SOC session token
   const socToken = createSocSessionToken(user.id, authCheck.role || "SOC_ADMIN");
 
   // Log successful login

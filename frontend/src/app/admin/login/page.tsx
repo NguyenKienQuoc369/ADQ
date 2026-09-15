@@ -21,8 +21,12 @@ function LoginContent() {
   useEffect(() => {
     if (errorParam === "access_denied") {
       setError("Tài khoản của bạn không có quyền SOC Administrator.");
-    } else if (errorParam === "auth_failed" || errorParam === "missing_code") {
+    } else if (errorParam === "oauth_cancelled") {
+      setError("Đăng nhập OAuth đã bị hủy bởi người dùng.");
+    } else if (errorParam === "auth_failed" || errorParam === "missing_code" || errorParam === "callback_failed") {
       setError("Xác thực danh tính ADQ thất bại. Vui lòng thử lại.");
+    } else if (errorParam === "no_identity") {
+      setError("Không tìm thấy danh tính người dùng từ hệ thống xác thực.");
     }
   }, [errorParam]);
 
