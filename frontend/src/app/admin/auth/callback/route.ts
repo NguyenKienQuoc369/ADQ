@@ -67,9 +67,11 @@ export async function GET(request: Request) {
   );
 
   let exchangeError: any = null;
+  let authUser: any = null;
   try {
     const res = await supabase.auth.exchangeCodeForSession(code);
     exchangeError = res.error;
+    authUser = res.data?.session?.user || res.data?.user;
   } catch (err: any) {
     exchangeError = err;
   }
@@ -79,28 +81,56 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/admin/login?error=auth_failed`);
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  if (!authUser) {
+    const { data: userData } = await supabase.auth.getUser();
+    authUser = userData?.user;
+  }
 
-  if (!user || !user.id) {
+  if (!authUser || !authUser.id) {
     return NextResponse.redirect(`${origin}/admin/login?error=no_identity`);
   }
 
-  // 3. Authoritative UUID check in soc_admins table
-  const authCheck = await checkSocAdminAuthorization(user.id);
-
   const prisma = getPrismaClient();
+
+  // 3. Reconcile authorized bootstrap admin UUID if it changed
+  if (
+    authUser.email?.toLowerCase() === "kienquocn64@gmail.com" &&
+    (authUser.email_confirmed_at || authUser.user_metadata?.email_verified)
+  ) {
+    try {
+      await prisma.socAdmin.upsert({
+        where: { userAuthId: authUser.id },
+        update: {
+          enabled: true,
+          emailSnapshot: "kienquocn64@gmail.com",
+          role: "SOC_ADMIN",
+          revokedAt: null,
+        },
+        create: {
+          id: "soc_admin_root_1",
+          userAuthId: authUser.id,
+          emailSnapshot: "kienquocn64@gmail.com",
+          role: "SOC_ADMIN",
+          enabled: true,
+        },
+      });
+    } catch (e) {
+      console.error("[SOC Callback] Error during admin reconciliation:", e);
+    }
+  }
+
+  // 4. Authoritative UUID check in soc_admins table
+  const authCheck = await checkSocAdminAuthorization(authUser.id);
 
   if (!authCheck.authorized) {
     // Log unauthorized attempt in audit log
     try {
       await prisma.adminAction.create({
         data: {
-          adminAuthUserId: user.id,
+          adminAuthUserId: authUser.id,
           action: "SOC_LOGIN_DENIED",
           detail: {
-            email: user.email,
+            email: authUser.email,
             reason: "NOT_IN_SOC_ADMINS",
             timestamp: new Date().toISOString(),
           },
@@ -111,19 +141,19 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/admin/login?error=access_denied`);
   }
 
-  // 4. Issue SOC session token
-  const socToken = createSocSessionToken(user.id, authCheck.role || "SOC_ADMIN");
+  // 5. Issue SOC session token
+  const socToken = createSocSessionToken(authUser.id, authCheck.role || "SOC_ADMIN");
 
   // Log successful login
   try {
     await prisma.adminAction.create({
       data: {
-        adminAuthUserId: user.id,
+        adminAuthUserId: authUser.id,
         action: "SOC_LOGIN_SUCCESS",
         detail: {
-          email: user.email,
+          email: authUser.email,
           role: authCheck.role,
-          provider: user.app_metadata?.provider || "supabase",
+          provider: authUser.app_metadata?.provider || "supabase",
           timestamp: new Date().toISOString(),
         },
       },

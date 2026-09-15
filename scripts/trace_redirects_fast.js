@@ -58,3 +58,4 @@ traceOAuthRedirect().catch((err) => {
   console.error("Trace failed:", err);
   process.exit(1);
 });
+
