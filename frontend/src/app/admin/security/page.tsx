@@ -58,9 +58,18 @@ export default function AdminSecurityPage() {
 
         {/* Identity Authorization Policy */}
         <div className="p-6 rounded-xl bg-[#0a0a0a] border border-[#222222] space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#222222] pb-3">
-            <UserCheck className="h-4 w-4 text-emerald-400" />
-            <h2 className="text-sm font-bold text-white">Chính sách Phân quyền Quản trị (Identity Policy)</h2>
+          <div className="flex items-center justify-between border-b border-[#222222] pb-3">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-emerald-400" />
+              <h2 className="text-sm font-bold text-white">Chính sách Phân quyền Quản trị (Identity Policy)</h2>
+            </div>
+            <a
+              href="/admin/roles"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-purple-950/60 border border-purple-800/80 text-purple-300 text-xs font-semibold hover:bg-purple-900/80 transition"
+            >
+              <Shield className="h-3.5 w-3.5" />
+              Quản lý Phân quyền Admin (RBAC) &rarr;
+            </a>
           </div>
 
           <div className="space-y-3 text-xs text-neutral-300 font-mono leading-relaxed">

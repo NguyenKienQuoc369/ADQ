@@ -246,14 +246,16 @@ export async function checkSocAdminAuthorization(userAuthId: string): Promise<{
 export async function grantSocAdminRole(params: {
   userAuthId: string;
   emailSnapshot: string;
+  role?: string;
   grantedByAuthId?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    const role = params.role || "SOC_ADMIN";
     const prisma = getPrismaClient();
     await prisma.socAdmin.upsert({
       where: { userAuthId: params.userAuthId },
       update: {
-        role: "SOC_ADMIN",
+        role,
         enabled: true,
         emailSnapshot: params.emailSnapshot,
         revokedAt: null,
@@ -261,7 +263,7 @@ export async function grantSocAdminRole(params: {
       create: {
         userAuthId: params.userAuthId,
         emailSnapshot: params.emailSnapshot,
-        role: "SOC_ADMIN",
+        role,
         enabled: true,
       },
     });
@@ -274,7 +276,7 @@ export async function grantSocAdminRole(params: {
         detail: {
           userAuthId: params.userAuthId,
           email: params.emailSnapshot,
-          role: "SOC_ADMIN",
+          role,
           timestamp: new Date().toISOString(),
         },
       },

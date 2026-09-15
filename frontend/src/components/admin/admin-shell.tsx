@@ -50,6 +50,7 @@ const adminNavSections: NavSection[] = [
     title: "NGƯỜI DÙNG & QUYỀN",
     items: [
       { href: "/admin/users", label: "Người dùng", icon: Users },
+      { href: "/admin/roles", label: "Phân quyền Admin", icon: ShieldCheck },
       { href: "/admin/entitlements", label: "Gói & Entitlement", icon: CreditCard },
       { href: "/admin/redeem-codes", label: "Redeem Codes", icon: KeyRound },
     ],
