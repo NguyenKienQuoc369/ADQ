@@ -9,27 +9,9 @@ import {
 } from "@/lib/soc-auth";
 import { getPrismaClient } from "@/lib/prisma";
 
-function getSocOrigin(request: Request): string {
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const host = (forwardedHost || request.headers.get("host") || "").split(",")[0].trim().toLowerCase().split(":")[0];
-
-  if (host === "www.adq-soc.click") {
-    return "https://www.adq-soc.click";
-  }
-  if (host === "adq-soc.click") {
-    return "https://adq-soc.click";
-  }
-  if (process.env.NODE_ENV !== "production" && (host === "localhost" || host === "127.0.0.1")) {
-    const forwardedProto = request.headers.get("x-forwarded-proto") || "http";
-    const rawHost = request.headers.get("host") || "localhost:3000";
-    return `${forwardedProto}://${rawHost}`;
-  }
-  // Hard isolation default for production SOC realm
-  return "https://adq-soc.click";
-}
+const SOC_CANONICAL_ORIGIN = "https://adq-soc.click";
 
 export async function GET(request: Request) {
-  const origin = getSocOrigin(request);
   const { searchParams } = new URL(request.url);
   const errorParam = searchParams.get("error");
   const code = searchParams.get("code");
@@ -38,12 +20,12 @@ export async function GET(request: Request) {
   // 1. Handle OAuth cancellation or provider errors
   if (errorParam) {
     const errorCode = errorParam === "access_denied" ? "oauth_cancelled" : "auth_failed";
-    return NextResponse.redirect(`${origin}/admin/login?error=${errorCode}`);
+    return NextResponse.redirect(`${SOC_CANONICAL_ORIGIN}/admin/login?error=${errorCode}`);
   }
 
   // 2. Missing authorization code
   if (!code) {
-    return NextResponse.redirect(`${origin}/admin/login?error=missing_code`);
+    return NextResponse.redirect(`${SOC_CANONICAL_ORIGIN}/admin/login?error=missing_code`);
   }
 
   const cookieStore = await cookies();
@@ -78,7 +60,7 @@ export async function GET(request: Request) {
 
   if (exchangeError) {
     console.error("[SOC Callback] Exchange error:", exchangeError.message || exchangeError);
-    return NextResponse.redirect(`${origin}/admin/login?error=auth_failed`);
+    return NextResponse.redirect(`${SOC_CANONICAL_ORIGIN}/admin/login?error=auth_failed`);
   }
 
   if (!authUser) {
@@ -87,42 +69,27 @@ export async function GET(request: Request) {
   }
 
   if (!authUser || !authUser.id) {
-    return NextResponse.redirect(`${origin}/admin/login?error=no_identity`);
+    return NextResponse.redirect(`${SOC_CANONICAL_ORIGIN}/admin/login?error=no_identity`);
   }
 
   const prisma = getPrismaClient();
 
-  // 3. Reconcile authorized bootstrap admin UUID if it changed
-  if (
-    authUser.email?.toLowerCase() === "kienquocn64@gmail.com" &&
-    (authUser.email_confirmed_at || authUser.user_metadata?.email_verified)
-  ) {
-    try {
-      await prisma.socAdmin.upsert({
-        where: { userAuthId: authUser.id },
-        update: {
-          enabled: true,
-          emailSnapshot: "kienquocn64@gmail.com",
-          role: "SOC_ADMIN",
-          revokedAt: null,
-        },
-        create: {
-          id: "soc_admin_root_1",
-          userAuthId: authUser.id,
-          emailSnapshot: "kienquocn64@gmail.com",
-          role: "SOC_ADMIN",
-          enabled: true,
-        },
-      });
-    } catch (e) {
-      console.error("[SOC Callback] Error during admin reconciliation:", e);
-    }
+  // 3. Direct Read-Only Database Authorization Query (UUID Key Only)
+  let adminRecord = null;
+  try {
+    adminRecord = await prisma.socAdmin.findFirst({
+      where: {
+        userAuthId: authUser.id,
+        role: "SOC_ADMIN",
+        enabled: true,
+      },
+    });
+  } catch (dbErr: any) {
+    console.error("[SOC Callback] Database query error:", dbErr.message || dbErr);
+    return NextResponse.redirect(`${SOC_CANONICAL_ORIGIN}/admin/login?error=auth_failed`);
   }
 
-  // 4. Authoritative UUID check in soc_admins table
-  const authCheck = await checkSocAdminAuthorization(authUser.id);
-
-  if (!authCheck.authorized) {
+  if (!adminRecord) {
     // Log unauthorized attempt in audit log
     try {
       await prisma.adminAction.create({
@@ -138,11 +105,11 @@ export async function GET(request: Request) {
       });
     } catch {}
 
-    return NextResponse.redirect(`${origin}/admin/login?error=access_denied`);
+    return NextResponse.redirect(`${SOC_CANONICAL_ORIGIN}/admin/login?error=access_denied`);
   }
 
-  // 5. Issue SOC session token
-  const socToken = createSocSessionToken(authUser.id, authCheck.role || "SOC_ADMIN");
+  // 4. Issue SOC session token
+  const socToken = createSocSessionToken(authUser.id, adminRecord.role || "SOC_ADMIN");
 
   // Log successful login
   try {
@@ -152,7 +119,7 @@ export async function GET(request: Request) {
         action: "SOC_LOGIN_SUCCESS",
         detail: {
           email: authUser.email,
-          role: authCheck.role,
+          role: adminRecord.role,
           provider: authUser.app_metadata?.provider || "supabase",
           timestamp: new Date().toISOString(),
         },
@@ -161,7 +128,7 @@ export async function GET(request: Request) {
   } catch {}
 
   const destination = next.startsWith("/") ? next : `/${next}`;
-  const response = NextResponse.redirect(`${origin}${destination}`);
+  const response = NextResponse.redirect(`${SOC_CANONICAL_ORIGIN}${destination}`);
 
   response.cookies.set({
     name: SOC_COOKIE_NAME,

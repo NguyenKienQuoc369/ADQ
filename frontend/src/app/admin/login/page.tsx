@@ -19,6 +19,12 @@ function LoginContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // 1. Canonical SOC Host Enforcement
+    if (typeof window !== "undefined" && window.location.hostname === "www.adq-soc.click") {
+      window.location.replace(`https://adq-soc.click${window.location.pathname}${window.location.search}`);
+      return;
+    }
+
     if (errorParam === "access_denied") {
       setError("Tài khoản của bạn không có quyền SOC Administrator.");
     } else if (errorParam === "oauth_cancelled") {
@@ -39,7 +45,8 @@ function LoginContent() {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       );
 
-      const callbackUrl = `${window.location.origin}/admin/auth/callback`;
+      // Strict Canonical SOC Callback URL
+      const callbackUrl = "https://adq-soc.click/admin/auth/callback";
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
